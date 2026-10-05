@@ -27,6 +27,7 @@ import { Value } from '../value.mjs';
 import { format as formatDecimal } from '../decimal.mjs';
 import { refuse } from './errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
+import { bindingForm } from '../registry.mjs';
 
 // Whether the node is an IF or COND whose every result is a text literal -- or,
 // in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
@@ -170,7 +171,7 @@ export function scope(bindings) {
 //
 // The answer for a node depends only on the node and on `bound`, and the translator asks
 // it again at every level of a nest (is this node constant? is its parent? its
-// grandparent?), which made a deep constant expression quadratic (JS-P4). The answers
+// grandparent?), which made a deep constant expression quadratic. The answers
 // are kept per `bound` map, which the translator builds once and never changes.
 const CONSTANT_MEMO = new WeakMap();
 
@@ -205,26 +206,31 @@ export function isConstant(n, bound = null) {
 // `MAP(list, X, X + 1)` names its binder in argument 1 and uses it in argument 2;
 // the two-argument form binds `_` implicitly. Neither name is a free variable, so
 // neither disqualifies the call — but the *source* still has to be constant, or
-// the body has nothing to iterate.
+// the body has nothing to iterate. Which argument is which is the manifest's
+// form (registry.bindingForm), as for stage 1 and the dependency walk: an outer
+// argument is constant in `bound`, an inner one with the form's names bound too,
+// and a binder slot is a name, never a read.
 function constantCall(n, bound) {
   const args = n.args;
-  if (!(n.spec != null && n.spec.binds)) {
-    return args.every((a) => isConstant(a, bound));
-  }
-
-  if (!isConstant(args[0], bound)) return false;
-  const inner = new Map(bound);
-  let body = 1;
-  if (args.length >= 3) {
-    // Malformed; not constant, and _agg_shape refuses it for real.
-    if (!isBinderName(args[1])) return false;
-    inner.set(args[1].name, true);
-    body = 2;
-  } else {
-    inner.set('_', true);
-  }
-  for (let i = body; i < args.length; i += 1) {
-    if (!isConstant(args[i], inner)) return false;
+  const form = bindingForm(n.name, args, n.spec);
+  if (form === null) return args.every((a) => isConstant(a, bound));
+  let inner = null;
+  for (let i = 0; i < args.length; i++) {
+    const scope = form.scopes[i];
+    if (scope === 'binder') {
+      // Malformed; not constant, and aggShape refuses it for real.
+      if (!isBinderName(args[i])) return false;
+      continue;
+    }
+    if (scope === 'inner') {
+      if (inner === null) {
+        inner = new Map(bound);
+        for (const name of form.binds) inner.set(name, true);
+      }
+      if (!isConstant(args[i], inner)) return false;
+    } else if (!isConstant(args[i], bound)) {
+      return false;
+    }
   }
   return true;
 }
@@ -233,17 +239,21 @@ function constantCall(n, bound) {
 //
 // validate() runs at every constant node on the way up, and each run used to evaluate the
 // whole subtree again, so `LEN(REPEAT("x", 20000)) + ... + ...` k levels deep evaluated the
-// REPEAT k times over (quadratic; JS-P4). A node that evaluated without error has a value
+// REPEAT k times over (quadratic). A node that evaluated without error has a value
 // that cannot change: constants hold no frame, no assignment and no host state. So the
 // value is kept on the translation's context, and the next evaluation up the tree runs on
 // a copy of its node in which every already-evaluated descendant is replaced by its value
 // (a 'cval' node, which the evaluator returns as is). The error a failing evaluation
 // raises, and its position, are the innermost node's, exactly as before: a failing
 // descendant was refused when it was validated, before any ancestor is asked.
+// The values, per translation context: a side table rather than a field
+// written onto the evaluator's Context, which does not declare one.
+const CONST_VALUES = new WeakMap();
+
 function evalConstant(n, ctx) {
   const c = ctx ?? new Context();
-  let vals = c.constVals;
-  if (vals === undefined) { vals = new WeakMap(); c.constVals = vals; }
+  let vals = CONST_VALUES.get(c);
+  if (vals === undefined) { vals = new WeakMap(); CONST_VALUES.set(c, vals); }
   const hit = vals.get(n);
   if (hit !== undefined) return hit;
   const v = evalNode(frozenChildren(n, vals), c);
@@ -336,7 +346,7 @@ export function requireNumeric(n, ctx = null) {
 
 // The canonical spelling of a constant that is TEXT holding a number, or null when it
 // is anything else (or SEL refuses it: the operand's own translation reports that).
-// PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+// In arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
 // would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
 // the translator spells it as the exact numeric literal it stands for.
 export function numericTextConstant(n, ctx = null) {

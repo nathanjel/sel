@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { compile, Value, RecordShape } from '../js/src/sel.mjs';
+import { compile, Value } from '../js/src/sel.mjs';
 import { parse } from '../js/src/parser.mjs';
 import { evalNode, Context } from '../js/src/eval.mjs';
-import { optimizeAstLogical, unwindPipeline } from '../js/src/optimizer.mjs';
+import { optimizeAstLogical, optimizeAstInMemory, unwindPipeline } from '../js/src/optimizer.mjs';
 import { decodeSource, fromCodePoints, toCodePoints } from '../js/src/utf8.mjs';
-import { structuralHash } from '../js/src/value.mjs';
+import { structuralHash, RecordShape } from '../js/src/value.mjs';
 import * as DEC from '../js/src/decimal.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,9 +48,11 @@ for (const entry of entries) {
   }
 }
 
+// The in-memory optimiser prepares a RECORD's shape ('prepared'); the plain
+// parse has none ('generic'); a shape that does not match the keys the call
+// evaluates ('stale') must be noticed and not used.
 function outcome(source, input, layout) {
-  const ast = parse(source);
-  if (layout === 'generic') ast.recordShape = null;
+  const ast = layout === 'prepared' ? optimizeAstInMemory(parse(source)) : parse(source);
   if (layout === 'stale') ast.recordShape = new RecordShape(['wrong', 'layout']);
   const root = Value.fromNative(input);
   try {
@@ -88,7 +90,7 @@ assert.equal(second.get('x').get('v').asText(), '1');
 assert.equal(root.get('X').get('v').asText(), '1');
 checks++;
 
-// --- the host boundary (spec/SPEC.md §8, review 2026-09-25 HOST-01..10) ------
+// --- the host boundary (spec/SPEC.md §8) ----------------------------------------
 // Collected rather than asserted one by one, so a run reports every broken
 // contract at once.
 const boundary = [];
@@ -106,7 +108,7 @@ const deep = (levels) => {
   for (let i = 0; i < levels; i++) v = Value.list([v]);
   return Value.list([v]);
 };
-// HOST-01: every key survives toNative as an own property, __proto__ included.
+// Every key survives toNative as an own property, __proto__ included.
 expectOk('toNative keeps an own __proto__ key', () => {
   const n = Value.fromNative(JSON.parse('{"__proto__": {"x": "1"}, "a": "2"}')).toNative();
   assert.equal(Object.hasOwn(n, '__proto__'), true);
@@ -122,7 +124,7 @@ expectOk('toNative keeps a scalar __proto__ nested in a list', () => {
 });
 expectCode('toNative refuses a scalar with a child named _', 'E_BAD_ARG',
   () => compile('A = "s"; A["_"] = "c"; A').run().toNative());
-// HOST-02 / HOST-03: the boundary copies, both ways.
+// The boundary copies, both ways.
 expectOk('Value.bin copies the caller\'s bytes', () => {
   const b = new Uint8Array([1]); const v = Value.bin(b); b[0] = 2;
   assert.equal(v.dump(), 'b01');
@@ -135,70 +137,70 @@ expectOk('toNative returns bytes the host owns', () => {
   const v = Value.fromNative({ k: new Uint8Array([1]) }); v.toNative().k[0] = 9;
   assert.equal(v.dump(), '-{"k"=b01}');
 });
-// HOST-04: bytes are whole numbers 0..255.
+// Bytes are whole numbers 0..255.
 expectOk('Value.bin accepts 0 and 255', () => assert.equal(Value.bin([0, 255]).dump(), 'b00ff'));
 for (const bad of [256, -1, 1.5, NaN, '1']) {
   expectCode(`Value.bin rejects ${JSON.stringify(bad)}`, 'E_RANGE', () => Value.bin([bad]));
 }
-// HOST-05: every text entering is checked, keys included.
+// Every text entering is checked, keys included.
 expectCode('Value.text rejects a lone surrogate', 'E_UTF8', () => Value.text('\uD800'));
 expectCode('fromNative rejects a lone surrogate', 'E_UTF8', () => Value.fromNative('\uD800'));
 expectCode('fromNative rejects a lone-surrogate key', 'E_UTF8', () => Value.fromNative({ ['\uD800']: 'x' }));
 expectCode('Value.set rejects a lone-surrogate key', 'E_UTF8', () => Value.none().set('\uDC00', Value.text('x')));
 expectOk('a supplementary character is text', () => assert.equal(Value.text('\u{1F600}').dump(), 't"\u{1F600}"'));
-// HOST-06: the digit caps hold for native integers (the boundary itself, both sides).
+// The digit caps hold for native integers (the boundary itself, both sides).
 expectOk('Value.int of 1,000,000 digits is a number', () => {
   assert.equal(compile('LEN(A) == 1000000').run({ A: Value.int(10n ** 999999n) }).dump(), 'TRUE');
 });
 expectCode('Value.int of 1,000,001 digits is E_RANGE', 'E_RANGE', () => Value.int(10n ** 1000000n));
-// HOST-07: an over-deep host value cannot be hashed any more than dumped.
+// An over-deep host value cannot be hashed any more than dumped.
 for (const src of ['COUNT(DEDUPE(A))', 'COUNT(DISTINCT(A))', 'COUNT(BUCKET(A, _, COUNT(_)))']) {
   expectCode(`${src} over a value nested past the cap`, 'E_DEPTH', () => compile(src).run({ A: deep(250) }));
   expectOk(`${src} just below the cap`, () => assert.equal(compile(src).run({ A: deep(198) }).dump(), 't"1"'));
 }
-// HOST-08 / HOST-09: toNative and fromNative are inverses.
+// toNative and fromNative are inverses.
 for (const src of ['FILTER(LIST(1,2,3), _ > 1)', 'RECORD("0","a","1","b")', 'FALSE', 'RECORD("a", FALSE)', 'LIST(TRUE, NULL)']) {
   expectOk(`round trip of ${src}`, () => {
     const v = compile(src).run();
     assert.equal(Value.fromNative(v.toNative()).dump(), v.dump());
   });
 }
-// HOST-10: a compiled program keeps nothing from one run to the next.
+// A compiled program keeps nothing from one run to the next.
 expectOk('a compiled program reads the key of each run', () => {
   const p = compile('A[K]'); const A = Value.fromNative({ x: '1', y: '2' });
   assert.equal(p.run({ A, K: 'x' }).dump() + p.run({ A, K: 'y' }).dump(), 't"1"t"2"');
 });
-// --- every public constructor (spec/SPEC.md §8, review 2026-09-28 HOST-11..20) --
+// --- every public constructor (spec/SPEC.md §8) ----------------------------
 const one = Value.text('1'); const two = Value.text('2');
-// HOST-11: fromNative and a run context hold the integer digit cap too.
+// fromNative and a run context hold the integer digit cap too.
 expectCode('fromNative of a 1,000,001-digit bigint is E_RANGE', 'E_RANGE', () => Value.fromNative(10n ** 1000000n));
 expectCode('a run context holding one is E_RANGE', 'E_RANGE', () => compile('LEN(X)').run({ X: 10n ** 1000000n }));
-// HOST-12: keys given side by side are checked like any other text.
+// Keys given side by side are checked like any other text.
 expectCode('shaped rejects a lone-surrogate key', 'E_UTF8', () => Value.shaped(['a\uD800'], [one]));
 expectCode('fromEntries rejects a lone-surrogate key', 'E_UTF8', () => Value.fromEntries([['a\uD800', one]]));
 expectCode('fromEntries rejects one in a list key', 'E_UTF8', () => Value.fromEntries([['\uDC00', one]], true));
-// HOST-13 / HOST-14: the decimal form is a number within the caps, canonical.
+// The decimal form is a number within the caps, canonical.
 expectCode('num of a decimal with 1,000,001 fractional digits is E_RANGE', 'E_RANGE', () => Value.num({ neg: false, digits: 1n, scale: 1000001 }));
 expectCode('num of a decimal with 1,000,001 integer digits is E_RANGE', 'E_RANGE', () => Value.num({ neg: false, digits: 10n ** 1000000n, scale: 0 }));
 expectOk('num of a negative-zero decimal is 0', () => assert.equal(Value.num({ neg: true, digits: 0n, scale: 0 }).dump(), 't"0"'));
 for (const bad of [{ neg: false, digits: 7n, scale: -1 }, { neg: false, digits: -5n, scale: 0 }, { neg: false, digits: 'x', scale: 0 }, 5]) {
   expectCode(`num of the malformed decimal ${JSON.stringify(bad, (k, x) => typeof x === 'bigint' ? `${x}n` : x)} is E_BAD_ARG`, 'E_BAD_ARG', () => Value.num(bad));
 }
-// HOST-16: the constructors copy the arrays they are given.
+// The constructors copy the arrays they are given.
 expectOk('shaped and fromEntries copy their arrays', () => {
   const keys = ['a']; const values = [one]; const entries = [['a', one]];
   const v = Value.shaped(keys, values); const w = Value.fromEntries(entries);
   keys[0] = 'z'; values[0] = two; entries[0][1] = two; entries.push(['b', two]);
   assert.equal(v.dump() + w.dump(), '-{"a"=t"1"}-{"a"=t"1"}');
 });
-// HOST-17: keys and values pair up; a list's keys are kept.
+// Keys and values pair up; a list's keys are kept.
 expectCode('shaped with more values than keys is E_BAD_ARG', 'E_BAD_ARG', () => Value.shaped(['a'], [one, two]));
 expectCode('shaped with fewer values than keys is E_BAD_ARG', 'E_BAD_ARG', () => Value.shaped(['a', 'b'], [one]));
 expectOk('fromEntries keeps the keys of a list', () => assert.equal(Value.fromEntries([['5', one], ['7', two]], true).dump(), '-{"5"=t"1", "7"=t"2"}'));
-// HOST-18: a repeated key is RECORD's last write in its first position; a list's is refused.
+// A repeated key is RECORD's last write in its first position; a list's is refused.
 expectOk('shaped keeps a repeated key once', () => assert.equal(Value.shaped(['a', 'b', 'a'], [one, two, two]).dump(), '-{"a"=t"2", "b"=t"2"}'));
 expectCode('fromEntries rejects a repeated list key', 'E_BAD_ARG', () => Value.fromEntries([['5', one], ['5', two]], true));
-// HOST-20: a malformed call is E_BAD_ARG, never a TypeError or RangeError.
+// A malformed call is E_BAD_ARG, never a TypeError or RangeError.
 for (const [what, f] of [['Value.int(1.5)', () => Value.int(1.5)], ['Value.int(NaN)', () => Value.int(NaN)],
   ['Value.text(5)', () => Value.text(5)], ['Value.list("x")', () => Value.list('x')], ['Value.list([1])', () => Value.list([1])],
   ['Value.shaped(["a"], ["1"])', () => Value.shaped(['a'], ['1'])], ['Value.fromNative(1e308)', () => Value.fromNative(1e308)],
@@ -238,66 +240,66 @@ bytesAt('above U+10FFFF', [q, 0xf4, 0x90, 0x80, 0x80], 1, 2, 1);
 bytesAt('after a four-byte character', [0xf0, 0x9f, 0x98, 0x80, 0xff], 1, 2, 1);
 expectOk('valid bytes decode unchanged, CR and CRLF included', () =>
   assert.equal(decodeSource(Uint8Array.from([0x61, 0x0d, 0x0a, 0xc5, 0x82])), 'a\r\n\u0142'));
-// --- T02/T03 remediation (review 2026-09-29): value ownership at the boundary ---
-// JS-C20: the sign of a decimal record is a boolean, not whatever `!!` makes of it.
+// --- value ownership at the boundary ---
+// The sign of a decimal record is a boolean, not whatever `!!` makes of it.
 for (const neg of [undefined, 1, 'yes', null]) {
-  expectCode(`JS-C20: Value.num with neg=${String(neg)} is E_BAD_ARG`, 'E_BAD_ARG',
+  expectCode(`Value.num with neg=${String(neg)} is E_BAD_ARG`, 'E_BAD_ARG',
     () => Value.num({ neg, digits: 5n, scale: 0 }));
 }
-expectOk('JS-C20: Value.num({ neg: true, ... }) is negative', () =>
+expectOk('Value.num({ neg: true, ... }) is negative', () =>
   assert.equal(Value.num({ neg: true, digits: 5n, scale: 0 }).scalar, '-5'));
-// JS-C33: the Value owns its decimal; mutating the caller's record afterwards changes nothing.
-expectOk('JS-C33: Value.num copies the caller\'s decimal', () => {
+// The Value owns its decimal; mutating the caller's record afterwards changes nothing.
+expectOk('Value.num copies the caller\'s decimal', () => {
   const d = { neg: false, digits: 5n, scale: 0 };
   const v = Value.num(d);
   d.digits = 99999n; d.scale = 2; d.neg = true;
   assert.equal(v.scalar, '5');
   assert.equal(compile('A + 1').run({ A: v }).scalar, '6');
 });
-// JS-C37: setting the text drops the cached number.
-expectOk('JS-C37: the scalar setter invalidates the cached decimal', () => {
+// Setting the text drops the cached number.
+expectOk('the scalar setter invalidates the cached decimal', () => {
   const w = Value.num('12');
   w.scalar = 'abc';
   assert.equal(w.looksNumeric(), false);
   assert.equal(w.eql(Value.text('abc')), true);
 });
-// JS-C21: a sparse array holds NULLs, not empty slots.
-expectOk('JS-C21: fromNative of a sparse array is a list with NULL in the holes', () => {
+// A sparse array holds NULLs, not empty slots.
+expectOk('fromNative of a sparse array is a list with NULL in the holes', () => {
   const v = Value.fromNative([1, , 3]);   // eslint-disable-line no-sparse-arrays
   assert.equal(v.dump(), '-{"1"=t"1", "2"=-, "3"=t"3"}');
   assert.equal(compile('COUNT(DEDUPE(L))').run({ L: [1, , 3] }).asText(), '3');
   assert.equal(compile('COUNT(SORT(L))').run({ L: [1, , 3] }).asText(), '3');
 });
-// JS-C34: only plain objects, arrays, strings, bigints, booleans, integers, Uint8Array, Value.
+// Only plain objects, arrays, strings, bigints, booleans, integers, Uint8Array, Value.
 for (const [name, make] of [
   ['Date', () => new Date()], ['Map', () => new Map([[1, 2]])], ['Set', () => new Set([1])],
   ['ArrayBuffer', () => new ArrayBuffer(2)], ['Int8Array', () => new Int8Array([1, 2])],
   ['a class instance', () => new (class Point { constructor() { this.x = 1; } })()],
   ['a function', () => () => 1], ['a symbol', () => Symbol('s')],
 ]) {
-  expectCode(`JS-C34: fromNative(${name}) is E_BAD_ARG`, 'E_BAD_ARG', () => Value.fromNative(make()));
+  expectCode(`fromNative(${name}) is E_BAD_ARG`, 'E_BAD_ARG', () => Value.fromNative(make()));
 }
-expectOk('JS-C34: a null-prototype object is still a record', () =>
+expectOk('a null-prototype object is still a record', () =>
   assert.equal(Value.fromNative(Object.assign(Object.create(null), { a: 1 })).dump(), '-{"a"=t"1"}'));
-// JS-C35: whole numbers only (JS cannot tell 3 from 3.0); a fraction is a float (spec 8).
+// Whole numbers only (JS cannot tell 3 from 3.0); a fraction is a float (spec 8).
 for (const x of [0.5, 0.1 + 0.2, -2.25, 1e21, NaN, Infinity]) {
-  expectCode(`JS-C35: fromNative(${x}) is E_BAD_ARG`, 'E_BAD_ARG', () => Value.fromNative(x));
+  expectCode(`fromNative(${x}) is E_BAD_ARG`, 'E_BAD_ARG', () => Value.fromNative(x));
 }
-expectOk('JS-C35: whole-valued numbers are accepted', () => {
+expectOk('whole-valued numbers are accepted', () => {
   assert.equal(Value.fromNative(3).scalar, '3');
   assert.equal(Value.fromNative(3.0).scalar, '3');
   assert.equal(Value.fromNative(-0).scalar, '0');
 });
-// JS-C36: toNative refuses what a JS object would reorder, so the inverse holds for the rest.
-expectCode('JS-C36: toNative of a record with keys "b","2","a" has no native form', 'E_BAD_ARG',
+// toNative refuses what a JS object would reorder, so the inverse holds for the rest.
+expectCode('toNative of a record with keys "b","2","a" has no native form', 'E_BAD_ARG',
   () => compile('RECORD("b", 1, "2", 2, "a", 3)').run({}).toNative());
-expectCode('JS-C36: descending position-like keys have no native form', 'E_BAD_ARG',
+expectCode('descending position-like keys have no native form', 'E_BAD_ARG',
   () => compile('RECORD("3", 1, "2", 2)').run({}).toNative());
-expectOk('JS-C36: ascending position-like keys first round-trip', () => {
+expectOk('ascending position-like keys first round-trip', () => {
   const v = compile('RECORD("2", 1, "10", 2, "b", 3, "a", 4)').run({});
   assert.equal(Value.fromNative(v.toNative()).dump(), v.dump());
 });
-expectOk('JS-C36: entries() keeps the order toNative cannot', () => {
+expectOk('entries() keeps the order toNative cannot', () => {
   const v = compile('RECORD("b", 1, "2", 2, "a", 3)').run({});
   assert.equal(Value.fromEntries(v.entries()).dump(), v.dump());
 });
@@ -321,11 +323,11 @@ expectOk('JS-C36: entries() keeps the order toNative cannot', () => {
     assert.equal(joined('LIST(RECORD("k", 5, "v", "n"), RECORD("k", TRUE, "v", "t"), RECORD("k", FALSE, "v", "f")) .> SORT()'), 'f,t,n');
   });
 }
-// JS-C38: the digit-cap prefilter is derived from the limit, not typed in.
+// The digit-cap prefilter is derived from the limit, not typed in.
 {
   const { intLimitShift } = await import('../js/src/decimal.mjs');
   const { MAX_INT_DIGITS } = await import('../js/src/decimal.mjs');
-  expectOk('JS-C38: intLimitShift is the largest S with 2^S <= 10^N', () => {
+  expectOk('intLimitShift is the largest S with 2^S <= 10^N', () => {
     for (const n of [1, 2, 3, 5, 18, 19, 100, 1000, MAX_INT_DIGITS]) {
       const s = intLimitShift(n);
       const cap = 10n ** BigInt(n);
@@ -346,9 +348,9 @@ expectOk('JS-C36: entries() keeps the order toNative cannot', () => {
     });
   }
 }
-// T03: the collectors copy what they collect (spec 3.4); a constructor's depth
+// The collectors copy what they collect (spec 3.4); a constructor's depth
 // is checked at the node that builds the value.
-expectOk('T03: MAP/FILTER/TOP/SORT/BUCKET results are independent of their source', () => {
+expectOk('MAP/FILTER/TOP/SORT/BUCKET results are independent of their source', () => {
   for (const [name, src] of [
     ['MAP', 'MAP(X, _)'], ['FILTER', 'FILTER(X, TRUE)'], ['SORT', 'SORT(X)'],
     ['TOP', 'TOP(X, 1)'], ['TOP_BY', 'TOP_BY(X, _["k"], 1)'],
@@ -358,14 +360,14 @@ expectOk('T03: MAP/FILTER/TOP/SORT/BUCKET results are independent of their sourc
     assert.ok(!out.dump().includes('t"9"'), `${name} result changed with its source: ${out.dump()}`);
   }
 });
-expectOk('T03: LIST(A) past the depth cap is E_DEPTH at the LIST call', () => {
+expectOk('LIST(A) past the depth cap is E_DEPTH at the LIST call', () => {
   const src = 'A' + '[1]'.repeat(199) + ' = 1; LIST(A); 7';
   let err = null;
   try { compile(src).run({}); } catch (e) { err = e; }
   assert.ok(err && err.code === 'E_DEPTH', String(err));
   assert.equal(err.col, 1 + ('A' + '[1]'.repeat(199) + ' = 1; ').length);
 });
-expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the target', () => {
+expectOk('assigning a value past the cap (path + depth) is E_DEPTH at the target', () => {
   const src = 'A' + '[1]'.repeat(150) + ' = 1; B[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]'
     + '[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = A; 7';
   let err = null;
@@ -406,7 +408,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
     rmSync(dir, { recursive: true, force: true });
   }
 }
-// --- T04: evaluation order, optimiser transparency, bounded analysis ---------
+// --- evaluation order, optimiser transparency, bounded analysis ---------
 {
   const { registerFunction, register } = await import('../js/src/sel.mjs');
   const observe = (source, input = {}) => {
@@ -425,7 +427,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
     assert.equal(o.again, o.plain, `second run ${o.again} vs plain ${o.plain}`);
     if (want !== undefined) assert.equal(o.plain, want);
   });
-  // JS-C9: evaluate all operands, then coerce (SPEC 6.2); the plan is invisible.
+  // Evaluate all operands, then coerce (SPEC 6.2); the plan is invisible.
   same('math plan: "abc" + 1/0 is the division error', '"abc" + 1/0', {}, '!E_DIV_ZERO@1:10');
   same('math plan: later undefined beats earlier text', 'A = "x"; A + B', {}, '!E_UNDEF_VAR@1:14');
   same('math plan: MAX later argument first', 'MAX(TRUE, U)', {}, '!E_UNDEF_VAR@1:11');
@@ -435,7 +437,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   same('math plan: coalesce over arithmetic matches comparison', '(NULL - MISSING) ?? 7', {}, 't"7"');
   same('math plan: one-operand MAX still coerces', 'MAX("x")', {}, '!E_NOT_NUM@1:5');
   same('math plan: x + 0 does not move the coercion', 'A = "7"; (A + 0) + (A = "8"; 1)', {}, 't"8"');
-  // JS-C13: SORT + TAKE fuse only for a literal count >= 1, keys first.
+  // SORT + TAKE fuse only for a literal count >= 1, keys first.
   same('SORT_BY + TAKE(0) still evaluates the key', 'LIST(RECORD("a",1)) .> SORT_BY(_["zz"]) .> TAKE(0)', {}, '!E_NO_KEY@1:33');
   same('SORT_BY key error precedes an invalid count', 'LIST(RECORD("a",1)) .> SORT_BY(_["zz"]) .> TAKE(0.5)', {}, '!E_NO_KEY@1:33');
   same('a count with a side effect runs after the keys', 'X = 1; LIST(3,1,2) .> SORT_BY(_ * X) .> TAKE((X = -1; 2))', {});
@@ -448,14 +450,14 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
     const seq = compile('N = 2; LIST(3,1,2) .> SORT() .> TAKE(N)').physicalAst();
     assert.equal(seq.items.at(-1).name, 'TAKE');
   });
-  // PHP-C11 twin: a bare variable or literal predicate can still raise.
+  // A bare variable or literal predicate can still raise.
   same('FILTER + FILTER keeps the first error (bare variable)', 'LIST(1,2,3) .> FILTER(1 / (_ - 3) < 0) .> FILTER(_)', {}, '!E_DIV_ZERO@1:25');
   same('FILTER + FILTER keeps the first error (literal)', 'LIST(1,2,3) .> FILTER(1 / (_ - 3) < 0) .> FILTER(1)', {}, '!E_DIV_ZERO@1:25');
   // The rewritten pipeline keeps the outer node's position for an operator over it.
   same('position under NOT after TAKE + TAKE', 'NOT TAKE(TAKE(LIST(1), 3), 2)', {}, '!E_NOT_BOOL@1:5');
   same('position under NOT after FILTER(x, TRUE)', 'NOT FILTER(LIST(1), TRUE)', {}, '!E_NOT_BOOL@1:5');
   same('position under NOT after SORT + TAKE', 'X = LIST(1); NOT TAKE(SORT(X), 1)', {}, '!E_NOT_BOOL@1:18');
-  // JS-C39: a fused pair spends what the two stages spend.
+  // A fused pair spends what the two stages spend.
   {
     const terms = (n) => Array(n).fill('_["a"] == 1').join(' AND ');
     for (const n of [190, 196, 197]) {
@@ -473,7 +475,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
       assert.doesNotThrow(() => evalNode(fused, new Context(Value.fromNative({ T: [{ a: 1 }] }))));
     });
   }
-  // JS-C12: an aggregate body as long as its source is never a host RangeError.
+  // An aggregate body as long as its source is never a host RangeError.
   {
     const chain = (n, v) => Array(n).fill(v).join('+');
     const conj = (n, v) => Array(n).fill(v).join(' AND ');
@@ -493,7 +495,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
       }
     }
   }
-  // JS-C42: a shipped builtin cannot be replaced through the public register.
+  // A shipped builtin cannot be replaced through the public register.
   expectOk('register refuses ABS; ABS still runs the builtin everywhere', () => {
     let refused = null;
     try { register('ABS', 1, 1, () => Value.text('overridden')); } catch (e) { refused = e; }
@@ -510,9 +512,30 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   expectOk('register refuses a reserved word', () => {
     assert.throws(() => register('NULL', 0, 0, () => Value.text('x')), RangeError);
   });
+  // The deprecated public register is registerFunction's strict path (spec §8.1).
+  expectOk('register refuses a lazy or binding host function', () => {
+    assert.throws(() => register('T04_LAZY', 1, 2, () => Value.text('x'), { lazy: true }), TypeError);
+    assert.throws(() => register({ name: 'T04_BINDS', min: 2, max: 2, binds: true, fn: () => Value.text('x') }), TypeError);
+    assert.throws(() => register({ name: 'T04_RULE', min: 1, max: 3, arityError: () => null, fn: () => Value.text('x') }), TypeError);
+    assert.throws(() => compile('T04_LAZY(1)'), (e) => e.code === 'E_UNKNOWN_FUNC');
+  });
+  expectOk('register refuses a malformed name and an inverted arity', () => {
+    assert.throws(() => register('bad name!', 0, 0, () => Value.text('x')), TypeError);
+    assert.throws(() => register('T04_ARX', 3, 1, () => Value.text('x')), RangeError);
+    assert.throws(() => register('T04_INF', 0, Infinity, () => Value.text('x')), RangeError);
+  });
+  expectOk('register: a native return value is a TypeError, never a result', () => {
+    register('T04_NUMRET', 0, 0, () => 42);
+    assert.throws(() => compile('T04_NUMRET()').run(), TypeError);
+  });
+  expectOk('register: a missing max is min, and overwrite: false refuses a repeat', () => {
+    register({ name: 'T04_ONE', min: 1, fn: (a) => a.val(0) });
+    assert.throws(() => compile('T04_ONE(1, 2)'), (e) => e.code === 'E_ARITY');
+    assert.throws(() => register({ name: 'T04_ONE', min: 1, overwrite: false, fn: (a) => a.val(0) }), Error);
+  });
 }
 
-// --- T05/T06/T07: relational edges, regex portability, size caps -------------
+// --- relational edges, regex portability, size caps -------------
 {
   const run = (source, input = {}) => {
     try { return compile(source).run(Value.fromNative(input)).dump(); } catch (e) { return `!${e.code ?? e.name}@${e.line}:${e.col}`; }
@@ -523,13 +546,13 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   });
   const equal = (name, source, want) => expectOk(name, () => assert.equal(run(source), want));
 
-  // JS-C1: an aggregate visits a snapshot; a body that grows its source neither
+  // An aggregate visits a snapshot; a body that grows its source neither
   // extends the walk nor invalidates what it stands on.
   equal('MAP over a list its body appends to visits the snapshot', 'A = (1, 2); COUNT(MAP(A, A[COUNT(A) + 1] = 0))', 't"2"');
   equal('FILTER over a record its body adds keys to visits the snapshot', 'R = RECORD("a", 1); R["b"] = 2; COUNT(FILTER(R, (R[_K & "x"] = 1; TRUE)))', 't"2"');
   equal('TOP_BY over a list its key body appends to visits the snapshot', 'A = (1, 2); COUNT(TOP_BY(A, (A[COUNT(A) + 1] = 0; _), 5))', 't"2"');
   equal('an overwritten later element is still visited as it was', 'A = (1, 2, 3); SUM(A, (A[3] = 100; _))', 't"6"');
-  // JS-C2: one total order, by kind then by value.
+  // One total order, by kind then by value.
   equal('SORT ranks NULL < BOOL < numbers < text < BIN and is stable',
     'LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL) .> SORT() .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & _, "s" & _)))))) .> JOIN(",")',
     't"N,F,T,n-0,n0,n007,n7,n9,n10,s,s 2,s1a,s1e3,B"');
@@ -539,24 +562,24 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   isCode('SORT_BY validates its direction on an empty list', 'SORT_BY(LIST(), _ + 0, "X")', 'E_BAD_ARG');
   isCode('SORT_BY validates its direction on NULL', 'SORT_BY(NULL, _, "UP")', 'E_BAD_ARG');
   isCode('TOP_BY validates its direction on an empty list', 'TOP_BY(LIST(), _, "UP", 1)', 'E_BAD_ARG');
-  // JS-C49 / JS-C50 / SPEC 7.3: BUCKET.
+  // SPEC 7.3: BUCKET.
   equal('BUCKET of a scalar makes one group (bare)', 'COUNT(BUCKET("abc", _))', 't"1"');
   equal('BUCKET of a scalar makes one group (projected)', 'COUNT(BUCKET("abc", _, _))', 't"1"');
   equal('BUCKET of a scalar keeps the scalar as the member', 'BUCKET(5, _, _)["1"]["1"]', 't"5"');
   equal('two keys with one text are one group and lose no row',
     'A = "x"; A["k"] = 1; R = LIST(A, "x", A) .> BUCKET(_); JOIN(LIST(COUNT(R), COUNT(R["x"])), ",")', 't"1,3"');
-  // JS-C51: same-named binders — the right shadows the left, both paths agree.
+  // Same-named binders — the right shadows the left, both paths agree.
   expectOk('a join on one binder name gives the general path\'s answer', () => {
     const fast = run('T = LIST(RECORD("id", 1, "mgr", 1), RECORD("id", 2, "mgr", 1)); COUNT(LINK(T, T, T["id"] == T["mgr"]))');
     const general = run('T = LIST(RECORD("id", 1, "mgr", 1), RECORD("id", 2, "mgr", 1)); COUNT(LINK(T, T, T["id"] == T["mgr"] AND TRUE))');
     assert.equal(fast, general);
   });
-  // JS-C16: a comma-list operand reading both binders is not one-sided.
+  // A comma-list operand reading both binders is not one-sided.
   expectOk('a comma list in a join key is classified by what it reads', () => {
     const src = (extra) => `A = LIST(RECORD("k", 1)); B = LIST(RECORD("k", 1)); COUNT(LINK(A, B, (1, _1["k"]) == (1, _2["k"])${extra}))`;
     assert.equal(run(src('')), run(src(' AND TRUE')));
   });
-  // JS-C14 / JS-C15: cost, not answers.
+  // Cost, not answers.
   expectOk('DEDUPE of many distinct scalars is not quadratic', () => {
     const t0 = Date.now();
     assert.equal(run('COUNT(DEDUPE(SPLIT(REPEAT("a,", 20000) & "b", ",")))'), 't"2"');
@@ -569,7 +592,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
     assert.ok(Date.now() - t0 < 3000, `took ${Date.now() - t0} ms`);
   });
 
-  // --- T06 regex ---
+  // --- regex ---
   // Raw ('...') literals: a double-quoted one would read {2} as an interpolation.
   const raw = (x) => `'${x.replaceAll("'", "''")}'`;
   const reject = (name, pattern) => {
@@ -617,7 +640,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   equal('RREPLACE walks empty matches (P3)', 'RREPLACE("a*", "-", "baac")', 't"-b--c-"');
   equal('RREPLACE lazy empty match then match', 'RREPLACE("b*?", "-", "abb")', 't"-a-b-b-"');
 
-  // --- T07 caps ---
+  // --- size caps ---
   isCode('REPEAT past the text cap is E_RANGE at the call', 'REPEAT("a", 16777217)', 'E_RANGE');
   equal('REPEAT of the empty text with a huge count is empty', 'REPEAT("", 99999999999999999999)', 't""');
   isCode('REPEAT with a 400-digit count is E_RANGE, not a RangeError', 'REPEAT("a", 1 & REPEAT("0", 400))', 'E_RANGE');
@@ -640,7 +663,7 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   isCode('LTB of a fractional byte is E_NOT_INT', 'LTB(LIST(1.5))', 'E_NOT_INT');
   equal('PATH with an empty path is the target', 'PATH(LIST(1, 2), "") .> COUNT()', 't"2"');
 
-  // --- P5: the static exponential-ambiguity rule (SPEC 7.8; JS-C6) -----------
+  // --- the static exponential-ambiguity rule (SPEC 7.8) -----------
   const sq = (pat) => `'${pat.replaceAll("'", "''")}'`;
   const verdict = (pat, flags = '') => run(`RMATCH(${sq(pat)}, ""${flags ? `, "${flags}"` : ''})`);
   const refused = (pat, flags = '') => verdict(pat, flags).startsWith('!E_REGEX_SYNTAX');
@@ -752,7 +775,7 @@ a*a*$
   });
 }
 
-// --- T12: host API contract (spec/SPEC.md §8): flow-sensitive dependencies(),
+// --- host API contract (spec/SPEC.md §8): flow-sensitive dependencies(),
 // non-source input, the host-function argument reader, command-line misuse ----
 {
   const { registerFunction } = await import('../js/src/sel.mjs');
@@ -782,29 +805,29 @@ a*a*$
     ['ALL(I, IT, IT > 0)', 'I'],                    // binders are not variables
   ];
   for (const [src, want] of cases) {
-    expectOk(`T12 dependencies: ${src} => ${want}`, () => assert.equal(deps(src), want));
+    expectOk(`dependencies: ${src} => ${want}`, () => assert.equal(deps(src), want));
   }
-  expectOk('T12 dependencies keeps its E_DEPTH cap and position', () => {
+  expectOk('dependencies keeps its E_DEPTH cap and position', () => {
     const src = 'A' + '+A'.repeat(300);
     const e = (() => { try { deps(src); } catch (x) { return x; } return null; })();
     assert.ok(e && e.code === 'E_DEPTH', 'want E_DEPTH');
   });
   for (const bad of [12, null, undefined, {}, ['1'], 1n, Symbol.iterator, Buffer.from('1')]) {
-    expectCode(`T12 compile(${typeof bad === 'symbol' ? 'symbol' : String(bad)}) is E_BAD_ARG`, 'E_BAD_ARG', () => compile(bad));
+    expectCode(`compile(${typeof bad === 'symbol' ? 'symbol' : String(bad)}) is E_BAD_ARG`, 'E_BAD_ARG', () => compile(bad));
   }
   registerFunction('T12_OOB', 1, 3, (a) => a.text(2));
   registerFunction('T12_OOB_VAL', 1, 3, (a) => a.val(7));
   registerFunction('T12_OOB_POS', 1, 3, (a) => { a.posOf(-1); return Value.text('x'); });
   registerFunction('T12_OOB_SYM', 1, 3, (a) => { a.symbol(4); return Value.text('x'); });
   for (const src of ['T12_OOB("x")', 'T12_OOB_VAL("x")', 'T12_OOB_POS("x")', 'T12_OOB_SYM("x")']) {
-    expectOk(`T12 host argument read past the count: ${src}`, () => {
+    expectOk(`host argument read past the count: ${src}`, () => {
       let e = null;
       try { compile(src).run(Value.none()); } catch (x) { e = x; }
       assert.ok(e && e.code === 'E_BAD_ARG', `want E_BAD_ARG, got ${e && (e.code || e.name)}`);
       assert.equal(e.line, 1);          // positioned at the call
     });
   }
-  expectOk('T12 a host function may still read an argument the call does have', () => {
+  expectOk('a host function may still read an argument the call does have', () => {
     registerFunction('T12_OK', 1, 2, (a) => Value.text(a.count() > 1 ? a.text(1) : a.text(0)));
     assert.equal(compile('T12_OK("a", "b")').run(Value.none()).scalar, 'b');
     assert.equal(compile('T12_OK("a")').run(Value.none()).scalar, 'a');
@@ -814,7 +837,7 @@ a*a*$
   const missing = join(tmpdir(), 'sel-no-such-dir', 'no-such-file.sel');
   for (const [label, argv] of [['-e without operand', ['-e']], ['--deps -e without operand', ['--deps', '-e']],
     ['a missing file', [missing]], ['an unknown option', ['--no-such-flag']]]) {
-    expectOk(`T12 CLI misuse: ${label}`, () => {
+    expectOk(`CLI misuse: ${label}`, () => {
       const r = spawnSync(process.execPath, [cli, ...argv], { encoding: 'utf8', input: '' });
       assert.ok(r.status > 0 && r.status < 128, `status ${r.status}`);
       assert.equal(r.stdout, '');
@@ -824,11 +847,11 @@ a*a*$
   }
 }
 
-// --- performance round 2 (JS-P11..P20): the optimisations are invisible ------
+// --- performance work, part 2: the optimisations are invisible ---------
 {
   const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
   const dump = (v) => v.dump();
-  // P11: a math plan over an expression with an IF/COND/`,`/`;`/assignment operand answers as the plain tree does.
+  // A math plan over an expression with an IF/COND/`,`/`;`/assignment operand answers as the plain tree does.
   const plainEval = (src, ctx = {}) => { const prog = compile(src); return evalNode(prog.ast, new Context(Value.fromNative(ctx))); };
   for (const src of [
     'A * 3 + IF(B > 0, C, 2) - A / 4',
@@ -847,7 +870,7 @@ a*a*$
       assert.equal(a, b);
     });
   }
-  // P12: the append idiom gives the same list and the same depth error whether or not the second copy is made.
+  // The append idiom gives the same list and the same depth error whether or not the second copy is made.
   expectOk('P12 A = (A, x) appends and the stored list is independent of later writes', () => {
     const r = run('A = (1, 2); A = (A, 3); B = A; B[1] = 9; (A[1], B[1], COUNT(A))', {});
     assert.equal(r.get('1').scalar, '1'); assert.equal(r.get('2').scalar, '9'); assert.equal(r.get('3').scalar, '3');
@@ -860,7 +883,7 @@ a*a*$
     let f; try { run(`${deeper} = 1; A = (A, 2)`); } catch (x) { f = x; }
     assert.ok(f && f.code === 'E_DEPTH', `want E_DEPTH, got ${f && f.code}`);
   });
-  // P16: a hybrid continuation shares the caller's unrelated entries but never writes through to them.
+  // A hybrid continuation shares the caller's unrelated entries but never writes through to them.
   {
     const sqlUrl = pathToFileURL(resolve('js/src/sql/index.mjs')).href;
     const { Sql, Binding } = await import(sqlUrl);
@@ -882,7 +905,7 @@ a*a*$
       assert.equal(out.scalar, '3');
     });
   }
-  // P17: BTL elements are distinct values even though byte decimals are shared.
+  // BTL elements are distinct values even though byte decimals are shared.
   expectOk('P17 BTL elements are independent values', () => {
     const r = run('B = BTL(FROM_HEX("0101")); B[1] = 7; (B[1], B[2], COUNT(B))');
     assert.equal(r.get('1').scalar, '7'); assert.equal(r.get('2').scalar, '1'); assert.equal(r.get('3').scalar, '2');
@@ -894,14 +917,14 @@ a*a*$
     assert.equal(Value.int(-(10n ** 17n)).scalar, '-100000000000000000');
     assert.throws(() => Value.int(10n ** 1000000n), (e) => e.code === 'E_RANGE');
   });
-  // P18: the integer-digit cap verdict is exact at the boundary.
+  // The integer-digit cap verdict is exact at the boundary.
   expectCode('P18 POWER far past the cap is E_RANGE', 'E_RANGE', () => compile('POWER(POWER(3, 99999), 21)').run(Value.none()));
   expectOk('P18 a number of exactly the cap in digits is legal, one more is not', () => {
     assert.equal(compile('LEN(REPEAT("9", 1000000) + 0)').run(Value.none()).scalar, '1000000');
     let e; try { compile('REPEAT("9", 1000000) + 1').run(Value.none()); } catch (x) { e = x; }
     assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
   });
-  // P19: a numeric join still raises E_NOT_NUM at the pair the comparison rejects, from the same node.
+  // A numeric join still raises E_NOT_NUM at the pair the comparison rejects, from the same node.
   expectOk('P19 numeric join over non-numeric keys raises as the comparison does', () => {
     let e; try { run('COUNT(LINK(L, R, A, B, A["k"] == B["k"]))', { L: [{ k: 7 }], R: [{ k: 'x' }] }); } catch (x) { e = x; }
     assert.ok(e && e.code === 'E_NOT_NUM', `want E_NOT_NUM, got ${e && e.code}`);
@@ -910,7 +933,7 @@ a*a*$
     assert.equal(Value.text('1.50').tryDecimal().scale, 2);
     assert.equal(Value.bool(true).tryDecimal(), null);
   });
-  // P20: the i-flag ASCII refusal fires on every call, cached pattern or not, and flags never share a cached regex.
+  // The i-flag ASCII refusal fires on every call, cached pattern or not, and flags never share a cached regex.
   expectOk('P20 regex compile memo: refusals repeat, flags stay separate', () => {
     for (let i = 0; i < 3; i++) {
       let e; try { run('RMATCH("é", "é", "i")'); } catch (x) { e = x; }
@@ -923,11 +946,11 @@ a*a*$
   });
 }
 
-// --- performance round 3 (JS-P21..P28): the optimisations are invisible ------
+// --- performance work, part 3: the optimisations are invisible ---------
 {
   const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
   const dump = (v) => v.dump();
-  // P22: a pure predicate aliases the right rows once; an assigning one per pair. Both give
+  // A pure predicate aliases the right rows once; an assigning one per pair. Both give
   // the same joined rows, and a host-function call keeps the per-pair path.
   expectOk('P22 LINK nested loop: pure predicate == impure twin', () => {
     const L = [{ id: 1, v: 3, k: 1 }, { id: 2, v: 9, k: 2 }, { id: 3, v: 5, k: 1 }];
@@ -942,7 +965,7 @@ a*a*$
     // The right side is aliased under its own name for every left row.
     assert.equal(run('COUNT(LINK(L, R, A, B, B["v"] > A["v"] AND A["id"] == B["rid"]))', { L, R }).scalar, '1');
   });
-  // P23: a numeric literal on the right of an arithmetic/comparison operator is read as its
+  // A numeric literal on the right of an arithmetic/comparison operator is read as its
   // decimal; scale, sign, error positions and the depth boundary are what they were.
   expectOk('P23 right-hand literal fast path keeps values, scale, errors and depth', () => {
     assert.equal(run('A + 1.50', { A: 2 }).scalar, '3.50');
@@ -962,7 +985,7 @@ a*a*$
     e = null; try { run(nest(100, 'A + 1'), { A: 5 }); } catch (x) { e = x; }
     assert.ok(e && e.code === 'E_DEPTH' && e.col === 101, `depth boundary, got ${e && e.code}@${e && e.col}`);
   });
-  // P27: fromCodePoints round-trips at and around the chunk size, and for the empty and one-element arrays.
+  // FromCodePoints round-trips at and around the chunk size, and for the empty and one-element arrays.
   expectOk('P27 fromCodePoints: boundaries of the short path and the chunked one', () => {
     assert.equal(fromCodePoints([]), '');
     assert.equal(fromCodePoints([0x1f600]), '\u{1f600}');
@@ -972,7 +995,7 @@ a*a*$
       assert.equal(fromCodePoints(toCodePoints(str, null)), str, `n=${n}`);
     }
   });
-  // P28: a packed list hashes like its keyed twin (the key hashes are tabled now), BIN hashing is indexed, past the table too.
+  // A packed list hashes like its keyed twin (the key hashes are tabled now), BIN hashing is indexed, past the table too.
   expectOk('P28 structuralHash: packed list == keyed twin, BIN stable, beyond the key table', () => {
     for (const n of [0, 1, 7, 65536, 65540]) {
       const nums = Array.from({ length: n }, (_, i) => i % 5);
@@ -985,7 +1008,7 @@ a*a*$
     assert.notEqual(structuralHash(a), structuralHash(c));
     assert.equal(run('COUNT(DEDUPE(LIST(LIST(1,2), LIST(1,2), LIST(2,1))))').scalar, '2');
   });
-  // P28: the pow10 cache evicts the oldest entries (not everything) and every answer stays exact.
+  // The pow10 cache evicts the oldest entries (not everything) and every answer stays exact.
   expectOk('P28 pow10 cache: exact through evictions, alternating large scales', () => {
     const ks = [200000, 400000, 600000, 800000, 900000, 1000000, 200000, 600000, 500000, 600000, 500000, 70, 65, 64, 100, 999999];
     for (const k of ks) assert.ok(DEC.pow10(k) === 10n ** BigInt(k), `10^${k}`);
@@ -993,9 +1016,9 @@ a*a*$
     assert.equal(DEC.pow10(3), 1000n);
     for (let k = 65; k < 400; k += 7) assert.ok(DEC.pow10(k) === 10n ** BigInt(k));
   });
-  // JS-REG-1: MAP skips its copy only when the body BUILDS the result (RECORD/LIST/arithmetic);
+  // MAP skips its copy only when the body BUILDS the result (RECORD/LIST/arithmetic);
   // a body that returns something by reference still gets its copy (SPEC 3.4).
-  expectOk('JS-REG-1 MAP copies what it collects unless the body built it', () => {
+  expectOk('MAP copies what it collects unless the body built it', () => {
     // Built results: independent of the source, and of each other.
     const prog = `R = MAP(X, RECORD("a", _["a"])); X[1]["a"] = 9; R[1]["a"] = 7; (R[1]["a"], R[2]["a"], X[1]["a"], X[2]["a"])`;
     assert.equal(dump(run(prog, { X: [{ a: 1 }, { a: 2 }] })), '-{"1"=t"7", "2"=t"2", "3"=t"9", "4"=t"2"}');
@@ -1007,7 +1030,7 @@ a*a*$
     const alias2 = `R = MAP(X, _); R[1]["a"] = 9; X[1]["a"]`;
     assert.equal(dump(run(alias2, { X: [{ a: 1 }] })), 't"1"');
   });
-  // P24: results built without the second validation are the same numbers; negative zero
+  // Results built without the second validation are the same numbers; negative zero
   // never survives, however it arises.
   expectOk('P24 evaluator results: negative zero is normalised, caps still apply', () => {
     for (const src of ['0 * -1', '-(0)', '-0', 'T = 0; T *= -1; T', 'A - A', 'A % 1 * -1', '0 / -5']) {

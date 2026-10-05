@@ -1,5 +1,7 @@
 // TypeScript definitions for SEL (Simple Expression Language)
 // Public host interface. See spec/SPEC.md §8.
+// tools/check-js-dts.mjs holds these to js/src/sel.mjs: every name, member
+// and parameter list below exists, and everything public is here.
 
 export type ValueKind = 'NONE' | 'TEXT' | 'BIN' | 'BOOL';
 
@@ -32,6 +34,8 @@ export interface Decimal {
   scale: number;
 }
 
+/** @deprecated No public call accepts or returns a shape; it leaves the
+ *  public interface in the next minor release. */
 export class RecordShape {
   readonly keys: readonly string[];
   readonly keyMap: Map<string, number>;
@@ -41,10 +45,9 @@ export class RecordShape {
 export class Value {
   kind: ValueKind;
   scalar: any;
-  children: Map<string, Value> | null;
   isList: boolean;
-  shape: RecordShape | null;
-  storage: Value[] | null;
+  // A value's children are read through size()/keys()/get()/entries(): how a
+  // record or list stores them is internal and changes between releases.
 
   constructor(kind: ValueKind, scalar: any, isList?: boolean);
 
@@ -137,32 +140,49 @@ export class Program {
 export function compile(source: string): Program;
 export function evaluate(source: string, context?: Value | Record<string, any> | null): Value;
 export function functionNames(): string[];
+/** @deprecated The optimiser's own entry points over a parse tree, which is
+ *  not a public structure; Program.run() optimises for you. They leave the
+ *  public interface in the next minor release. `optimizeAst` is
+ *  optimizeAstInMemory under an older name. */
 export function optimizeAst(ast: any): any;
+/** @deprecated See optimizeAst. */
 export function optimizeAstLogical(ast: any, options?: Record<string, any>): any;
+/** @deprecated See optimizeAst. */
 export function optimizeAstInMemory(ast: any): any;
 
+/** @deprecated See register. */
 export interface RegisterOptions {
+  /** Refused with a TypeError: a host function is strict (spec §8.1). */
   lazy?: boolean;
+  /** Refused with a TypeError: a host function is strict (spec §8.1). */
   binds?: boolean;
+  /** Refused with a TypeError: arity is min..max (spec §8.1). */
   arityError?: (count: number) => string | null;
+  /** false refuses a name already registered instead of replacing it. */
   overwrite?: boolean;
 }
 
+/** @deprecated See register. */
 export interface BuiltinSpec extends RegisterOptions {
   name: string;
   min: number;
   max?: number;
-  fn: (args: any, context: any) => Value;
+  fn: (args: HostArgs) => Value;
 }
 
+/** @deprecated Use registerFunction, which this now is: the same name, arity
+ *  and return-value checks (a missing max means max = min), and lazy, binds
+ *  and arityError are refused. It leaves the public interface in the next
+ *  minor release. */
 export function register(
   name: string,
   min: number,
   max: number,
-  fn: (args: any, context: any) => Value,
+  fn: (args: HostArgs) => Value,
   options?: RegisterOptions
 ): any;
 export function register(spec: BuiltinSpec): any;
+/** @deprecated An alias of register. */
 export const registerBuiltin: typeof register;
 
 /** The argument accessor a host function receives (spec/SPEC.md §8.1). */

@@ -2,93 +2,54 @@
 // once per element, which is the same move IF makes, repeated.
 
 import * as D from '../decimal.mjs';
-import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
-import { define, isHostFunction } from '../registry.mjs';
-import { bytesCompare, compareText } from '../utf8.mjs';
+import { Value, NONE, structuralHash, scalarKey, elements } from '../value.mjs';
+import { define, callRoles } from '../registry.mjs';
+import { mayWrite, mentionsKey } from '../ast.mjs';
+import { bytesCompare, compareText, ANY_SURROGATE } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
-// The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+// The direction and field names fold ASCII-only:
 // toUpperCase took "deſc" for DESC.
 import { asciiUpper } from '../lexer.mjs';
 
-// Two-argument form binds `_`; three-argument form takes a bare identifier as
-// the binder, checked by inspecting the AST node the caller handed us.
+// The binder and the per-element body of a binding aggregate, where the
+// manifest's form puts them (registry.argRoles): the two-argument form binds
+// `_`, the three-argument form takes a bare identifier as the binder (checked
+// on the AST node: E_EXPECT_SYMBOL otherwise).
 function shape(args) {
-  return args.count() === 3
-    ? { binder: args.symbol(1), body: args.node(2) }
-    : { binder: '_', body: args.node(1) };
+  const roles = callRoles(args.name, args.nodes);
+  return { binder: roles.binder < 0 ? '_' : args.symbol(roles.binder), body: args.node(roles.body) };
 }
 
-// A scalar with no children behaves as a one-element list containing itself,
-// consistent with scalar context (§3.2). A NONE with no children is genuinely
-// empty — that is what FILTER returns when nothing matched, and ALL over it must
-// be TRUE rather than a scalar-context failure.
-function elements(value) {
-  if (value.size() > 0) return value.entries();
-  return value.kind === NONE ? [] : [['1', value]];
-}
-
-// Whether `node` mentions the variable `name`. Iterative, with an explicit
-// stack: spec 6.4 says a walk of a tree needs its own bound, since `1+1+1+...`
-// builds a tree as deep as it is long, and a recursion here ran out of the
-// host's stack on a body of about ten thousand terms before the evaluator --
-// which runs next, and counts -- could report E_DEPTH.
-function nodeContainsVar(node, name) {
-  const want = name.toUpperCase();
-  const stack = [node];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n) continue;
-    switch (n.t) {
-      case 'var': if (n.name.toUpperCase() === want) return true; break;
-      case 'index': stack.push(n.obj, n.idx); break;
-      case 'call': for (const item of n.args) stack.push(item); break;
-      case 'bin': stack.push(n.l, n.r); break;
-      case 'un': stack.push(n.x); break;
-      case 'assign': stack.push(n.target, n.value); break;
-      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
-      default: break;
+// A sort's decoded arguments: binder, key node (null when the elements are
+// their own keys) and direction. The source -- and for a TOP the count -- is
+// evaluated by the caller first; then the binder is checked, then the
+// direction evaluated: a text literal there is a direction even beside a bare
+// name (the manifest's form order), and a computed one is evaluated as one.
+function sortArgs(args, forcedDir, directionSlots) {
+  const roles = callRoles(args.name, args.nodes);
+  const binder = roles.binder < 0 ? '_' : args.symbol(roles.binder);
+  const body = roles.body < 0 ? null : args.node(roles.body);
+  let dir = forcedDir || 'ASC';
+  if (roles.after.length > directionSlots) {
+    const at = roles.after[0];
+    dir = asciiUpper(args.text(at));
+    if (dir !== 'ASC' && dir !== 'DESC') {
+      fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(at));
     }
   }
-  return false;
-}
-
-// Whether evaluating `node` might write into a value: it holds an assignment or
-// calls a host function. A collector copies an element when it collects it
-// (spec §3.4); while nothing below the body can write, deferring that copy to
-// the end is unobservable, so only a body that might write pays for copying at
-// the moment of collection.
-function mayWrite(node) {
-  const stack = [node];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n) continue;
-    switch (n.t) {
-      case 'assign': return true;
-      case 'index': stack.push(n.obj, n.idx); break;
-      case 'call':
-        if (isHostFunction(n.name)) return true;
-        for (const item of n.args) stack.push(item);
-        break;
-      case 'bin': stack.push(n.l, n.r); break;
-      case 'un': stack.push(n.x); break;
-      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
-      default: break;
-    }
-  }
-  return false;
+  return { binder, body, dir };
 }
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
-// from `visit` stops the walk and becomes the result.
-// `tentative`: a body that raises keeps the element -- the visitor sees null
-// -- for the FILTER above to decide (a pushed conjunct, spec §7.4).
+// from `visit` stops the walk and becomes the result. `bodyOverride`, when
+// given, is evaluated per element instead of the written body.
 function walk(args, ctx, visit, bodyOverride = null) {
   const { binder, body: written } = shape(args);
   const body = bodyOverride ?? written;
   const collection = args.val(0);
   const frame = new Map([[binder, null]]);
-  const needsK = nodeContainsVar(body, '_K');
+  const needsK = mentionsKey(body);
   if (needsK) frame.set('_K', null);
   ctx.pushFrame(frame);
   try {
@@ -174,7 +135,7 @@ define({
     // returned by reference -- `MAP(X, _)` -- must not stay live in X. A body that
     // BUILDS its result (a RECORD or LIST, which copied its own arguments, or
     // arithmetic, which computes a new number) returns a value nothing else refers
-    // to, so the copy would only duplicate it (0.9.2 comparison, JS-REG-1).
+    // to, so the copy would only duplicate it.
     walk(args, ctx, (r, _k, _i, body) => {
       out.push(buildsItsResult(body) ? r : r.cloneAt(2, args.pos));
       return undefined;
@@ -183,8 +144,6 @@ define({
   },
 });
 
-// The one aggregate that preserves keys — a filtered list should still be
-// addressable the way the original was.
 const TEXT_COMPARE = new Set(['$==', '$!=', '$<', '$<=', '$>', '$>=']);
 const NUM_COMPARE = new Set(['==', '!=', '<', '<=', '>', '>=']);
 
@@ -213,7 +172,7 @@ export function leadingFieldConjuncts(body, binder) {
   const literalKind = (n) => (n && n.t === 'num' ? 'NUM' : n && n.t === 'text' ? 'TEXT' : null);
   return conjuncts.map((c) => {
     const fields = new Set();
-    // Iterative, like nodeContainsVar: a conjunct is as deep as its source is long.
+    // Iterative, like ast.mjs's walks: a conjunct is as deep as its source is long.
     const readsOnlyFields = (root) => {
       const stack = [root];
       while (stack.length > 0) {
@@ -251,6 +210,8 @@ export function leadingFieldConjuncts(body, binder) {
   });
 }
 
+// The one aggregate that preserves keys — a filtered list should still be
+// addressable the way the original was.
 define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
@@ -316,7 +277,7 @@ define({
       total = D.add(total, r.asDecimal(body.pos), body.pos);
       return undefined;
     });
-    return Value.num(total);
+    return Value.numOwned(total);
   },
 });
 
@@ -387,8 +348,6 @@ function keyInfo(key) {
   };
 }
 
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
-
 function compareInfo(a, b) {
   if (a.rk !== b.rk) return a.rk - b.rk;
   switch (a.rk) {
@@ -404,58 +363,18 @@ function doSort(args, ctx, forcedDir) {
   const val = args.val(0);
   const entries = val.isNull() ? [] : elements(val);
 
-  const count = args.count();
-  let dir;
+  const { binder, body, dir } = sortArgs(args, forcedDir, 0);
   let indexed;
-  let binder;
-  let body;
-
-  if (count === 1) {
-    dir = forcedDir || 'ASC';
-  } else {
-    if (count === 2) {
-      binder = '_';
-      body = args.node(1);
-      dir = forcedDir || 'ASC';
-    } else if (count === 3) {
-      if (forcedDir !== null) {
-        binder = args.symbol(1);
-        body = args.node(2);
-        dir = forcedDir;
-      } else if (args.node(2).t === 'text') {
-        binder = '_';
-        body = args.node(1);
-        dir = asciiUpper(args.text(2));
-      } else if (args.isSymbol(1)) {
-        binder = args.symbol(1);
-        body = args.node(2);
-        dir = 'ASC';
-      } else {
-        binder = '_';
-        body = args.node(1);
-        dir = asciiUpper(args.text(2));
-      }
-    } else {
-      binder = args.symbol(1);
-      body = args.node(2);
-      dir = asciiUpper(args.text(3));
-    }
-
-    if (dir !== 'ASC' && dir !== 'DESC') {
-      const posIdx = count === 4 ? 3 : 2;
-      fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(posIdx));
-    }
-  }
   // The direction was evaluated and checked above whether or not there is
   // anything to sort (SPEC 7.4): an empty list does not excuse a bad one.
-  if (entries.length === 0) return Value.list([]);
+  if (entries.length === 0) return Value.listOwned([]);
 
-  if (count === 1) {
-    indexed = entries.map(([, item], idx) => ({ item, info: keyInfo(item), idx }));
+  if (body === null) {
+    indexed = entries.map(([, item]) => ({ item, info: keyInfo(item) }));
   } else {
-    const needsK = nodeContainsVar(body, '_K');
+    const needsK = mentionsKey(body);
     const eager = mayWrite(body);
-    indexed = entries.map(([k, item], idx) => {
+    indexed = entries.map(([k, item]) => {
       const frame = new Map([[binder, item]]);
       if (needsK) frame.set('_K', Value.text(k));
       ctx.pushFrame(frame);
@@ -467,7 +386,7 @@ function doSort(args, ctx, forcedDir) {
       }
       // Collected once its key is computed (spec §3.4): a later key that writes
       // into this element must not reach the result.
-      return { item: eager ? item.cloneAt(2, args.pos) : item, info: keyInfo(evalKey), idx, owned: eager };
+      return { item: eager ? item.cloneAt(2, args.pos) : item, info: keyInfo(evalKey), owned: eager };
     });
   }
 
@@ -492,51 +411,18 @@ function doTop(args, ctx, forcedDir) {
   const value = args.val(0);
   const limit = args.nonNegInt(args.count() - 1);
 
-  const sortCount = args.count() - 1;
-  let binder = '_';
-  let body = null;
-  let dir = forcedDir || 'ASC';
-  if (sortCount === 1) {
-    binder = null;
-  } else if (sortCount === 2) {
-    body = args.node(1);
-  } else if (sortCount === 3) {
-    if (forcedDir !== null) {
-      binder = args.symbol(1);
-      body = args.node(2);
-    } else if (args.node(2).t === 'text') {
-      body = args.node(1);
-      dir = asciiUpper(args.text(2));
-    } else if (args.isSymbol(1)) {
-      binder = args.symbol(1);
-      body = args.node(2);
-    } else {
-      body = args.node(1);
-      dir = asciiUpper(args.text(2));
-    }
-  } else if (sortCount === 4) {
-    binder = args.symbol(1);
-    body = args.node(2);
-    dir = asciiUpper(args.text(3));
-  } else {
-    fail('E_ARITY', `${args.name} has an invalid sort form`, args.pos);
-  }
-  if (dir !== 'ASC' && dir !== 'DESC') {
-    const directionIndex = sortCount === 4 ? 3 : 2;
-    fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(directionIndex));
-  }
+  // The count is the last slot; a direction, when there is one, precedes it.
+  const { binder, body, dir } = sortArgs(args, forcedDir, 1);
   // Count and direction are evaluated and checked first, empty source or not.
-  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
+  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.listOwned([]);
 
   const compare = (a, b) => {
     let c = compareInfo(a.info, b.info);
     if (dir === 'DESC') c = -c;
     return c !== 0 ? c : a.idx - b.idx;
   };
-  const worse = (a, b) => {
-    const c = compare(a, b);
-    return c > 0 || (c === 0 && a.idx > b.idx);
-  };
+  // compare() breaks ties by input position, so no two entries compare equal.
+  const worse = (a, b) => compare(a, b) > 0;
   const heap = [];
   const siftUp = (index) => {
     while (index > 0) {
@@ -558,7 +444,7 @@ function doTop(args, ctx, forcedDir) {
       index = worst;
     }
   };
-  const needsK = body !== null && nodeContainsVar(body, '_K');
+  const needsK = body !== null && mentionsKey(body);
   // Collected once its key is computed (spec §3.4); a key that might write copies
   // the element as it is admitted, so a later key's write cannot reach it.
   const eager = body !== null && mayWrite(body);
@@ -569,7 +455,7 @@ function doTop(args, ctx, forcedDir) {
   let idx = 0;
   const consume = (key, item) => {
     let candidate;
-    if (binder === null) {
+    if (body === null) {
       candidate = { item, info: keyInfo(item), idx };
     } else {
       const frame = new Map([[binder, item]]);
@@ -649,24 +535,14 @@ function doBucket(args, ctx) {
   const value = args.val(0);
   // NULL and an empty collection group nothing; a scalar is a one-element list
   // (SPEC 3.2), so it makes one group.
-  if (value.kind === NONE && value.size() === 0) return Value.list([]);
+  if (value.kind === NONE && value.size() === 0) return Value.listOwned([]);
 
-  const count = args.count();
-  let binder = '_';
-  let keyNode;
-  let aggregateNode = null;
-  if (count === 2) {
-    keyNode = args.node(1);
-  } else if (count === 3) {
-    keyNode = args.node(1);
-    aggregateNode = args.node(2);
-  } else {
-    binder = args.symbol(1);
-    keyNode = args.node(2);
-    aggregateNode = args.node(3);
-  }
+  const roles = callRoles(args.name, args.nodes);
+  const binder = roles.binder < 0 ? '_' : args.symbol(roles.binder);
+  const keyNode = args.node(roles.body);
+  const aggregateNode = roles.extra < 0 ? null : args.node(roles.extra);
 
-  const needsK = nodeContainsVar(keyNode, '_K');
+  const needsK = mentionsKey(keyNode);
   const frame = new Map([[binder, null]]);
   if (needsK) frame.set('_K', null);
   // A row is collected when its key is computed and it is grouped (spec §3.4):

@@ -3,8 +3,12 @@
 // shallow copies, and nested nodes are copied as they are visited.
 
 import * as D from './decimal.mjs';
-import { lookup } from './registry.mjs';
+import { lookup, argRoles, textSelectsForm } from './registry.mjs';
+import { childNodes, fieldReads, readsName, mapChildren, mentionsKey } from './ast.mjs';
 import { MAX_DEPTH } from './errors.mjs';
+import { recordShape } from './value.mjs';
+import { compareText } from './utf8.mjs';
+import { ARITHMETIC, compareResult } from './eval.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
 const PIPELINE_OPS = new Set([
@@ -53,17 +57,9 @@ function literalNum(value, pos) { return { t: 'num', v: value, pos }; }
 // only exact for a leaf literal, the one shape that carries no positions of
 // its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
 // at its own column), so it is not a literal here.
-const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
+export const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
 function isLiteral(node) { return node != null && LITERAL_TYPES.has(node.t); }
 function hoistLiteral(child, pos) { return { ...child, pos }; }
-
-function textCompare(a, b) {
-  const aa = new TextEncoder().encode(a);
-  const bb = new TextEncoder().encode(b);
-  const n = Math.min(aa.length, bb.length);
-  for (let i = 0; i < n; i++) if (aa[i] !== bb[i]) return aa[i] < bb[i] ? -1 : 1;
-  return aa.length - bb.length;
-}
 
 function fold(node) {
   if (!node) return node;
@@ -88,31 +84,19 @@ function fold(node) {
       try {
         const left = D.parse(node.l.v, node.pos);
         const right = D.parse(node.r.v, node.pos);
-        const result = node.op === '+' ? D.add(left, right, node.pos)
-          : node.op === '-' ? D.sub(left, right, node.pos)
-            : node.op === '*' ? D.mul(left, right, node.pos)
-              : node.op === '/' ? D.div(left, right, node.pos)
-                : D.mod(left, right, node.pos);
-        return literalNum(D.format(result), node.pos);
+        return literalNum(D.format(ARITHMETIC[node.op](left, right, node.pos)), node.pos);
       } catch (_) { return node; }
     }
     if (node.l.t === 'num' && node.r.t === 'num'
         && ['==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
       try {
         const c = D.cmp(D.parse(node.l.v, node.pos), D.parse(node.r.v, node.pos));
-        const value = node.op === '==' ? c === 0 : node.op === '!=' ? c !== 0
-          : node.op === '<' ? c < 0 : node.op === '<=' ? c <= 0
-            : node.op === '>' ? c > 0 : c >= 0;
-        return literalBool(value, node.pos);
+        return literalBool(compareResult(node.op, c, node.pos), node.pos);
       } catch (_) { return node; }
     }
     if (node.l.t === 'text' && node.r.t === 'text'
         && ['$==', '$!=', '$<', '$<=', '$>', '$>='].includes(node.op)) {
-      const c = textCompare(node.l.v, node.r.v);
-      const value = node.op === '$==' ? c === 0 : node.op === '$!=' ? c !== 0
-        : node.op === '$<' ? c < 0 : node.op === '$<=' ? c <= 0
-          : node.op === '$>' ? c > 0 : c >= 0;
-      return literalBool(value, node.pos);
+      return literalBool(compareResult(node.op.slice(1), compareText(node.l.v, node.r.v), node.pos), node.pos);
     }
     return node;
   }
@@ -124,49 +108,9 @@ function fold(node) {
   return node;
 }
 
+// The fields `node` reads through the binder (or `_`, `_1`, `_2`).
 function fieldRefs(node, binder = '_') {
-  const result = [];
-  const visit = (item) => {
-    if (!item) return;
-    if (item.t === 'index' && item.obj.t === 'var' && item.idx.t === 'text'
-        && [binder, '_', '_1', '_2'].some((name) => name.toUpperCase() === item.obj.name.toUpperCase())) {
-      result.push(item.idx.v);
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    if (item.l) visit(item.l);
-    if (item.r) visit(item.r);
-    if (item.x) visit(item.x);
-    if (item.target) visit(item.target);
-    if (item.value) visit(item.value);
-    if (item.t === 'index') { visit(item.obj); visit(item.idx); }
-  };
-  visit(node);
-  return [...new Set(result)];
-}
-
-// Whether `node` reads one of `names` as a variable -- other than as
-// `name["field"]`, which is a field read. Case-insensitively, like the
-// evaluator's frames.
-function readsVar(node, names) {
-  const wanted = new Set(names.map((name) => name.toUpperCase()));
-  let found = false;
-  const visit = (item) => {
-    if (!item || found) return;
-    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
-    if (item.t === 'index' && item.obj.t === 'var' && item.idx.t === 'text') return;
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return found;
+  return fieldReads(node, binder);
 }
 
 // Whether a body reads the element as a whole (its binder, or any of the
@@ -175,13 +119,14 @@ function readsVar(node, names) {
 // cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
 // or renumbers them (MAP, SELECT_COLS, the sorts).
 function readsRowOrKey(node, binder = '_') {
-  return readsVar(node, [binder, '_', '_1', '_2', '_K']);
+  return readsName(node, [binder, '_', '_1', '_2', '_K']);
 }
 
-// Whether a step's own arguments (not its input) read `_K`: the keys a sort
-// renumbers, so such a step keeps its place relative to one.
-function stepReadsKey(step) {
-  return step.args.slice(1).some((arg) => readsVar(arg, ['_K']));
+// Whether a step's own arguments (not its input) mention `_K` (a field read
+// `_K["x"]` included): the keys a sort renumbers, so such a step keeps its
+// place relative to one. The planner asks the same question (keysObservable).
+export function stepReadsKey(step) {
+  return step.args.slice(1).some(mentionsKey);
 }
 
 // Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
@@ -203,22 +148,36 @@ function sourceIsList(source) {
     || (source.t === 'call' && (source.name === 'LIST' || source.name === 'RECORD'));
 }
 
-function mapDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const binder = explicit ? args[1].name : '_';
-  const body = explicit ? args[2] : args[1];
-  return { binder, body, explicit };
+const isBareName = (n) => n != null && n.t === 'var' && !n.grouped;
+
+// A binding step's binder and per-element body, where the manifest's form puts
+// them (registry.argRoles, the decoder the evaluator uses). `explicit`: the
+// form names its binder. `valid`: that binder is a bare name -- a step whose
+// binder slot holds anything else is one the evaluator refuses
+// (E_EXPECT_SYMBOL), and no rule moves anything across it.
+function stepBinding(step) {
+  const roles = argRoles(step.name, step.args, null);
+  if (roles === null) return { binder: '_', body: null, explicit: false, valid: false, roles };
+  const body = roles.body < 0 ? null : step.args[roles.body];
+  if (roles.binder < 0) return { binder: '_', body, explicit: false, valid: true, roles };
+  const slot = step.args[roles.binder];
+  return isBareName(slot)
+    ? { binder: slot.name, body, explicit: true, valid: true, roles }
+    : { binder: '_', body, explicit: false, valid: false, roles };
+}
+
+export function mapDetails(step) {
+  return stepBinding(step);
 }
 
 function mapPassthroughs(step) {
-  const { binder, body } = mapDetails(step);
-  if (!body || body.t !== 'call' || body.name !== 'RECORD') return [];
+  const { binder, body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD') return [];
   const fields = [];
   for (let i = 0; i + 1 < body.args.length; i += 2) {
     const key = body.args[i], value = body.args[i + 1];
     if (key.t === 'text' && value.t === 'index' && value.obj.t === 'var'
-        && value.obj.name.toUpperCase() === binder.toUpperCase() && value.idx.t === 'text'
+        && value.obj.name === binder && value.idx.t === 'text'
         && value.idx.v === key.v) fields.push(key.v);
   }
   return fields;
@@ -227,8 +186,7 @@ function mapPassthroughs(step) {
 // Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 // that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 // two FILTERs changes which rows reach what, so it may only pass over
-// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// expressions that cannot raise on any of them (spec §7.3). Literals, _K and the binder itself never raise. On the
 // logical path the rows are a bound relation's, which always carry their
 // typed columns, so a field read through the binder cannot raise either, nor
 // a comparison, AND/OR/NOT or + - * over such reads; `/` and `%` (E_DIV_ZERO),
@@ -240,12 +198,10 @@ function cannotRaise(node, binder, logical) {
   if (!node) return true;
   switch (node.t) {
     case 'num': case 'text': case 'bool': case 'null': return true;
-    case 'var': {
-      const name = node.name.toUpperCase();
-      return name === '_K' || name === binder.toUpperCase();
-    }
+    case 'var':
+      return node.name === '_K' || node.name === binder;
     case 'index':
-      return logical && node.obj && node.obj.t === 'var' && node.obj.name.toUpperCase() === binder.toUpperCase()
+      return logical && node.obj && node.obj.t === 'var' && node.obj.name === binder
         && node.idx && node.idx.t === 'text';
     case 'bin':
       return logical && SAFE_LOGICAL_OPS.has(node.op)
@@ -259,7 +215,8 @@ function cannotRaise(node, binder, logical) {
 
 // Every field a MAP computes (or its whole body) cannot raise.
 function mapCannotRaise(step, logical) {
-  const { binder, body } = mapDetails(step);
+  const { binder, body, valid } = mapDetails(step);
+  if (!valid) return false;
   if (body && body.t === 'call' && body.name === 'RECORD') {
     for (let i = 1; i < body.args.length; i += 2) if (!cannotRaise(body.args[i], binder, logical)) return false;
     return body.args.every((arg, i) => i % 2 === 1 || arg.t === 'text');
@@ -290,9 +247,7 @@ function boundedDepth(root, cap) {
     const next = [];
     for (const node of level) {
       if (!node || typeof node !== 'object') continue;
-      if (node.args) next.push(...node.args);
-      if (node.items) next.push(...node.items);
-      for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (node[key]) next.push(node[key]);
+      next.push(...childNodes(node, false));   // the evaluator's count: no target
     }
     level = next;
   }
@@ -300,49 +255,28 @@ function boundedDepth(root, cap) {
 }
 
 function mapHasComputedFields(step) {
-  const { body } = mapDetails(step);
-  if (!body || body.t !== 'call' || body.name !== 'RECORD') return true;
+  const { body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD') return true;
   return mapPassthroughs(step).length * 2 !== body.args.length;
 }
 
 function filterDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const valid = args.length === 2 || explicit;
-  return {
-    binder: explicit ? args[1].name : '_',
-    predicate: explicit ? args[2] : args[1],
-    explicit,
-    valid,
-  };
+  const { binder, body, explicit, valid } = stepBinding(step);
+  return { binder, predicate: body, explicit, valid };
 }
 
+// A sort step's binder and key. A keyless sort (SORT(L), TOP(L, n)) has key
+// null: it compares the elements, which cannot raise. `valid` is false for a
+// step no rule may move: a binder slot that is not a bare name, or a direction
+// that is not a text literal -- the evaluator computes that one, and the key
+// beside it still runs per element.
 function sortDetails(step) {
-  const args = step.args;
-  const count = args.length;
-  let binder = '_', key = null;
-  if (step.name === 'SORT' || step.name === 'SORT_DESC') {
-    if (count === 1) return { binder: null, key: null };
-    binder = count === 3 && args[1].t === 'var' && !args[1].grouped ? args[1].name : '_';
-    key = count === 3 ? args[2] : args[1];
-  } else if (step.name === 'TOP' || step.name === 'TOP_DESC') {
-    if (count === 2) return { binder: null, key: null };
-    const sortCount = count - 1;
-    // TOP(source, key, n) has three arguments and
-    // TOP(source, binder, key, n) has four. `sortCount` excludes n, so the
-    // explicit-binder form is 3, not 4.
-    binder = sortCount === 3 && args[1].t === 'var' && !args[1].grouped ? args[1].name : '_';
-    key = sortCount === 3 ? args[2] : args[1];
-  } else if (step.name === 'SORT_BY' || step.name === 'TOP_BY') {
-    const sortCount = step.name === 'TOP_BY' ? count - 1 : count;
-    if (sortCount === 2 || sortCount === 3 && args[2]?.t === 'text') {
-      key = args[1];
-    } else if (args[1]?.t === 'var' && !args[1].grouped) {
-      binder = args[1].name;
-      key = args[2];
-    }
-  }
-  return { binder, key };
+  const { binder, body, valid, roles } = stepBinding(step);
+  if (roles === null) return { binder: null, key: null, valid: false };
+  if (body === null) return { binder: null, key: null, valid: true };
+  const directions = roles.after.length - (step.name.startsWith('TOP') ? 1 : 0);
+  const literal = directions === 0 || step.args[roles.after[0]].t === 'text';
+  return { binder, key: body, valid: valid && literal };
 }
 
 function selectFields(step) {
@@ -365,18 +299,8 @@ function numericLiteral(node) {
 
 function renameVar(node, oldName, newName) {
   if (!node) return node;
-  const copy = copyNode(node);
-  if (copy.t === 'var' && copy.name.toUpperCase() === oldName.toUpperCase()) copy.name = newName;
-  if (copy.args) copy.args = copy.args.map((item) => renameVar(item, oldName, newName));
-  if (copy.items) copy.items = copy.items.map((item) => renameVar(item, oldName, newName));
-  if (copy.l) copy.l = renameVar(copy.l, oldName, newName);
-  if (copy.r) copy.r = renameVar(copy.r, oldName, newName);
-  if (copy.x) copy.x = renameVar(copy.x, oldName, newName);
-  if (copy.obj) copy.obj = renameVar(copy.obj, oldName, newName);
-  if (copy.idx) copy.idx = renameVar(copy.idx, oldName, newName);
-  if (copy.target) copy.target = renameVar(copy.target, oldName, newName);
-  if (copy.value) copy.value = renameVar(copy.value, oldName, newName);
-  return copy;
+  if (node.t === 'var' && node.name === oldName) return { ...node, name: newName };
+  return mapChildren(node, (child) => renameVar(child, oldName, newName));
 }
 
 function logicalSteps(source, steps, options = {}) {
@@ -442,7 +366,7 @@ function logicalSteps(source, steps, options = {}) {
         }
       }
       if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER'
-          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2])
+          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2]) && sortDetails(first).valid
           && cannotRaise(sortDetails(first).key, sortDetails(first).binder || '_', options.logical)
           && (options.logical || cannotRaise(filterDetails(second).predicate, filterDetails(second).binder, false))) {
         next.push(second, first);
@@ -470,7 +394,7 @@ function logicalSteps(source, steps, options = {}) {
         // reads the whole row or `_K` reads what the MAP changes.
         const details = sortDetails(second);
         const refs = details.key ? fieldRefs(details.key, details.binder || '_') : [];
-        if (details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
+        if (details.valid && details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
             && !readsRowOrKey(details.key, details.binder || '_')
             && mapCannotRaise(first, options.logical) && cannotRaise(details.key, details.binder || '_', options.logical)) {
           next.push(second, first);
@@ -496,7 +420,7 @@ function logicalSteps(source, steps, options = {}) {
           next.push(first);
           continue;
         }
-        const predicate = right.binder.toUpperCase() === left.binder.toUpperCase()
+        const predicate = right.binder === left.binder
           ? right.predicate : renameVar(right.predicate, right.binder, left.binder);
         const merged = copyNode(first);
         const body = { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos };
@@ -536,11 +460,13 @@ function logicalSteps(source, steps, options = {}) {
 // bare name in the second slot is the binder and the third slot is its key.
 // A fold that hoists a text literal into that slot -- `IF(TRUE, "DESC",
 // "ASC")` -- would change the form, so the slot is walked without folding.
+// A slot whose being a text literal selects the call's form is not folded while
+// another form holds: SORT_BY(L, X, "a" & "b") sorts by the constant with the
+// binder X, and folding it to "ab" would make it a direction.
 function stepArgOptions(step, index, options) {
-  const sortCount = step.name === 'SORT_BY' ? step.args.length
-    : step.name === 'TOP_BY' ? step.args.length - 1 : 0;
-  if (sortCount === 3 && index === 2 && step.args[1].t === 'var' && !step.args[1].grouped) {
-    return { ...options, foldConstants: false };
+  if (textSelectsForm(step.name, step.args.length, index)) {
+    const roles = argRoles(step.name, step.args, null);
+    if (roles !== null && roles.binder >= 0) return { ...options, foldConstants: false };
   }
   return options;
 }
@@ -612,7 +538,23 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
     const plan = compileMathPlan(folded);
     if (plan) folded.mathPlan = plan;
   }
+  if (physical && folded.t === 'call' && folded.name === 'RECORD') folded.recordShape = recordShapeOf(folded.args);
   return folded;
+}
+
+// The shape a RECORD call builds when its keys are distinct text literals --
+// known once its arguments are folded -- interned, so every record it builds
+// shares it and shape-keyed caches hit. Null otherwise: the call then builds
+// its record from the keys it evaluates, and checks a prepared shape against
+// them anyway (structure.mjs, recordWithShape).
+function recordShapeOf(args) {
+  if (args.length === 0 || args.length % 2) return null;
+  const keys = [];
+  for (let i = 0; i < args.length; i += 2) {
+    if (args[i].t !== 'text') return null;
+    keys.push(args[i].v);
+  }
+  return new Set(keys).size === keys.length ? recordShape(keys) : null;
 }
 
 // Whether any node of the tree lies past the evaluator's depth cap, counted
@@ -622,13 +564,7 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
 function exceedsDepth(node, depth) {
   if (!node || typeof node !== 'object') return false;
   if (depth > MAX_DEPTH) return true;
-  const next = depth + 1;
-  if (node.args) for (const item of node.args) if (exceedsDepth(item, next)) return true;
-  if (node.items) for (const item of node.items) if (exceedsDepth(item, next)) return true;
-  for (const key of ['l', 'r', 'x', 'obj', 'idx']) {
-    if (node[key] && exceedsDepth(node[key], next)) return true;
-  }
-  if (node.value && exceedsDepth(node.value, next)) return true;
+  for (const child of childNodes(node, false)) if (exceedsDepth(child, depth + 1)) return true;
   return false;
 }
 
@@ -644,5 +580,4 @@ function optimizeRoot(ast, physical, options) {
 
 export function optimizeAstLogical(ast, options = {}) { return optimizeRoot(ast, false, options); }
 export function optimizeAstInMemory(ast) { return optimizeRoot(ast, true, {}); }
-export function optimizeAst(ast) { return optimizeAstInMemory(ast); }
 export { PIPELINE_OPS, unwindPipeline, buildPipeline };

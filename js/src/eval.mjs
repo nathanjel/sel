@@ -7,9 +7,8 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare, compareText, encodeUtf8 } from './utf8.mjs';
-import { cpLength, checkText, checkCollection, MAX_TEXT_LEN } from './budget.mjs';
+import { cpLength, checkText, checkCollection, MAX_TEXT_LEN, checkSizedInt, MAX_SCALE, MAX_POWER } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
-import { checkSizedInt, MAX_SCALE, MAX_POWER } from './builtins/number.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.
@@ -103,7 +102,7 @@ export class Args {
     if (!D.isInteger(d)) {
       fail('E_NOT_INT', `${this.name} argument ${i + 1} must be a whole number`, this.posOf(i));
     }
-    return D.toSafeInt(d);
+    return D.truncToNumber(d);
   }
 
   nonNegInt(i) {
@@ -122,11 +121,6 @@ export class Args {
       fail('E_EXPECT_SYMBOL', `${this.name} argument ${i + 1} must be a plain name`, n.pos);
     }
     return n.name;
-  }
-
-  isSymbol(i) {
-    const n = this.at(i);
-    return n.t === 'var' && !n.grouped;
   }
 }
 
@@ -158,7 +152,7 @@ const DEC_ONE = { neg: false, digits: 1n, scale: 0 };
 // where the plain tree reads it when the operator runs (SPEC 3.4).
 const asNum = (x, pos) => (x instanceof Value ? x.asDecimal(pos) : x);
 
-export function evalMathPlan(plan, ctx) {
+function evalMathPlan(plan, ctx) {
   const scratchpad = new Array(plan.scratchpadSize);
   for (let i = 0; i < plan.steps.length; i++) {
     const step = plan.steps[i];
@@ -206,7 +200,7 @@ export function evalMathPlan(plan, ctx) {
       case OpCode.ABS:
         scratchpad[step.dst] = D.abs(asNum(scratchpad[step.src1], step.p1));
         break;
-      case OpCode.ABS_IDENTITY:
+      case OpCode.COERCE:
         scratchpad[step.dst] = asNum(scratchpad[step.src1], step.p1);
         break;
       case OpCode.SIGN: {
@@ -247,7 +241,7 @@ export function evalMathPlan(plan, ctx) {
       }
     }
   }
-  // A slot a step computed is a decimal the guard has already passed (JS-P24); anything
+  // A slot a step computed is a decimal the guard has already passed; anything
   // else keeps the checked constructor, and its refusal.
   const out = scratchpad[plan.outputSlot];
   return out instanceof Value ? Value.num(out) : Value.numOwned(out);
@@ -367,7 +361,7 @@ function evalBinary(node, ctx) {
   const l = evalNode(node.l, ctx);
   const rn = node.r;
   // A numeric literal on the right of an arithmetic or numeric-comparison operator is
-  // read as its decimal: no Value is built for it (JS-P23). What evalNode would have
+  // read as its decimal: no Value is built for it. What evalNode would have
   // done for it is kept -- the depth check, after the left side ran -- and nothing
   // else can happen to a literal.
   const rdec = (rn.t === 'num' && rn.dec !== undefined && NUMERIC_BINARY.has(op)) ? rn.dec : null;
@@ -413,6 +407,11 @@ function evalBinary(node, ctx) {
 
 const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=']);
 
+// Each arithmetic operator's decimal operation: compound assignment and the
+// optimiser's constant folding dispatch through it. (evalBinary and the math
+// plan keep their own switch, on the hot path, over the same five.)
+export const ARITHMETIC = Object.freeze({ '+': D.add, '-': D.sub, '*': D.mul, '/': D.div, '%': D.mod });
+
 // The six comparisons, and nothing else.
 //
 // This switch had no default, so an operator it did not name fell off the end
@@ -421,7 +420,7 @@ const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', 
 // and reported nothing. Unreachable today, since the caller only reaches this
 // with the six, and that is the point of saying so out loud rather than
 // answering.
-function compareResult(op, c, pos) {
+export function compareResult(op, c, pos) {
   switch (op) {
     case '==': return c === 0;
     case '!=': return c !== 0;
@@ -504,12 +503,7 @@ function evalAssign(node, ctx) {
       value = concat(current, rhs, tp, vp, node.pos);
     } else {
       const a = current.asDecimal(tp), b = rhs.asDecimal(vp);
-      const r = binOp === '+' ? D.add(a, b, node.pos)
-        : binOp === '-' ? D.sub(a, b, node.pos)
-          : binOp === '*' ? D.mul(a, b, node.pos)
-            : binOp === '/' ? D.div(a, b, node.pos)
-              : D.mod(a, b, node.pos);
-      value = Value.numOwned(r);
+      value = Value.numOwned(ARITHMETIC[binOp](a, b, node.pos));
     }
   }
 

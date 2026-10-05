@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { compile, Value, SelError } from '../js/src/sel.mjs';
+import { compile, Value, SelError, registerFunction } from '../js/src/sel.mjs';
 import { Sql, Binding, SqlError } from '../js/src/sql/index.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,11 +63,20 @@ const j = JSON.stringify;
 const bad = [];
 let ok = 0, skipped = 0;
 const kinds = { pure_sql: 0, hybrid: 0, pure_memory: 0 };
-for (const c of spec.programs) {
-  for (const ctxSpec of spec.contexts) {
+// The corpus's `application` section (spec 8.1): programs that call the two
+// application functions it describes, run once over the relations plus its
+// `vars`, held to the same contract -- and so to the caller's context staying
+// unwritten however POKE is reached.
+registerFunction('POKE', 1, 1, (args) => { const v = args.val(0); v.set('k', Value.text('9')); return v; });
+registerFunction('HOSTF', 1, 1, (args) => args.val(0));
+const work = [];
+for (const c of spec.programs) for (const ctxSpec of spec.contexts) work.push([c, ctxSpec]);
+for (const c of spec.application?.programs ?? []) work.push([c, { name: 'application', vars: spec.application.vars }]);
+for (const [c, ctxSpec] of work) {
+  {
     if ((c.requires ?? []).some((v) => !(v in ctxSpec.vars))) { skipped++; continue; }
     const name = `${c.name} [${ctxSpec.name}]`;
-    const fresh = () => ({ ...clone(base), ...ctxSpec.vars });
+    const fresh = () => ({ ...clone(base), ...clone(ctxSpec.vars) });
     const program = compile(c.sel);
     const direct = outcome(() => program.run(fresh()));
 
@@ -82,6 +91,7 @@ for (const c of spec.programs) {
         const got = column(direct[1].toNative(), f);
         if (j(got) !== j(want)) guard = `run() column ${f} is ${j(got)}, the corpus says ${j(want)}`;
       }
+      if ('value' in exp && j(norm(direct[1].toNative())) !== j(exp.value)) guard = `run() is ${j(norm(direct[1].toNative()))}, the corpus says ${j(exp.value)}`;
       if (exp.keys && j(direct[1].keys().map(String)) !== j(exp.keys)) guard = `run() keys are ${j(direct[1].keys())}, the corpus says ${j(exp.keys)}`;
     }
     if (guard) { bad.push([name, '', `CORPUS: ${guard}`]); continue; }

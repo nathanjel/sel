@@ -3,13 +3,12 @@
 
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
-import { encodeUtf8, bytesToHex, bytesEqual } from './utf8.mjs';
+import { encodeUtf8, bytesToHex, bytesEqual, ANY_SURROGATE } from './utf8.mjs';
 
 export const NONE = 'NONE';
 
 // An unpaired surrogate is not text (spec §8): JS strings are UTF-16, so the
 // check a UTF-8 host makes on bytes is made here on code units.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 function checkText(s) {
   if (typeof s === 'string' && ANY_SURROGATE.test(s) && LONE_SURROGATE.test(s)) {
@@ -19,7 +18,7 @@ function checkText(s) {
 
 // A constructor called with something it does not take (spec §8): E_BAD_ARG,
 // a SelError like every other boundary failure, never the host's own
-// exception (review 2026-09-28 HOST-20).
+// exception.
 function badArg(message) { fail('E_BAD_ARG', message, null); }
 
 function checkKey(key) {
@@ -32,7 +31,7 @@ function checkValue(v) {
 }
 
 // Keys and values side by side, as entries: the counts match, every key is
-// text and every value a Value (spec §8; review 2026-09-28 HOST-12, HOST-17).
+// text and every value a Value (spec §8).
 function pairUp(keys, values) {
   if (!Array.isArray(keys) || !Array.isArray(values)) badArg('keys and values must be arrays');
   if (keys.length !== values.length) {
@@ -43,7 +42,7 @@ function pairUp(keys, values) {
 
 // The decimal form Value.num takes besides a string: well formed, within the
 // digit caps, and canonical -- a negative zero loses its sign, as "-0" does
-// through D.parse (spec §8; review 2026-09-28 HOST-13, HOST-14).
+// through D.parse (spec §8).
 //
 // The Value keeps its own copy: it held the caller's object, so changing `digits`
 // or `scale` afterwards changed the Value (spec §8, "the boundary copies"). And
@@ -59,12 +58,6 @@ function checkDecimal(d) {
   D.guard(d, null);
   return { neg: d.digits === 0n ? false : d.neg, digits: d.digits, scale: d.scale };
 }
-
-let INT_CAP = null;
-// Anything below 10^18 is under the digit cap whatever the cap is (it is at least 18), so the
-// first BigInt a program ever passes does not have to build 10^1000000 to be waved through.
-const SMALL_INT = 10n ** 18n;
-function intCap() { return INT_CAP ??= 10n ** BigInt(D.MAX_INT_DIGITS); }
 
 export const TEXT = 'TEXT';
 export const BIN = 'BIN';
@@ -88,7 +81,7 @@ const SHAPE_CACHE_ENTRIES = 256;
 // Bounds on what the cache holds. The number of shapes is bounded, and so is what
 // they weigh in all: a schema of a few hundred columns is ordinary (a joined row has
 // twice its sides' columns), and refusing to intern it made every row of a join carry
-// a shape of its own, with its own plan -- a 36x cliff at 260 fields (JS-P3). A single
+// a shape of its own, with its own plan -- a 36x cliff at 260 fields. A single
 // shape too wide to be a schema at all (more than SHAPE_CACHE_MAX_KEYS keys) is still
 // not interned.
 const SHAPE_CACHE_MAX_KEYS = 4096;
@@ -96,15 +89,13 @@ const SHAPE_CACHE_MAX_CHARS = 262144;
 const SHAPE_CACHE_TOTAL_CHARS = 4194304;
 let shapeCacheChars = 0;
 
-// The one shape object for these keys (interned while the cache holds it), so
-// rows built by different calls share their shape and shape-keyed caches hit.
-export function internRecordShape(keys) { return recordShape(keys); }
-
 // The shape last asked for by key list: a run of rows with the same keys matches it by
-// length and pointer compares, without building the JSON signature (JS-P9).
+// length and pointer compares, without building the JSON signature.
 let lastKeyedShape = null;
 
-function recordShape(keys) {
+// The one shape object for these keys (interned while the cache holds it), so
+// rows built by different calls share their shape and shape-keyed caches hit.
+export function recordShape(keys) {
   const last = lastKeyedShape;
   if (last !== null && last.keys.length === keys.length) {
     let i = 0;
@@ -146,18 +137,18 @@ function listIndex(key, length) {
   return n <= length ? n - 1 : -1;
 }
 
+// The shape of the last call, with keys already known to be distinct: rows built one after
+// another by the same expression have the same keys in the same order, so comparing the
+// keys to this shape (length and one pointer compare each) replaces the duplicate check
+// and the JSON signature (2.4 us per row before, 0.6 after).
+let lastUniqueShape = null;
+
 // The shared half of fromEntries and fromEntriesPreserveDuplicates: split the
 // pairs into key and value arrays and, when every key is distinct, the packed
 // record they shape. Null means a duplicate key, and the two callers then
 // diverge on purpose -- ordinary records overwrite, joined rows keep the
 // ordered duplicates -- so that fallback is theirs, not this helper's. Measured
-// against the inlined loop the call boundary costs nothing (WL-001 SEL-0016).
-// The shape of the last call, with keys already known to be distinct: rows built one after
-// another by the same expression have the same keys in the same order, so comparing the
-// keys to this shape (length and one pointer compare each) replaces the duplicate check
-// and the JSON signature (JS-P9; 2.4 us per row before, 0.6 after).
-let lastUniqueShape = null;
-
+// against the inlined loop the call boundary costs nothing.
 function shapedFromUniqueEntries(entries) {
   const n = entries.length;
   const values = new Array(n);
@@ -245,8 +236,7 @@ export class Value {
   static null() { return new Value(NONE, null, false); }
   // Host code is the one place bad data can enter (spec §8): every text is
   // checked for unpaired surrogates, and bytes are whole numbers 0..255, copied
-  // so the caller's array can change afterwards (review 2026-09-25 HOST-02,
-  // HOST-04, HOST-05). binOwned is the builtins' constructor for an array they
+  // so the caller's array can change afterwards. binOwned is the builtins' constructor for an array they
   // just made.
   static text(s) {
     if (typeof s !== 'string') badArg(`text must be a string, not ${typeof s}`);
@@ -256,7 +246,7 @@ export class Value {
   // The interpreter's constructor for text it has just made from Values that were
   // already validated (a concatenation, a slice by code points, a join): no check.
   // `Value.text` scans every string for surrogates, and on a long V8 rope that scan
-  // flattens the rope, so a loop that appends to one string went quadratic (JS-P1).
+  // flattens the rope, so a loop that appends to one string went quadratic.
   // Never for host input, and never for output of an engine that can split a pair.
   static textOwned(s) { return new Value(TEXT, s); }
   static bin(b) {
@@ -301,7 +291,7 @@ export class Value {
 
   // A list's keys are kept: "1".."n" is a plain list, anything else the list
   // with preserved keys FILTER makes. They must be distinct (spec §8; it used
-  // to renumber them, review 2026-09-28 HOST-17).
+  // to renumber them).
   static fromEntries(entries, isList = false) {
     if (!Array.isArray(entries)) badArg('entries must be an array of [key, value] pairs');
     const checked = entries.map((entry) => {
@@ -346,9 +336,6 @@ export class Value {
     return v;
   }
 
-  // A string is canonicalised and validated: "007" becomes "7", and anything
-  // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
-  // later somewhere else. Internal callers pass a decimal record, not a string.
   // A whole number 0..255 (a byte) without a BigInt: the 256 decimals are built
   // once and shared, the way cloneAt already shares a decimal between copies --
   // nothing writes into a decimal record.
@@ -359,6 +346,9 @@ export class Value {
     return v;
   }
 
+  // A string is canonicalised and validated: "007" becomes "7", and anything
+  // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
+  // later somewhere else. Internal callers pass a decimal record, not a string.
   static num(d) {
     let parsed = d;
     if (typeof d === 'string') {
@@ -371,7 +361,7 @@ export class Value {
     v._decimal = parsed;
     return v;
   }
-  // A number from a decimal the evaluator's own arithmetic just produced (JS-P24):
+  // A number from a decimal the evaluator's own arithmetic just produced:
   // D.add, D.mul and the rest have already run the digit-cap guard, so the checked
   // constructor's second validation and copy are skipped. A host's decimal never
   // comes through here (Value.num checks it). Negative zero is still normalised.
@@ -384,12 +374,11 @@ export class Value {
     if (typeof n === 'number' ? !Number.isInteger(n) : typeof n !== 'bigint') {
       badArg(`not a whole number: ${String(n)}`);
     }
-    // A native integer obeys the digit cap like the same digits in source
-    // (spec §8, §6.4; review 2026-09-25 HOST-06).
-    if (typeof n === 'bigint' && (n < 0n ? -n : n) >= SMALL_INT && (n < 0n ? -n : n) >= intCap()) {
-      fail('E_RANGE', `number has more than ${D.MAX_INT_DIGITS} integer digits`, null);
-    }
     const d = D.fromInt(n);
+    // A native integer obeys the digit cap like the same digits in source
+    // (spec §8, §6.4), through the decimal core's own guard (a double cannot
+    // reach the cap: its largest whole value has 309 digits).
+    if (typeof n === 'bigint') D.guard(d, null);
     const v = new Value(TEXT, null);
     v._decimal = d;
     return v;
@@ -557,7 +546,7 @@ export class Value {
 
   // What asBytes would encode, without encoding it: the string for TEXT, the bytes for BIN,
   // the same refusal for anything else. For comparisons, which can compare two strings
-  // without building either one's UTF-8 (JS-P8).
+  // without building either one's UTF-8.
   asTextOrBytes(pos) {
     const v = this.scalarSource(pos);
     if (v.kind === BIN || v.kind === TEXT) return v.scalar;
@@ -769,8 +758,8 @@ export class Value {
     if (x === null || x === undefined) return Value.null();
     if (typeof x === 'boolean') return Value.bool(x);
     if (typeof x === 'number') return Value.text(nativeNumberToDecimal(x));
-    // Through Value.int, which holds the integer digit cap (review
-    // 2026-09-28 HOST-11): the text of the bigint skipped it.
+    // Through Value.int, which holds the integer digit cap: the text of the
+    // bigint skipped it.
     if (typeof x === 'bigint') return Value.int(x);
     if (typeof x === 'string') return Value.text(x);
     if (x instanceof Uint8Array) return Value.bin(x);
@@ -804,7 +793,7 @@ export class Value {
       this.kind === BOOL ? this.scalar : null;
     if (this.size() === 0) return scalar === null || this.kind !== BIN ? scalar : scalar.slice();
     // Every key an own property, "__proto__" included: `obj[k] = v` would set
-    // the prototype instead (review 2026-09-25 HOST-01).
+    // the prototype instead.
     //
     // A JS object enumerates array-index keys ("0", "2", "10") first and in
     // ascending order whatever order they were added in, so a record whose keys
@@ -837,11 +826,18 @@ export class Value {
   }
 }
 
-// Structural hashing is only a prefilter: callers must still use eql() inside
-// the bucket because collisions are allowed.  It deliberately walks the flat
-// storage directly so DEDUPE does not serialize every row just to find a bucket.
+// What an aggregate iterates (spec §7.3): a value's [key, child] pairs. A
+// scalar with no children behaves as a one-element list containing itself,
+// consistent with scalar context (§3.2). A NONE with no children is genuinely
+// empty — that is what FILTER returns when nothing matched, and ALL over it must
+// be TRUE rather than a scalar-context failure.
+export function elements(value) {
+  if (value.size() > 0) return value.entries();
+  return value.kind === NONE ? [] : [['1', value]];
+}
+
 // The hash of the key a packed list's element i has ("1", "2", ...), so a packed list
-// hashes like its keyed twin without building the key text per element per call (JS-P28).
+// hashes like its keyed twin without building the key text per element per call.
 const LIST_KEY_HASHES = [];
 function listKeyHash(i) {
   if (i >= 65536) return stringHash(String(i + 1));
@@ -850,10 +846,12 @@ function listKeyHash(i) {
   return h;
 }
 
+// Structural hashing is only a prefilter: callers must still use eql() inside
+// the bucket because collisions are allowed.  It deliberately walks the flat
+// storage directly so DEDUPE does not serialize every row just to find a bucket.
 export function structuralHash(value, depth = 1) {
   // A value nested past the cap cannot be hashed any more than dumped (spec
-  // §6.4): answering 0 let DEDUPE pass one it could not compare (review
-  // 2026-09-25 HOST-07).
+  // §6.4): answering 0 let DEDUPE pass one it could not compare.
   if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
   let h = value.kind === TEXT ? 17 : value.kind === BIN ? 31 : value.kind === BOOL ? 47 : 61;
   if (value.kind === TEXT) h = mixHash(h, stringHash(value.scalar));
@@ -884,7 +882,7 @@ export function structuralHash(value, depth = 1) {
 
 // Per process, so a hash cannot be aimed at in advance: FNV-1a is invertible, and
 // a few hundred kilobytes of chosen strings shared one hash and made every
-// DEDUPE/BUCKET insert scan the whole bucket (JS-C14). Callers only ever use the
+// DEDUPE/BUCKET insert scan the whole bucket. Callers only ever use the
 // hash to pick a bucket and still compare with eql, so a per-run value changes
 // no answer -- and a value with no children never reaches the hash at all
 // (scalarKey below).
@@ -921,11 +919,7 @@ function mixHash(a, b) {
 }
 
 // JS numbers are doubles and SEL has none, so the host boundary is where the
-// conversion has to be pinned down. Integers pass through exactly; anything with
-// a fraction goes via its shortest round-trip form, which is what the author
-// literally wrote in source.
-//
-// Only whole numbers: spec §8 lists a float among the things a constructor does
+// conversion has to be pinned down. Only whole numbers: spec §8 lists a float among the things a constructor does
 // not take, and PHP and Python refuse one. JS cannot tell `3` from `3.0`, so a
 // whole-valued double is accepted; a fraction is not, because 0.1 + 0.2 is
 // 0.30000000000000004 and turning that into a decimal is the silent guess §8

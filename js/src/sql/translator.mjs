@@ -8,23 +8,23 @@
 // `Fragment.asValue()` is called, so a kind failure still escapes with no partial
 // output.
 
-import { toCodePoints } from '../utf8.mjs';
+import { toCodePoints, cpUtf8Length } from '../utf8.mjs';
 import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
-import { asciiUpper } from '../lexer.mjs';
-import { bindingForm, hostArity } from '../registry.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
+import { bindingForm, hostArity, lookup, argRoles } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
 import * as map from './map.mjs';
 import * as normalise from './normalise.mjs';
 import { Binder } from './binder.mjs';
-import { Emit } from './emit.mjs';
+import { Emit, appendSql } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
 import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
-import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS } from '../optimizer.mjs';
+import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS, unwindPipeline } from '../optimizer.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -44,13 +44,13 @@ function listKey(k) {
   return LIST_KEY.test(k) ? Number(k) : null;
 }
 
-// Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 // The largest LIMIT/OFFSET every dialect's server accepts.
 const INT64_MAX = 9223372036854775807n;
 
 // Above this many operands an unrolled associative fold is a balanced tree.
 const FOLD_LEFT = 256;
 
+// Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
 // The optimiser's list, not a second copy: one vocabulary of pipeline operators
 // per host, or the planner and the translator drift apart.
@@ -68,8 +68,7 @@ const AGG_FOLD = { ALL: 'AND', ANY: 'OR', SUM: '+' };
 // new step is covered by being one. Every one is already refused by the
 // dialect documents; the point of the list is that source() used to reach
 // its scalar fallback without ever consulting the map, so COUNT and HAS
-// folded to 0 and FALSE instead (review 2026-09-15 finding X: COUNT(LIST(1,
-// 2, 3)) was 0).
+// folded to 0 and FALSE instead (COUNT(LIST(1, 2, 3)) was 0).
 const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
   ...OPTIMIZER_PIPELINE_OPS];
 
@@ -119,6 +118,22 @@ function litNode(t, v, pos) {
   return { t, v, pos };
 }
 
+// The parser held every call to its arity (E_ARITY at compile time, from the
+// manifest), so the pipeline arms below decode only the counts a form takes. A
+// step with any other count was built by hand, outside parse(): a bug in its
+// builder, and an Error rather than a refusal that tryTranslate would swallow.
+function assertParsedArity(step) {
+  const spec = lookup(step.name);
+  const n = step.args.length;
+  if (!spec || n < spec.min || n > spec.max || (spec.arityError && spec.arityError(n) !== null)) {
+    throw new Error(`malformed parse tree: ${step.name} with ${n} arguments`);
+  }
+}
+
+// The element a frame was pushed for and its key binder, for filterScope:
+// frames are Maps of binders, and this travels beside them, not inside.
+const ELEMENT_SCOPES = new WeakMap();
+
 export class Translator {
   constructor(dialect, bindings, options = null) {
     this.dialect = dialect;
@@ -141,7 +156,6 @@ export class Translator {
     // Nodes dispatched so far, against MAX_SQL_NODES (E_SQL_SIZE).
     this.nodeCount = 0;
     this.statementPlan = null;
-    this.inWhere = false;
     this.subqueryCounter = 0;
   }
 
@@ -166,7 +180,7 @@ export class Translator {
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
     // Stage 1 and nothing else: the translator renders the tree it is handed.
     // Two hosts ran the logical optimiser here and three did not, so the same
-    // program rendered different SQL per host (review 2026-09-15 finding C).
+    // program rendered different SQL per host.
     // The planner is the one place that optimises before translating, and
     // it does so in every host.
     const norm = normalise.run(ast, this.constNames, this.constCtx);
@@ -215,7 +229,7 @@ export class Translator {
     let bytes = 0;
     let cut = '';
     for (const ch of name) {
-      const n = Buffer.byteLength(ch);
+      const n = cpUtf8Length(ch.codePointAt(0));
       if (bytes + n > 63) break;
       bytes += n;
       cut += ch;
@@ -253,6 +267,20 @@ export class Translator {
 
   // --- the walk ------------------------------------------------------------
 
+  // The size of what has been walked, charged as it is walked: a subtree is
+  // charged again for every occurrence (an inlined helper read, an unrolled
+  // element), so a program that expands to millions of nodes is refused after
+  // MAX_SQL_NODES of work and not after rendering all of them (§7.4).
+  charge(nodes, pos) {
+    this.nodeCount += nodes;
+    if (this.nodeCount > MAX_SQL_NODES) {
+      refuse('E_SQL_SIZE',
+        `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
+        + 'read and every unrolled element is counted, and the translation stops '
+        + 'there', pos);
+    }
+  }
+
   // Ask SEL whether the expression is valid before asking the map whether it is
   // translatable, wherever the arguments are literals and SEL can answer.
   //
@@ -279,20 +307,6 @@ export class Translator {
   // PHP rendered it, and Python happened to die of its own stack at around 510
   // terms, which is an implementation accident rather than a decision. The guard
   // reads eval's MAX_DEPTH rather than repeating 200, so the two cannot drift.
-  // The size of what has been walked, charged as it is walked: a subtree is
-  // charged again for every occurrence (an inlined helper read, an unrolled
-  // element), so a program that expands to millions of nodes is refused after
-  // MAX_SQL_NODES of work and not after rendering all of them (§7.4).
-  charge(nodes, pos) {
-    this.nodeCount += nodes;
-    if (this.nodeCount > MAX_SQL_NODES) {
-      refuse('E_SQL_SIZE',
-        `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
-        + 'read and every unrolled element is counted, and the translation stops '
-        + 'there', pos);
-    }
-  }
-
   node(n) {
     this.charge(1, n.pos);
     this.depth += 1;
@@ -404,8 +418,7 @@ export class Translator {
   // appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
   // collated the way the `$` family compares text, because the evaluator
   // groups by the key's exact bytes and a case-insensitive collation would
-  // merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
-  // default merged 'A' and 'a'). The result is marked exact so a comparison
+  // merge groups it keeps apart (MariaDB's default merged 'A' and 'a'). The result is marked exact so a comparison
   // over it does not wrap it a second time -- MySQL's only_full_group_by
   // accepts a projected or compared key only as the identical expression.
   groupKey(src, gb, projected = false) {
@@ -463,7 +476,7 @@ export class Translator {
   }
 
   collatedKey(frag) {
-    if (frag.kind !== 'TEXT' || frag.exact) return frag;
+    if (frag.kind !== 'TEXT' || frag.exactCollation) return frag;
     const wrapped = this.emit.textOperand(frag);
     return new Fragment(wrapped.parts, 'TEXT', this.dialect, wrapped.params, wrapped.paramKinds,
       wrapped.caveats, true, false, false);
@@ -717,7 +730,7 @@ export class Translator {
   }
 
   // An operand that is a constant TEXT holding a number, in an arithmetic position, is
-  // that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+  // that number: SEL computes with it exactly, and MariaDB and MySQL would
   // read the quoted string as a DOUBLE. It is translated as the numeric literal it
   // stands for. The text was translated first (its SQL kind is only known then), so
   // the slots it bound are taken back, or `params` mode would report a value bound
@@ -805,8 +818,8 @@ export class Translator {
       // MySQL whenever either side was not valid UTF-8, where SEL answers FALSE.
       // The corpus had exactly one BIN value, 7ac3a9, which is valid UTF-8 and
       // could not show it.
-      const lExact = Boolean(l.exact);
-      const rExact = Boolean(r.exact);
+      const lExact = Boolean(l.exactCollation);
+      const rExact = Boolean(r.exactCollation);
       const lLit = (n.l.t === 'text');
       const rLit = (n.r.t === 'text');
       if ((lExact && (rExact || rLit)) || (rExact && lLit)) {
@@ -950,7 +963,7 @@ export class Translator {
       // spliced N times: splicing one Fragment twice puts the same slot number in
       // the output twice while `params` holds one entry.
       const raw = this.node(n.l);
-      const isExact = Boolean(raw.exact);
+      const isExact = Boolean(raw.exactCollation);
       const needle = isExact ? raw : this.emit.textOperand(raw);
       const f = this.node(e);
       if (f.kind === 'LIST') {
@@ -1003,8 +1016,8 @@ export class Translator {
     // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
     // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the GROUP
     // binder alone: over a relation row, COUNT(_) is the row's number of
-    // fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
-    // MIN or MAX (finding J). The body binds the member row, as the
+    // fields in SEL, and SEL has no per-group
+    // MIN or MAX. The body binds the member row, as the
     // evaluator's walk does: `_` for the two-argument form, the name given
     // for the three-argument one.
     if (this.statementPlan !== null) {
@@ -1015,14 +1028,14 @@ export class Translator {
           return new Fragment(['COUNT(*)'], 'NUM', this.dialect);
         }
         if (name === 'SUM' && n.args.length >= 2) {
-          const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
-          const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
+          // A binder slot that is not a bare name is refused, as everywhere:
+          // SEL raises E_EXPECT_SYMBOL for it.
+          const [binderName, bodyNode] = aggShape(n);
           const src = { relation: group.payload, filters: [], pos: n.pos };
           // The body keeps its parameter slots: its parts are strings AND slot
           // numbers, and joining them as text wrote a slot number where the
-          // literal was (PHP-C7: `SUM(x * 2)` became `SUM(x * 1)`).
-          let inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
-            () => this.node(bodyNode));
+          // literal was (`SUM(x * 2)` became `SUM(x * 1)`).
+          let inner = this.withRow(src, binderName, () => this.node(bodyNode));
           this.requireNumericConstant(bodyNode);
           inner = this.requireNum(inner, bodyNode.pos, 'SUM');
           inner = this.sumBody(inner, bodyNode, true);
@@ -1056,7 +1069,7 @@ export class Translator {
     for (let i = 0; i < n.args.length; i++) {
       const arg = n.args[i];
       // MIN and MAX compare their arguments as numbers: a numeric text constant is the
-      // number, as in arithmetic (PHP-C33).
+      // number, as in arithmetic.
       let f = name === 'MIN' || name === 'MAX' ? this.arithmeticOperand(arg) : this.node(arg);
       if (f.kind === 'LIST') {
         refuse('E_SQL_SHAPE',
@@ -1078,7 +1091,7 @@ export class Translator {
   // A binder position holds a name (the manifest's 'binder' scope). Anything else
   // is refused here, at that expression, whatever the call is later refused for:
   // the statement forms reached it through a nil in some hosts and a different
-  // code in others (GO-C2).
+  // code in others.
   requireNamedBinders(n) {
     const form = bindingForm(n.name, n.args, n.spec);
     if (form === null) return;
@@ -1286,10 +1299,11 @@ export class Translator {
     // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An empty
     // flag string is dropped so the two-argument template applies.
     const text = String(flags.v);
-    // Spelled as the two strings that pass rather than as a case fold: PHP's
-    // strtolower is ASCII-only and JS's toLowerCase is not ("İ".toLowerCase() is
-    // two code points), and `!== 'i'` admits exactly "i" and "I". Naming them is
-    // byte-exact and needs no asciiLower.
+    // Spelled as literal strings rather than a case fold: JS's toLowerCase is
+    // not ASCII-only ("İ".toLowerCase() is two code points). NB this admits "I"
+    // as well as "i", and the evaluator refuses "I" with E_BAD_ARG (conformance
+    // re.flag.uppercase-i-is-not-i): a column-subject call with "I" translates
+    // where SEL raises. That is a known disagreement, not a decision.
     if (text !== '' && text !== 'i' && text !== 'I') {
       refuse('E_SQL_UNSUPPORTED',
         `${n.name} accepts only the i flag here, and SEL accepts only i at all; `
@@ -1662,7 +1676,7 @@ export class Translator {
     }
     if (v.isNone()) {
       // A NULL element: SEL's asText would raise E_NULL, a SelError that
-      // tryTranslate does not catch (JS-C54b). It is a binding problem, and a
+      // tryTranslate does not catch. It is a binding problem, and a
       // refusal.
       refuse('E_SQL_BINDING',
         'a value binding holds a NULL element, which has no SQL literal', pos);
@@ -1741,7 +1755,7 @@ export class Translator {
     ]);
     // What a FILTER predicate binds is the predicate's own: aggBody renders each
     // one in a frame of its own, from this (see filterScope).
-    frame.elemScope = { target: elem, key: keyBinder };
+    ELEMENT_SCOPES.set(frame, { target: elem, key: keyBinder });
     this.frames.push(frame);
     try {
       return render();
@@ -1756,7 +1770,7 @@ export class Translator {
   // it (spec §7.3; SEL raises E_UNDEF_VAR there, this raises E_SQL_UNBOUND).
   filterScope(f, render) {
     const top = this.frames[this.frames.length - 1];
-    const es = top === undefined ? undefined : top.elemScope;
+    const es = top === undefined ? undefined : ELEMENT_SCOPES.get(top);
     if (es === undefined) return render();
     const saved = this.frames;
     this.frames = saved.slice(0, -1);
@@ -1810,13 +1824,13 @@ export class Translator {
         + 'and unkeyed unless the schema says otherwise, and guessing which column '
         + 'is the key is not something this layer does')],
     ]);
-    frame.elemScope = { target: row, key: frame.get('_K') };
+    ELEMENT_SCOPES.set(frame, { target: row, key: frame.get('_K') });
     // After a LINK only the row is in scope (spec §7.4): the binders are scoped
     // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
     // a later step -- the joined row carries them as keys, not as names. This
     // frame used to bind `_1`, `_2`, the relations' names and the right
     // binder for every later step, so `FILTER(C["id"] > 1)` translated where
-    // `run()` fails (review 2026-09-15 finding W2).
+    // `run()` fails.
     this.frames.push(frame);
     try {
       return render();
@@ -1827,9 +1841,9 @@ export class Translator {
 
   // A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
   // right, plus the names the LINK gives them (spec §7.4) and nothing else:
-  // a relation's name outside those, its alias or its table is not a binder
-  // (review 2026-09-28 SQL-07), and the left element of a later LINK is the
-  // joined row so far, not the source (SQL-05).
+  // a relation's name outside those, its alias or its table is not a binder,
+  // and the left element of a later LINK is the joined row so far, not the
+  // source.
   withJoinBinders(plan, join, render) {
     const step = this.joinRows(plan).steps[plan.joins.indexOf(join)];
     const left = Binder.row(plan.sourceRelation);
@@ -2321,14 +2335,7 @@ export class Translator {
   fillNamed(tpl, slotMap, pos) {
     const parts = [];
 
-    const push = (s) => {
-      if (s === '') return;
-      if (parts.length && typeof parts[parts.length - 1] === 'string') {
-        parts[parts.length - 1] += s;
-      } else {
-        parts.push(s);
-      }
-    };
+    const push = (s) => appendSql(parts, s);
 
     let i = 0;
     const nTpl = tpl.length;
@@ -2403,7 +2410,7 @@ export class Translator {
   // over the derived table is refused where `run()` raises. `SELECT o.*` was
   // the row before: the left table's columns, which a continuation read where
   // SEL has no key, and which made a derived table over a join name columns
-  // it did not have (finding Y, lanes).
+  // it did not have.
   joinedRowFields(plan) {
     // A field an unmatched LINK_LEFT row lacks is not a column of the row.
     return [...this.joinRows(plan).row.promoted.entries()].filter(([, f]) => !f.optional)
@@ -2486,8 +2493,7 @@ export class Translator {
   // its members, which only COUNT and SUM read (call()) -- and `_K` is the
   // group key, when there is one key to be it. This is the one place `_K`
   // is a group key: before the bucket it is a source row's position, after
-  // the projection the projected row's, and SQL has neither (review
-  // 2026-09-15 finding K).
+  // the projection the projected row's, and SQL has neither.
   withGroup(src, binderName, render) {
     const groupBy = this.statementPlan?.groupBy ?? null;
     const kBinder = groupBy !== null && groupBy.length === 1
@@ -2579,13 +2585,7 @@ export class Translator {
     if (constants.identityLossBeforeGrouping(n)) {
       refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', n.pos);
     }
-    const steps = [];
-    let curr = n;
-    while (curr.t === 'call' && PIPELINE_OPS.has(curr.name)) {
-      if (!curr.args || curr.args.length === 0) break;
-      steps.push(curr);
-      curr = curr.args[0];
-    }
+    const { source: curr, steps } = unwindPipeline(n);
 
     if (curr.t !== 'var') return null;
 
@@ -2603,11 +2603,9 @@ export class Translator {
       ? String(b.correlate.raw)
       : (typeof b.correlate === 'string' ? b.correlate : null);
 
-    steps.reverse();
-
     for (const step of steps) {
       const name = step.name;
-      const args = step.args;
+      assertParsedArity(step);
 
       // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
       // projection; anything else spends the members. See RelationalPlan.
@@ -2617,373 +2615,22 @@ export class Translator {
       if (plan.bucket === 'open' && name !== 'FILTER' && name !== 'MAP') plan.bucket = 'sealed';
 
       switch (name) {
-        case 'FILTER': {
-          // A FILTER over a bare bucket whose members are spent: SQL has
-          // only the keys left, and SEL's value is still a map of groups.
-          if (plan.bucket === 'sealed') {
-            refuse('E_SQL_SHAPE', 'a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
-          }
-          // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
-          // survived them, grouped or not -- SEL applies the TAKE first, and
-          // a HAVING would run before it. Otherwise a FILTER directly after
-          // a grouping is its HAVING, and an ORDER BY in between changes
-          // nothing (HAVING then ORDER BY is sort-then-filter's rows).
-          // A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
-          // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
-          // beside it and the rows would come back in no order (a filter commutes with a
-          // stable sort, so the rows and their order are the same).
-          plan = this.ensureDerived(plan, (candidate) =>
-            candidate.limit !== null || candidate.offset !== null
-              || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-                || candidate.distinct)));
-          let binder;
-          let pred;
-          if (args.length === 2) {
-            binder = '_';
-            pred = args[1];
-          } else if (args.length === 3) {
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            pred = args[2];
-          } else {
-            refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos);
-          }
-          if (plan.groupBy !== null) {
-            plan.having.push({ binder, node: pred, pos: step.pos, overGroups });
-          } else {
-            plan.filters.push({ binder, node: pred, pos: step.pos });
-          }
-          break;
-        }
-
-        case 'BUCKET': {
-          // A bucket over a bare bucket's rows: SQL has only the keys (open)
-          // or has spent the members (sealed); either way SEL's value is a
-          // map of groups and re-grouping it is a different program.
-          if (plan.bucket !== null) {
-            refuse('E_SQL_SHAPE', 'a BUCKET over buckets: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
-          }
-          // Groups appear in order of their first member, and the members were
-          // sorted: a GROUP BY returns its groups in no order at all, and the
-          // ORDER BY beneath it is dropped by the servers. The sort cannot
-          // survive, so the plan is refused here and a hybrid plan keeps the
-          // sorted rows in SQL and groups them in memory (JS-C59).
-          if (plan.orderBy.length > 0 || plan.orderDropped) {
-            refuse('E_SQL_SHAPE',
-              'a BUCKET over sorted rows would return its groups in no order, where SEL '
-              + 'has them in the order of their first member in the sorted list', step.pos);
-          }
-          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
-          let binder;
-          let keyNode;
-          let aggNode = null;
-          if (args.length === 2) {
-            binder = '_';
-            keyNode = args[1];
-          } else if (args.length === 3) {
-            binder = '_';
-            keyNode = args[1];
-            aggNode = args[2];
-          } else if (args.length === 4) {
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            keyNode = args[2];
-            aggNode = args[3];
-          } else {
-            refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos);
-          }
-
-          // A bare bucket's key is an index key (spec §7.4): one text or
-          // number. A list or record key is refused by the evaluator, and
-          // the boolean and binary kinds are refused below, once known.
-          const severalKeys = (keyNode.t === 'call' && (keyNode.name === 'LIST' || keyNode.name === 'RECORD'))
-            || keyNode.t === 'list';
-          if (aggNode === null && severalKeys) {
-            refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', keyNode.pos);
-          }
-          const groupBy = [];
-          if ((keyNode.t === 'call' && keyNode.name === 'LIST') || keyNode.t === 'list') {
-            const listItems = keyNode.t === 'list' ? keyNode.items : keyNode.args;
-            for (const kArg of listItems) {
-              groupBy.push({
-                alias: null,
-                binder,
-                node: kArg,
-                pos: kArg.pos ?? step.pos,
-              });
-            }
-          } else if (keyNode.t === 'call' && keyNode.name === 'RECORD') {
-            for (const [alias, value] of Translator.recordFields(keyNode, this)) {
-              groupBy.push({ alias, binder, node: value, pos: value.pos ?? step.pos });
-            }
-          } else {
-            groupBy.push({
-              alias: null,
-              binder,
-              node: keyNode,
-              pos: keyNode.pos ?? step.pos,
-            });
-          }
-          plan.groupBy = groupBy;
-          plan.bucket = aggNode === null ? 'open' : null;
-          plan.bareKey = aggNode === null;
-          this.bucketProjection(plan, binder, aggNode);
-          plan.selectCols = null;
-          break;
-        }
-
-        case 'SELECT_COLS': {
-          // The same rule as a MAP's: an ORDER BY alone does not wrap (a
-          // derived table is where MariaDB drops an ORDER BY with no LIMIT
-          // beside it), everything else above the rows does. Four hosts used
-          // the rows-above test here and wrapped a sorted plan; the Lisp host
-          // did not, and the SQL fuzz corpus in its SQL mode found the
-          // difference (SEL-0048).
-          plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
-          const colArgs = args.slice(1);
-          const items = colArgs.length === 1 && colArgs[0].t === 'list'
-            ? colArgs[0].items
-            : colArgs;
-          const cols = [];
-          for (const item of items) {
-            if (item.t !== 'text') {
-              refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
-            }
-            const col = item.v;
-            Translator.checkAliasName(col, item.pos);
-            const uc = asciiUpper(col);
-            let matches = 0;
-            if (plan.sourceRelation.fields && Object.hasOwn(plan.sourceRelation.fields, uc)) matches += 1;
-            for (const join of plan.joins ?? []) {
-              if (join.sourceRelation.fields && Object.hasOwn(join.sourceRelation.fields, uc)) matches += 1;
-            }
-            if (matches > 1) {
-              refuse('E_SQL_SHAPE',
-                `column '${col}' is ambiguous across joined tables; qualify with a table alias`, item.pos);
-            }
-            if (plan.sourceRelation.fields && Object.keys(plan.sourceRelation.fields).length > 0
-                && matches === 0) {
-              refuse('E_SQL_SHAPE',
-                `relation ${plan.sourceName} has no field '${col}'; the relation declares `
-                + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
-            }
-            for (const rel of [plan.sourceRelation, ...(plan.joins ?? []).map((j) => j.sourceRelation)]) {
-              const f = rel?.fields?.[uc];
-              if (f && f.raw != null) {
-                refuse('E_SQL_SHAPE',
-                  `SELECT_COLS names '${col}', a raw SQL field, which has no column to `
-                  + 'select by name', item.pos);
-              }
-            }
-            cols.push(col);
-          }
-          plan.selectCols = cols;
-          plan.projections = null;
-          break;
-        }
-
-        case 'MAP': {
-          if (plan.bucket === 'sealed') {
-            refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
-              + 'FILTER between: SQL keeps a bucket\'s members only for the projection '
-              + 'that ends the grouping', step.pos);
-          }
-          let binder;
-          let expr;
-          if (args.length === 2) {
-            binder = '_';
-            expr = args[1];
-          } else if (args.length === 3) {
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            expr = args[2];
-          } else {
-            refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos);
-          }
-          // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's
-          // body is evaluated once per group, so it is the bucket's projection.
-          if (plan.bucket === 'open') {
-            plan.bucket = null;
-            this.bucketProjection(plan, binder, expr);
-            break;
-          }
-          plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
-
-          if (expr.t === 'call' && expr.name === 'RECORD') {
-            plan.projections = Translator.recordFields(expr, this)
-              .map(([alias, value]) => ({ alias, binder, node: value }));
-          } else {
-            plan.projections = [
-              {
-                alias: null,
-                binder,
-                node: expr,
-              },
-            ];
-          }
-          plan.selectCols = null;
-          break;
-        }
-
+        case 'FILTER': plan = this.stepFilter(plan, step, overGroups); break;
+        case 'BUCKET': plan = this.stepBucket(plan, step); break;
+        case 'SELECT_COLS': plan = this.stepSelectCols(plan, step); break;
+        case 'MAP': plan = this.stepMap(plan, step); break;
         case 'DISTINCT':
-        case 'DEDUPE':
-          plan = this.ensureDerived(plan, (candidate) =>
-            candidate.limit !== null || candidate.offset !== null);
-          if (plan.projections === null && plan.selectCols === null) {
-            refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos);
-          }
-          // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
-          if (plan.orderBy.length > 0) {
-            refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos);
-          }
-          plan.distinct = true;
-          break;
-
-        case 'TAKE': {
-          if (args.length !== 2) {
-            refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos);
-          }
-          const lim = this.evalIntParam(args[1], 'TAKE');
-          plan.limit = plan.limit === null || lim < plan.limit ? lim : plan.limit;
-          break;
-        }
-
-        case 'DROP': {
-          if (args.length !== 2) {
-            refuse('E_ARITY', 'DROP takes 2 arguments', step.pos);
-          }
-          const off = this.evalIntParam(args[1], 'DROP');
-          // Consume the bounded slice. The offsets of consecutive DROPs add, and
-          // the sum is clamped like a count: past int64 it is the same OFFSET.
-          const skipped = plan.limit === null || off < plan.limit ? off : plan.limit;
-          if (plan.limit !== null) plan.limit -= skipped;
-          const merged = (plan.offset ?? 0n) + skipped;
-          plan.offset = merged > INT64_MAX ? INT64_MAX : merged;
-          break;
-        }
-
+        case 'DEDUPE': plan = this.stepDistinct(plan, step); break;
+        case 'TAKE': plan = this.stepTake(plan, step); break;
+        case 'DROP': plan = this.stepDrop(plan, step); break;
         case 'SORT':
         case 'SORT_DESC':
         case 'SORT_BY':
         case 'TOP':
         case 'TOP_DESC':
-        case 'TOP_BY':
-          // A sort after a LIMIT or OFFSET sorts the rows that survived them,
-          // grouped or not, so those wrap; a sort over a projection or a
-          // DISTINCT wraps so its key can name what they produced. A sort
-          // after a sort does not wrap: the sorts are stable, so the earlier
-          // one is the later one's tie-breaker, and the later one's keys go
-          // FIRST in the ORDER BY (review 2026-09-15 finding V).
-          plan = this.ensureDerived(plan, (candidate) => {
-            const wraps = candidate.limit !== null || candidate.offset !== null
-              || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-                || candidate.distinct));
-            // Sorts are stable, so an earlier sort is the later one's tie-break; a
-            // derived table with no LIMIT beside its ORDER BY does not keep it, and
-            // its keys may not even be columns the outer level can name.
-            if ((wraps && candidate.orderBy.length > 0
-                && candidate.limit === null && candidate.offset === null)
-                || candidate.orderDropped) {
-              refuse('E_SQL_SHAPE',
-                'a sort over a projection of sorted rows loses the earlier sort, which is '
-                + 'its tie-break: a derived table does not keep an ORDER BY', step.pos);
-            }
-            return wraps;
-          });
-          {
-            const before = plan.orderBy.length;
-            this.analyzeSortStep(step, plan);
-            const added = plan.orderBy.slice(before);
-            for (const entry of added) entry.overGroups = overGroups;
-            plan.orderBy = [...added, ...plan.orderBy.slice(0, before)];
-          }
-          break;
-
+        case 'TOP_BY': plan = this.stepSort(plan, step, overGroups); break;
         case 'LINK':
-        case 'LINK_LEFT': {
-          // The steps before the LINK refuse first, as written: their keys (a
-          // sort's, a bucket's) are otherwise checked only when the statement
-          // is rendered, after this LINK and the steps after it were analysed,
-          // which reported a later step's refusal where run() raises at the
-          // earlier one. Lisp has done this since review 2026-09-25 SQL-03;
-          // the widened SQL fuzzer found the other hosts did not (review
-          // 2026-09-28 SQL-10).
-          if (plan.orderBy.length || plan.projections || plan.selectCols || plan.groupBy) {
-            // Rendered for its refusals only and discarded: the slots it bound go
-            // with it, or `params` mode reports a value bound that no placeholder
-            // uses (and the driver binds one too many).
-            const slots = this.params.length;
-            this.compileStatement(plan);
-            this.params.length = slots;
-            this.paramKinds.length = slots;
-          }
-          // A join returns its rows in no order, and SEL's are the left list's:
-          // rows sorted with no LIMIT beside the ORDER BY (which a derived table
-          // drops) cannot pass through a JOIN carrying their sort. After the
-          // earlier steps' own refusals, which come first as written.
-          if (plan.orderDropped
-              || (plan.orderBy.length > 0 && plan.limit === null && plan.offset === null)) {
-            refuse('E_SQL_SHAPE',
-              'a LINK over sorted rows would return them in no order, where SEL has the '
-              + 'left list\'s order', step.pos);
-          }
-          plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
-          if (args.length !== 3 && args.length !== 5) {
-            refuse('E_ARITY', `${name} takes 3 or 5 arguments`, step.pos);
-          }
-          const rightNode = args[1];
-          if (rightNode.t !== 'var' || !this.bindings.has(rightNode.name)) {
-            refuse('E_SQL_SHAPE', `${name} requires a bound relation as its right side`, rightNode.pos);
-          }
-          const right = this.bindings.get(rightNode.name, rightNode.pos);
-          if (right.kind !== 'relation') {
-            refuse('E_SQL_SHAPE', `${rightNode.name} is not bound as a relation`, rightNode.pos);
-          }
-          const join = new JoinPlan();
-          join.type = name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
-          join.sourceName = rightNode.name;
-          join.sourceRelation = right;
-          join.sourceTable = right.from;
-          join.sourceAlias = right.alias ?? null;
-          if (args.length === 5) {
-            if (!constants.isBinderName(args[2]) || !constants.isBinderName(args[3])) {
-              refuse('E_SQL_SHAPE', 'join binders must be bare names', args[2].pos);
-            }
-            join.leftNames = [args[2].name];
-            join.rightNames = [args[3].name];
-            join.onPred = args[4];
-          } else {
-            // The evaluator names a three-argument LINK's sides after the
-            // variable their pipeline starts from, unless an earlier LINK is
-            // in the way (spec §7.4).
-            join.leftNames = plan.joins.length === 0 && plan.rootName !== null ? [plan.rootName] : [];
-            join.rightNames = [rightNode.name];
-            join.onPred = args[2];
-          }
-          // The SQL alias of a table the binding leaves unaliased: the five-argument
-          // form's right binder, `_2` otherwise. An alias, not a SEL name.
-          if (join.sourceAlias === null) join.sourceAlias = args.length === 5 ? join.rightNames[0] : '_2';
-          // One table alias per occurrence: a relation joined a second time
-          // under the alias it already has (a self-join, or a chain back to it)
-          // rendered the alias twice, which the server rejects as ambiguous
-          // (review 2026-09-28 SQL-09). The program stays in memory.
-          {
-            const open = [plan.sourceAlias ?? relationAlias(plan.sourceRelation), ...plan.joins.map((j) => j.sourceAlias)];
-            if (open.some((alias) => asciiUpper(String(alias)) === asciiUpper(String(join.sourceAlias)))) {
-              refuse('E_SQL_SHAPE', `${rightNode.name} would be joined under the table alias ${join.sourceAlias}, `
-                + 'which this statement already uses; bind the relation a second time under another alias', rightNode.pos);
-            }
-          }
-          join.pos = step.pos;
-          plan.joins.push(join);
-          break;
-        }
+        case 'LINK_LEFT': plan = this.stepLink(plan, step); break;
       }
     }
 
@@ -3032,122 +2679,374 @@ export class Translator {
     return whole > INT64_MAX ? INT64_MAX : whole;
   }
 
+  // A pipeline step, FILTER: the plan after it, or a refusal.
+  stepFilter(plan, step, overGroups) {
+    // A FILTER over a bare bucket whose members are spent: SQL has
+    // only the keys left, and SEL's value is still a map of groups.
+    if (plan.bucket === 'sealed') {
+      refuse('E_SQL_SHAPE', 'a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
+    }
+    // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
+    // survived them, grouped or not -- SEL applies the TAKE first, and
+    // a HAVING would run before it. Otherwise a FILTER directly after
+    // a grouping is its HAVING, and an ORDER BY in between changes
+    // nothing (HAVING then ORDER BY is sort-then-filter's rows).
+    // A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+    // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+    // beside it and the rows would come back in no order (a filter commutes with a
+    // stable sort, so the rows and their order are the same).
+    plan = this.ensureDerived(plan, (candidate) =>
+      candidate.limit !== null || candidate.offset !== null
+        || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+          || candidate.distinct)));
+    const [binder, pred] = aggShape(step);
+    if (plan.groupBy !== null) {
+      plan.having.push({ binder, node: pred, pos: step.pos, overGroups });
+    } else {
+      plan.filters.push({ binder, node: pred, pos: step.pos });
+    }
+    return plan;
+  }
+
+  // A pipeline step, BUCKET: the plan after it, or a refusal.
+  stepBucket(plan, step) {
+    const { name, args } = step;
+    // A bucket over a bare bucket's rows: SQL has only the keys (open)
+    // or has spent the members (sealed); either way SEL's value is a
+    // map of groups and re-grouping it is a different program.
+    if (plan.bucket !== null) {
+      refuse('E_SQL_SHAPE', 'a BUCKET over buckets: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
+    }
+    // Groups appear in order of their first member, and the members were
+    // sorted: a GROUP BY returns its groups in no order at all, and the
+    // ORDER BY beneath it is dropped by the servers. The sort cannot
+    // survive, so the plan is refused here and a hybrid plan keeps the
+    // sorted rows in SQL and groups them in memory.
+    if (plan.orderBy.length > 0 || plan.orderDropped) {
+      refuse('E_SQL_SHAPE',
+        'a BUCKET over sorted rows would return its groups in no order, where SEL '
+        + 'has them in the order of their first member in the sorted list', step.pos);
+    }
+    plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+    const roles = argRoles(name, args, null);
+    const [binder, keyNode] = aggShape(step, roles);
+    const aggNode = roles.extra < 0 ? null : args[roles.extra];
+
+    // A bare bucket's key is an index key (spec §7.4): one text or
+    // number. A list or record key is refused by the evaluator, and
+    // the boolean and binary kinds are refused below, once known.
+    const severalKeys = (keyNode.t === 'call' && (keyNode.name === 'LIST' || keyNode.name === 'RECORD'))
+      || keyNode.t === 'list';
+    if (aggNode === null && severalKeys) {
+      refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', keyNode.pos);
+    }
+    const groupBy = [];
+    if ((keyNode.t === 'call' && keyNode.name === 'LIST') || keyNode.t === 'list') {
+      const listItems = keyNode.t === 'list' ? keyNode.items : keyNode.args;
+      for (const kArg of listItems) {
+        groupBy.push({
+          alias: null,
+          binder,
+          node: kArg,
+          pos: kArg.pos ?? step.pos,
+        });
+      }
+    } else if (keyNode.t === 'call' && keyNode.name === 'RECORD') {
+      for (const [alias, value] of Translator.recordFields(keyNode, this)) {
+        groupBy.push({ alias, binder, node: value, pos: value.pos ?? step.pos });
+      }
+    } else {
+      groupBy.push({
+        alias: null,
+        binder,
+        node: keyNode,
+        pos: keyNode.pos ?? step.pos,
+      });
+    }
+    plan.groupBy = groupBy;
+    plan.bucket = aggNode === null ? 'open' : null;
+    plan.bareKey = aggNode === null;
+    this.bucketProjection(plan, binder, aggNode);
+    plan.selectCols = null;
+    return plan;
+  }
+
+  // A pipeline step, SELECT_COLS: the plan after it, or a refusal.
+  stepSelectCols(plan, step) {
+    const { name, args } = step;
+    // The same rule as a MAP's: an ORDER BY alone does not wrap (a
+    // derived table is where MariaDB drops an ORDER BY with no LIMIT
+    // beside it), everything else above the rows does. Four hosts used
+    // the rows-above test here and wrapped a sorted plan; the Lisp host
+    // did not, and the SQL fuzz corpus in its SQL mode found the
+    // difference (SEL-0048).
+    plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
+    const colArgs = args.slice(1);
+    const items = colArgs.length === 1 && colArgs[0].t === 'list'
+      ? colArgs[0].items
+      : colArgs;
+    const cols = [];
+    for (const item of items) {
+      if (item.t !== 'text') {
+        refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
+      }
+      const col = item.v;
+      Translator.checkAliasName(col, item.pos);
+      const uc = asciiUpper(col);
+      let matches = 0;
+      if (plan.sourceRelation.fields && Object.hasOwn(plan.sourceRelation.fields, uc)) matches += 1;
+      for (const join of plan.joins ?? []) {
+        if (join.sourceRelation.fields && Object.hasOwn(join.sourceRelation.fields, uc)) matches += 1;
+      }
+      if (matches > 1) {
+        refuse('E_SQL_SHAPE',
+          `column '${col}' is ambiguous across joined tables; qualify with a table alias`, item.pos);
+      }
+      if (plan.sourceRelation.fields && Object.keys(plan.sourceRelation.fields).length > 0
+          && matches === 0) {
+        refuse('E_SQL_SHAPE',
+          `relation ${plan.sourceName} has no field '${col}'; the relation declares `
+          + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
+      }
+      for (const rel of [plan.sourceRelation, ...(plan.joins ?? []).map((j) => j.sourceRelation)]) {
+        const f = rel?.fields?.[uc];
+        if (f && f.raw != null) {
+          refuse('E_SQL_SHAPE',
+            `SELECT_COLS names '${col}', a raw SQL field, which has no column to `
+            + 'select by name', item.pos);
+        }
+      }
+      cols.push(col);
+    }
+    plan.selectCols = cols;
+    plan.projections = null;
+    return plan;
+  }
+
+  // A pipeline step, MAP: the plan after it, or a refusal.
+  stepMap(plan, step) {
+    const { name } = step;
+    if (plan.bucket === 'sealed') {
+      refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
+        + 'FILTER between: SQL keeps a bucket\'s members only for the projection '
+        + 'that ends the grouping', step.pos);
+    }
+    const [binder, expr] = aggShape(step);
+    // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's
+    // body is evaluated once per group, so it is the bucket's projection.
+    if (plan.bucket === 'open') {
+      plan.bucket = null;
+      this.bucketProjection(plan, binder, expr);
+      return plan;
+    }
+    plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
+
+    if (expr.t === 'call' && expr.name === 'RECORD') {
+      plan.projections = Translator.recordFields(expr, this)
+        .map(([alias, value]) => ({ alias, binder, node: value }));
+    } else {
+      plan.projections = [
+        {
+          alias: null,
+          binder,
+          node: expr,
+        },
+      ];
+    }
+    plan.selectCols = null;
+    return plan;
+  }
+
+  // A pipeline step, DISTINCT / DEDUPE: the plan after it, or a refusal.
+  stepDistinct(plan, step) {
+    plan = this.ensureDerived(plan, (candidate) =>
+      candidate.limit !== null || candidate.offset !== null);
+    if (plan.projections === null && plan.selectCols === null) {
+      refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos);
+    }
+    // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
+    if (plan.orderBy.length > 0) {
+      refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos);
+    }
+    plan.distinct = true;
+    return plan;
+  }
+
+  // A pipeline step, TAKE: the plan after it, or a refusal.
+  stepTake(plan, step) {
+    const { args } = step;
+    const lim = this.evalIntParam(args[1], 'TAKE');
+    plan.limit = plan.limit === null || lim < plan.limit ? lim : plan.limit;
+    return plan;
+  }
+
+  // A pipeline step, DROP: the plan after it, or a refusal.
+  stepDrop(plan, step) {
+    const { args } = step;
+    const off = this.evalIntParam(args[1], 'DROP');
+    // Consume the bounded slice. The offsets of consecutive DROPs add, and
+    // the sum is clamped like a count: past int64 it is the same OFFSET.
+    const skipped = plan.limit === null || off < plan.limit ? off : plan.limit;
+    if (plan.limit !== null) plan.limit -= skipped;
+    const merged = (plan.offset ?? 0n) + skipped;
+    plan.offset = merged > INT64_MAX ? INT64_MAX : merged;
+    return plan;
+  }
+
+  // A pipeline step, SORT / SORT_DESC / SORT_BY / TOP / TOP_DESC / TOP_BY: the plan after it, or a refusal.
+  stepSort(plan, step, overGroups) {
+    const { name } = step;
+    // A sort after a LIMIT or OFFSET sorts the rows that survived them,
+    // grouped or not, so those wrap; a sort over a projection or a
+    // DISTINCT wraps so its key can name what they produced. A sort
+    // after a sort does not wrap: the sorts are stable, so the earlier
+    // one is the later one's tie-breaker, and the later one's keys go
+    // FIRST in the ORDER BY.
+    plan = this.ensureDerived(plan, (candidate) => {
+      const wraps = candidate.limit !== null || candidate.offset !== null
+        || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
+          || candidate.distinct));
+      // Sorts are stable, so an earlier sort is the later one's tie-break; a
+      // derived table with no LIMIT beside its ORDER BY does not keep it, and
+      // its keys may not even be columns the outer level can name.
+      if ((wraps && candidate.orderBy.length > 0
+          && candidate.limit === null && candidate.offset === null)
+          || candidate.orderDropped) {
+        refuse('E_SQL_SHAPE',
+          'a sort over a projection of sorted rows loses the earlier sort, which is '
+          + 'its tie-break: a derived table does not keep an ORDER BY', step.pos);
+      }
+      return wraps;
+    });
+    {
+      const before = plan.orderBy.length;
+      this.analyzeSortStep(step, plan);
+      const added = plan.orderBy.slice(before);
+      for (const entry of added) entry.overGroups = overGroups;
+      plan.orderBy = [...added, ...plan.orderBy.slice(0, before)];
+    }
+    return plan;
+  }
+
+  // A pipeline step, LINK / LINK_LEFT: the plan after it, or a refusal.
+  stepLink(plan, step) {
+    const { name, args } = step;
+    // The steps before the LINK refuse first, as written: their keys (a
+    // sort's, a bucket's) are otherwise checked only when the statement
+    // is rendered, after this LINK and the steps after it were analysed,
+    // which reported a later step's refusal where run() raises at the
+    // earlier one. Lisp did this first; the widened SQL fuzzer found
+    // the other hosts did not.
+    if (plan.orderBy.length || plan.projections || plan.selectCols || plan.groupBy) {
+      // Rendered for its refusals only and discarded: the slots it bound go
+      // with it, or `params` mode reports a value bound that no placeholder
+      // uses (and the driver binds one too many).
+      const slots = this.params.length;
+      this.compileStatement(plan);
+      this.params.length = slots;
+      this.paramKinds.length = slots;
+    }
+    // A join returns its rows in no order, and SEL's are the left list's:
+    // rows sorted with no LIMIT beside the ORDER BY (which a derived table
+    // drops) cannot pass through a JOIN carrying their sort. After the
+    // earlier steps' own refusals, which come first as written.
+    if (plan.orderDropped
+        || (plan.orderBy.length > 0 && plan.limit === null && plan.offset === null)) {
+      refuse('E_SQL_SHAPE',
+        'a LINK over sorted rows would return them in no order, where SEL has the '
+        + 'left list\'s order', step.pos);
+    }
+    plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
+    const rightNode = args[1];
+    if (rightNode.t !== 'var' || !this.bindings.has(rightNode.name)) {
+      refuse('E_SQL_SHAPE', `${name} requires a bound relation as its right side`, rightNode.pos);
+    }
+    const right = this.bindings.get(rightNode.name, rightNode.pos);
+    if (right.kind !== 'relation') {
+      refuse('E_SQL_SHAPE', `${rightNode.name} is not bound as a relation`, rightNode.pos);
+    }
+    const join = new JoinPlan();
+    join.type = name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
+    join.sourceName = rightNode.name;
+    join.sourceRelation = right;
+    join.sourceTable = right.from;
+    join.sourceAlias = right.alias ?? null;
+    if (args.length === 5) {
+      if (!constants.isBinderName(args[2]) || !constants.isBinderName(args[3])) {
+        refuse('E_SQL_SHAPE', 'join binders must be bare names', args[2].pos);
+      }
+      join.leftNames = [args[2].name];
+      join.rightNames = [args[3].name];
+      join.onPred = args[4];
+    } else {
+      // The evaluator names a three-argument LINK's sides after the
+      // variable their pipeline starts from, unless an earlier LINK is
+      // in the way (spec §7.4).
+      join.leftNames = plan.joins.length === 0 && plan.rootName !== null ? [plan.rootName] : [];
+      join.rightNames = [rightNode.name];
+      join.onPred = args[2];
+    }
+    // The SQL alias of a table the binding leaves unaliased: the five-argument
+    // form's right binder, `_2` otherwise. An alias, not a SEL name.
+    if (join.sourceAlias === null) join.sourceAlias = args.length === 5 ? join.rightNames[0] : '_2';
+    // One table alias per occurrence: a relation joined a second time
+    // under the alias it already has (a self-join, or a chain back to it)
+    // rendered the alias twice, which the server rejects as ambiguous.
+    // The program stays in memory.
+    {
+      const open = [plan.sourceAlias ?? relationAlias(plan.sourceRelation), ...plan.joins.map((j) => j.sourceAlias)];
+      if (open.some((alias) => asciiUpper(String(alias)) === asciiUpper(String(join.sourceAlias)))) {
+        refuse('E_SQL_SHAPE', `${rightNode.name} would be joined under the table alias ${join.sourceAlias}, `
+          + 'which this statement already uses; bind the relation a second time under another alias', rightNode.pos);
+      }
+    }
+    join.pos = step.pos;
+    plan.joins.push(join);
+    return plan;
+  }
+
   analyzeSortStep(step, plan) {
     const name = step.name;
     const args = step.args;
     const isTop = name === 'TOP' || name === 'TOP_DESC' || name === 'TOP_BY';
-    const count = isTop ? args.length - 1 : args.length;
     if (isTop) {
       const limit = this.evalIntParam(args[args.length - 1], name);
       plan.limit = plan.limit === null || limit < plan.limit ? limit : plan.limit;
     }
-
-    if (name === 'SORT' || name === 'SORT_DESC' || name === 'TOP' || name === 'TOP_DESC') {
-      const dir = name === 'SORT' || name === 'TOP' ? 'ASC' : 'DESC';
-      if (count === 1) {
-        if (plan.sourceRelation.scalar) {
-          const scalarCol = plan.sourceRelation.scalar;
-          plan.orderBy.push({
-            binder: '_',
-            node: {
-              t: 'index',
-              obj: { t: 'var', name: '_', pos: step.pos },
-              idx: { t: 'text', v: scalarCol, pos: step.pos },
-              pos: step.pos,
-            },
-            dir,
-            pos: step.pos,
-          });
-          return;
-        }
-        const fieldKeys = Object.keys(plan.sourceRelation.fields ?? {});
-        if (fieldKeys.length === 1) {
-          const fieldName = fieldKeys[0];
-          plan.orderBy.push({
-            binder: '_',
-            node: {
-              t: 'index',
-              obj: { t: 'var', name: '_', pos: step.pos },
-              idx: { t: 'text', v: fieldName, pos: step.pos },
-              pos: step.pos,
-            },
-            dir,
-            pos: step.pos,
-          });
-          return;
-        }
-        refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos);
-      } else if (count === 2) {
-        plan.orderBy.push({
-          binder: '_',
-          node: args[1],
-          dir,
-          pos: step.pos,
-        });
-        return;
-      } else if (count === 3) {
-        if (!constants.isBinderName(args[1])) {
-          refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos);
-        }
-        plan.orderBy.push({
-          binder: args[1].name,
-          node: args[2],
-          dir,
-          pos: step.pos,
-        });
-        return;
-      } else {
-        refuse('E_ARITY', `${name} takes 1 to 3 arguments`, step.pos);
+    // The form, as the evaluator decodes it (registry.argRoles): the key, its
+    // binder, and for SORT_BY/TOP_BY the direction slot after the key when the
+    // form has one -- a TOP's count is the last slot, not a direction.
+    const roles = argRoles(name, args, null);
+    const [binder, key] = roles.body < 0 ? ['_', this.keylessSortKey(plan, step)] : aggShape(step, roles);
+    let dir = name === 'SORT_DESC' || name === 'TOP_DESC' ? 'DESC' : 'ASC';
+    if (roles.after.length > (isTop ? 1 : 0)) {
+      // A direction SQL cannot compute: the evaluator would, so it is refused
+      // unless it is a literal.
+      const slot = args[roles.after[0]];
+      if (slot.t !== 'text') refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);
+      dir = asciiUpper(slot.v);
+      if (dir !== 'ASC' && dir !== 'DESC') {
+        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);
       }
     }
+    plan.orderBy.push({ binder, node: key, dir, pos: step.pos });
+  }
 
-    // SORT_BY / TOP_BY
-    let binder;
-    let key;
-    let dir;
-    if (count === 2) {
-      binder = '_';
-      key = args[1];
-      dir = 'ASC';
-    } else if (count === 3) {
-      if (args[2].t === 'text') {
-        binder = '_';
-        key = args[1];
-        dir = asciiUpper(args[2].v);
-      } else if (constants.isBinderName(args[1])) {
-        binder = args[1].name;
-        key = args[2];
-        dir = 'ASC';
-      } else {
-        // Neither form: the third slot is a direction the evaluator would
-        // compute, and SQL cannot -- the four-argument form's refusal.
-        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos);
-      }
-    } else if (count === 4) {
-      if (!constants.isBinderName(args[1])) {
-        refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos);
-      }
-      binder = args[1].name;
-      key = args[2];
-      if (args[3].t !== 'text') {
-        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos);
-      }
-      dir = asciiUpper(args[3].v);
-    } else {
-      refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos);
+  // SORT(L) and TOP(L, n) sort the elements themselves: in SQL, a relation's
+  // scalar field, or its only field.
+  keylessSortKey(plan, step) {
+    const field = plan.sourceRelation.scalar
+      || (Object.keys(plan.sourceRelation.fields ?? {}).length === 1
+        ? Object.keys(plan.sourceRelation.fields)[0] : null);
+    if (!field) {
+      refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos);
     }
-
-    if (dir !== 'ASC' && dir !== 'DESC') {
-      const dirPos = count === 4 ? args[3].pos : args[2].pos;
-      refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", dirPos);
-    }
-
-    plan.orderBy.push({
-      binder,
-      node: key,
-      dir,
+    return {
+      t: 'index',
+      obj: { t: 'var', name: '_', pos: step.pos },
+      idx: { t: 'text', v: field, pos: step.pos },
       pos: step.pos,
-    });
+    };
   }
 
   compileStatement(plan) {
@@ -3174,196 +3073,13 @@ export class Translator {
         pos: null,
       };
 
-      // 1. SELECT list (Projections)
-      if (plan.projections !== null) {
-        let first = true;
-        for (const proj of plan.projections) {
-          if (!first) parts.push(', ');
-          first = false;
-          let pFrag = proj.groupKey
-            ? this.groupKey(src, proj.groupKey, true)
-            : plan.groupBy !== null
-              ? this.withGroup(src, proj.binder, () => this.node(proj.node))
-              : this.withRow(src, proj.binder, () => this.node(proj.node));
-          if (plan.distinct) {
-            if (['UNKNOWN', 'NUM'].includes(pFrag.kind) && !pFrag.canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', proj.node.pos);
-            pFrag = this.identityGroupKey(proj.node, pFrag);
-          }
-          for (const p of pFrag.parts) parts.push(p);
-          if (proj.alias !== null) {
-            parts.push(' AS ' + this.emit.ident(proj.alias));
-          }
-        }
-      } else if (plan.selectCols !== null) {
-        let first = true;
-        for (const col of plan.selectCols) {
-          if (!first) parts.push(', ');
-          first = false;
-          const uc = asciiUpper(col);
-          let fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
-          let owner = plan.sourceRelation;
-          if (!fSpec) {
-            for (const join of plan.joins ?? []) {
-              if (join.sourceRelation.fields?.[uc]) {
-                fSpec = join.sourceRelation.fields[uc];
-                owner = join.sourceRelation;
-                break;
-              }
-            }
-          }
-          const table = plan.joins?.length
-            ? this.relationTableAlias(owner)
-            : (fSpec?.table ?? (owner === plan.sourceRelation ? plan.sourceAlias : relationAlias(owner)));
-          const column = fSpec?.column ?? col;
-          const sql = this.emit.column(table, column);
-          if (plan.distinct && (!fSpec || ['UNKNOWN', 'NUM'].includes(fSpec.type ?? 'UNKNOWN'))) {
-            refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
-          }
-          if (plan.distinct && ['TEXT', 'NUM'].includes(fSpec?.type)) {
-            parts.push(...this.emit.textOperand(new Fragment([sql], fSpec.type, this.dialect)).parts);
-            parts.push(' AS ' + this.emit.ident(column));
-          } else parts.push(sql);
-        }
-      } else if (plan.joins?.length) {
-        // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
-        const fields = this.joinedRowFields(plan);
-        if (fields.length === 0) {
-          const last = plan.joins[plan.joins.length - 1];
-          refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
-            + 'is on both sides, and the binders are nested records', last.pos ?? null);
-        }
-        let first = true;
-        for (const f of fields) {
-          if (!first) parts.push(', ');
-          first = false;
-          parts.push(this.emit.column(f.table, f.spec?.column ?? f.name));
-        }
-      } else {
-        if (plan.sourceAlias !== null) {
-          parts.push(this.emit.ident(plan.sourceAlias) + '.*');
-        } else {
-          parts.push('*');
-        }
-      }
-
-      // 2. FROM clause
-      parts.push(' FROM ');
-      if (plan.sourceSubquery) {
-        const subquery = this.compileStatement(plan.sourceSubquery);
-        parts.push('(');
-        for (const p of subquery.parts) parts.push(p);
-        parts.push(') ' + this.emit.ident(String(plan.sourceAlias)));
-      } else {
-        let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
-          ? String(plan.sourceTable.raw)
-          : this.emit.ident(String(plan.sourceTable));
-        if (plan.sourceAlias) {
-          from += ' ' + this.emit.ident(String(plan.sourceAlias));
-        }
-        parts.push(from);
-      }
-
-      for (const join of plan.joins ?? []) {
-        parts.push(join.type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ');
-        const right = join.sourceTable && typeof join.sourceTable === 'object' && join.sourceTable.raw
-          ? String(join.sourceTable.raw)
-          : this.emit.ident(String(join.sourceTable));
-        parts.push(right);
-        if (join.sourceAlias) parts.push(' ' + this.emit.ident(String(join.sourceAlias)));
-        parts.push(' ON ');
-        const on = this.withJoinBinders(plan, join,
-          () => this.requireBool(this.node(join.onPred), join.pos, 'LINK'));
-        for (const p of on.parts) parts.push(p);
-      }
-
-      // 3. WHERE clause
-      const condParts = [];
-      if (plan.correlate) {
-        condParts.push([`(${plan.correlate})`]);
-      }
-      this.inWhere = true;
-      try {
-        for (const filter of plan.filters) {
-          const cFrag = this.withRow(src, filter.binder,
-            () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
-          condParts.push(cFrag.parts);
-        }
-      } finally {
-        this.inWhere = false;
-      }
-
-      if (condParts.length > 0) {
-        parts.push(' WHERE ');
-        condParts.forEach((cp, idx) => {
-          if (idx > 0) parts.push(' AND ');
-          for (const p of cp) parts.push(p);
-        });
-      }
-
-      // 4. GROUP BY clause
-      if (plan.groupBy && plan.groupBy.length > 0) {
-        parts.push(' GROUP BY ');
-        let first = true;
-        for (const gb of plan.groupBy) {
-          if (!first) parts.push(', ');
-          first = false;
-          const gFrag = this.groupKey(src, gb);
-          if (plan.bareKey && (gFrag.kind === 'BOOL' || gFrag.kind === 'BIN')) {
-            refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', gb.pos);
-          }
-          for (const p of gFrag.parts) parts.push(p);
-        }
-      }
-
-      // 5. HAVING clause
-      if (plan.having && plan.having.length > 0) {
-        parts.push(' HAVING ');
-        const hCondParts = [];
-        for (const hav of plan.having) {
-          const hFrag = (hav.overGroups ? this.withGroup : this.withProjected).call(this, src, hav.binder,
-            () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
-          hCondParts.push(hFrag.parts);
-        }
-        hCondParts.forEach((hp, idx) => {
-          if (idx > 0) parts.push(' AND ');
-          for (const p of hp) parts.push(p);
-        });
-      }
-
-      // 6. ORDER BY clause
-      if (plan.orderBy.length > 0) {
-        parts.push(' ORDER BY ');
-        let first = true;
-        for (const ord of plan.orderBy) {
-          if (!first) parts.push(', ');
-          first = false;
-          // A TEXT sort key is collated like a group key: SEL sorts text by
-          // its bytes, and a server's default collation would not.
-          const withFrame = ord.overGroups ? this.withGroup
-            : plan.groupBy !== null ? this.withProjected : this.withRow;
-          const oFrag = this.orderKey(withFrame.call(this, src, ord.binder, () => this.node(ord.node)), ord.node.pos);
-          for (const p of oFrag.parts) parts.push(p);
-          parts.push(' ' + ord.dir);
-        }
-      }
-
-      // 7. LIMIT / OFFSET clause
-      const limit = plan.limit;
-      const offset = plan.offset;
-      if (limit !== null && offset !== null) {
-        parts.push(` LIMIT ${limit} OFFSET ${offset}`);
-      } else if (limit !== null) {
-        parts.push(` LIMIT ${limit}`);
-      } else if (offset !== null) {
-        const chain = map.chain(this.dialect);
-        if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
-          parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
-        } else if (chain.includes('sqlite')) {
-          parts.push(` LIMIT -1 OFFSET ${offset}`);
-        } else {
-          parts.push(` OFFSET ${offset}`);
-        }
-      }
+      this.renderSelectList(plan, parts, src);
+      this.renderFrom(plan, parts);
+      this.renderWhere(plan, parts, src);
+      this.renderGroupBy(plan, parts, src);
+      this.renderHaving(plan, parts, src);
+      this.renderOrderBy(plan, parts, src);
+      this.renderLimit(plan, parts);
 
       return new Fragment(
         parts,
@@ -3377,6 +3093,206 @@ export class Translator {
       this.statementPlan = previousPlan;
     }
   }
+
+  // The SELECT list: the projections, the selected columns, or the source's rows.
+  renderSelectList(plan, parts, src) {
+    if (plan.projections !== null) {
+      let first = true;
+      for (const proj of plan.projections) {
+        if (!first) parts.push(', ');
+        first = false;
+        let pFrag = proj.groupKey
+          ? this.groupKey(src, proj.groupKey, true)
+          : plan.groupBy !== null
+            ? this.withGroup(src, proj.binder, () => this.node(proj.node))
+            : this.withRow(src, proj.binder, () => this.node(proj.node));
+        if (plan.distinct) {
+          if (['UNKNOWN', 'NUM'].includes(pFrag.kind) && !pFrag.canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', proj.node.pos);
+          pFrag = this.identityGroupKey(proj.node, pFrag);
+        }
+        for (const p of pFrag.parts) parts.push(p);
+        if (proj.alias !== null) {
+          parts.push(' AS ' + this.emit.ident(proj.alias));
+        }
+      }
+    } else if (plan.selectCols !== null) {
+      let first = true;
+      for (const col of plan.selectCols) {
+        if (!first) parts.push(', ');
+        first = false;
+        const uc = asciiUpper(col);
+        let fSpec = plan.sourceRelation.fields ? plan.sourceRelation.fields[uc] : null;
+        let owner = plan.sourceRelation;
+        if (!fSpec) {
+          for (const join of plan.joins ?? []) {
+            if (join.sourceRelation.fields?.[uc]) {
+              fSpec = join.sourceRelation.fields[uc];
+              owner = join.sourceRelation;
+              break;
+            }
+          }
+        }
+        const table = plan.joins?.length
+          ? this.relationTableAlias(owner)
+          : (fSpec?.table ?? (owner === plan.sourceRelation ? plan.sourceAlias : relationAlias(owner)));
+        const column = fSpec?.column ?? col;
+        const sql = this.emit.column(table, column);
+        if (plan.distinct && (!fSpec || ['UNKNOWN', 'NUM'].includes(fSpec.type ?? 'UNKNOWN'))) {
+          refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
+        }
+        if (plan.distinct && ['TEXT', 'NUM'].includes(fSpec?.type)) {
+          parts.push(...this.emit.textOperand(new Fragment([sql], fSpec.type, this.dialect)).parts);
+          parts.push(' AS ' + this.emit.ident(column));
+        } else parts.push(sql);
+      }
+    } else if (plan.joins?.length) {
+      // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
+      const fields = this.joinedRowFields(plan);
+      if (fields.length === 0) {
+        const last = plan.joins[plan.joins.length - 1];
+        refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
+          + 'is on both sides, and the binders are nested records', last.pos ?? null);
+      }
+      let first = true;
+      for (const f of fields) {
+        if (!first) parts.push(', ');
+        first = false;
+        parts.push(this.emit.column(f.table, f.spec?.column ?? f.name));
+      }
+    } else {
+      if (plan.sourceAlias !== null) {
+        parts.push(this.emit.ident(plan.sourceAlias) + '.*');
+      } else {
+        parts.push('*');
+      }
+    }
+  }
+
+  // FROM: the source table or derived table, then each join with its ON.
+  renderFrom(plan, parts) {
+    parts.push(' FROM ');
+    if (plan.sourceSubquery) {
+      const subquery = this.compileStatement(plan.sourceSubquery);
+      parts.push('(');
+      for (const p of subquery.parts) parts.push(p);
+      parts.push(') ' + this.emit.ident(String(plan.sourceAlias)));
+    } else {
+      let from = plan.sourceTable && typeof plan.sourceTable === 'object' && plan.sourceTable.raw
+        ? String(plan.sourceTable.raw)
+        : this.emit.ident(String(plan.sourceTable));
+      if (plan.sourceAlias) {
+        from += ' ' + this.emit.ident(String(plan.sourceAlias));
+      }
+      parts.push(from);
+    }
+
+    for (const join of plan.joins ?? []) {
+      parts.push(join.type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ');
+      const right = join.sourceTable && typeof join.sourceTable === 'object' && join.sourceTable.raw
+        ? String(join.sourceTable.raw)
+        : this.emit.ident(String(join.sourceTable));
+      parts.push(right);
+      if (join.sourceAlias) parts.push(' ' + this.emit.ident(String(join.sourceAlias)));
+      parts.push(' ON ');
+      const on = this.withJoinBinders(plan, join,
+        () => this.requireBool(this.node(join.onPred), join.pos, 'LINK'));
+      for (const p of on.parts) parts.push(p);
+    }
+  }
+
+  // WHERE: the correlation, then each FILTER that runs before any grouping.
+  renderWhere(plan, parts, src) {
+    const condParts = [];
+    if (plan.correlate) {
+      condParts.push([`(${plan.correlate})`]);
+    }
+    for (const filter of plan.filters) {
+      const cFrag = this.withRow(src, filter.binder,
+        () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
+      condParts.push(cFrag.parts);
+    }
+
+    if (condParts.length > 0) {
+      parts.push(' WHERE ');
+      condParts.forEach((cp, idx) => {
+        if (idx > 0) parts.push(' AND ');
+        for (const p of cp) parts.push(p);
+      });
+    }
+  }
+
+  // GROUP BY: the bucket's keys.
+  renderGroupBy(plan, parts, src) {
+    if (plan.groupBy && plan.groupBy.length > 0) {
+      parts.push(' GROUP BY ');
+      let first = true;
+      for (const gb of plan.groupBy) {
+        if (!first) parts.push(', ');
+        first = false;
+        const gFrag = this.groupKey(src, gb);
+        if (plan.bareKey && (gFrag.kind === 'BOOL' || gFrag.kind === 'BIN')) {
+          refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', gb.pos);
+        }
+        for (const p of gFrag.parts) parts.push(p);
+      }
+    }
+  }
+
+  // HAVING: each FILTER over the groups or the projected rows.
+  renderHaving(plan, parts, src) {
+    if (plan.having && plan.having.length > 0) {
+      parts.push(' HAVING ');
+      const hCondParts = [];
+      for (const hav of plan.having) {
+        const hFrag = (hav.overGroups ? this.withGroup : this.withProjected).call(this, src, hav.binder,
+          () => this.requireBool(this.node(hav.node), hav.pos, 'FILTER'));
+        hCondParts.push(hFrag.parts);
+      }
+      hCondParts.forEach((hp, idx) => {
+        if (idx > 0) parts.push(' AND ');
+        for (const p of hp) parts.push(p);
+      });
+    }
+  }
+
+  // ORDER BY: the sort keys, collated as group keys are.
+  renderOrderBy(plan, parts, src) {
+    if (plan.orderBy.length > 0) {
+      parts.push(' ORDER BY ');
+      let first = true;
+      for (const ord of plan.orderBy) {
+        if (!first) parts.push(', ');
+        first = false;
+        // A TEXT sort key is collated like a group key: SEL sorts text by
+        // its bytes, and a server's default collation would not.
+        const withFrame = ord.overGroups ? this.withGroup
+          : plan.groupBy !== null ? this.withProjected : this.withRow;
+        const oFrag = this.orderKey(withFrame.call(this, src, ord.binder, () => this.node(ord.node)), ord.node.pos);
+        for (const p of oFrag.parts) parts.push(p);
+        parts.push(' ' + ord.dir);
+      }
+    }
+  }
+
+  // LIMIT / OFFSET, with each dialect's spelling of "no limit" for an OFFSET alone.
+  renderLimit(plan, parts) {
+    const limit = plan.limit;
+    const offset = plan.offset;
+    if (limit !== null && offset !== null) {
+      parts.push(` LIMIT ${limit} OFFSET ${offset}`);
+    } else if (limit !== null) {
+      parts.push(` LIMIT ${limit}`);
+    } else if (offset !== null) {
+      const chain = map.chain(this.dialect);
+      if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
+        parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
+      } else if (chain.includes('sqlite')) {
+        parts.push(` LIMIT -1 OFFSET ${offset}`);
+      } else {
+        parts.push(` OFFSET ${offset}`);
+      }
+    }
+  }
 }
 
 
@@ -3386,24 +3302,25 @@ function staticSource(elements, scalarRule = false) {
   return { shape: 'static', elements, filters: [], scalarRule };
 }
 
-// The 2- and 3-argument forms: `_` by default, a bare name when given.
-function aggShape(n) {
-  if (n.args.length === 3) {
-    if (!constants.isBinderName(n.args[1])) {
-      refuse('E_SQL_SHAPE', `the binder of ${n.name} must be a bare name`, n.args[1].pos);
-    }
-    return [n.args[1].name, n.args[2]];
+// A binding call's binder and per-element body, where the manifest's form puts
+// them (registry.argRoles, the evaluator's decoder): `_` when the form names no
+// binder, else the bare name in its slot -- anything else there is refused,
+// as SEL raises E_EXPECT_SYMBOL for it. BUCKET's projection is `extra`.
+function aggShape(n, roles = argRoles(n.name, n.args, null)) {
+  const body = n.args[roles.body];
+  if (roles.binder < 0) return ['_', body];
+  const slot = n.args[roles.binder];
+  if (!constants.isBinderName(slot)) {
+    refuse('E_SQL_SHAPE', `the binder of ${n.name} must be a bare name`, slot.pos);
   }
-  return ['_', n.args[1]];
+  return [slot.name, body];
 }
 
-// The alias a relation binding renders under — its own, or the table name when it
-// declares none. The same rule Bindings.checkAliases applies.
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
 function binderKeys(names) {
   const out = [];
   for (const name of names) {
-    for (const k of [name, name.replace(/[A-Z]/g, (c) => c.toLowerCase())]) if (!out.includes(k)) out.push(k);
+    for (const k of [name, asciiLower(name)]) if (!out.includes(k)) out.push(k);
   }
   return out;
 }
@@ -3425,6 +3342,8 @@ function scalarFields(row) {
     .map(([u, spec]) => [u, { spec, table: row.table, qualify: row.qualify, optional: false }]);
 }
 
+// The alias a relation binding renders under — its own, or the table name when it
+// declares none. The same rule Bindings.checkAliases applies.
 function relationAlias(rel) {
   const alias = rel.alias ?? null;
   if (typeof alias === 'string' && alias !== '') return alias;
@@ -3473,11 +3392,17 @@ function requireComparableKinds(l, r, op, pos) {
   const cl = Object.hasOwn(EQL_CLASS, l.kind) ? EQL_CLASS[l.kind] : null;
   const cr = Object.hasOwn(EQL_CLASS, r.kind) ? EQL_CLASS[r.kind] : null;
   if (cl === null || cr === null || cl === cr) return;
-  const other = l.kind === 'BOOL' ? r.kind : l.kind;
-  refuse('E_SQL_SHAPE',
-    `${op} compares a BOOL with a ${other}, which SEL answers FALSE for every value `
-    + 'because the kinds differ. SQL has no way to say that: both sides cast to the '
-    + 'same characters', pos);
+  // The message names both kinds as they are: a BIN and a TEXT reached here
+  // too, and were reported as "a BOOL with a BIN".
+  const what = `${op} compares a ${l.kind} with a ${r.kind}`;
+  refuse('E_SQL_SHAPE', op[0] === '$'
+    // SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an operand of
+    // the byte comparisons at all (E_NOT_BIN); SQL would cast both sides to
+    // characters, which says neither.
+    ? `${what}, which SEL compares as bytes (or refuses, for a BOOL); SQL has no `
+      + 'way to say that: both sides cast to the same characters'
+    : `${what}, which SEL answers FALSE for every value because the kinds differ. `
+      + 'SQL has no way to say that: both sides cast to the same characters', pos);
 }
 
 function retKind(entry, args, pos = null) {

@@ -43,7 +43,18 @@ function slotIndex(s) {
 //
 // split/join is literal and global, which is exactly str.replace's contract.
 // Emit.ident already used this idiom for the same reason; these sites did not.
-export function fillSlot(tpl, slot, value) {
+// Appends SQL text to a part list, joining it to a string part already at the
+// end: a part list alternates text and parameter slots, never two texts.
+export function appendSql(parts, s) {
+  if (s === '') return;
+  if (parts.length && typeof parts[parts.length - 1] === 'string') {
+    parts[parts.length - 1] += s;
+  } else {
+    parts.push(s);
+  }
+}
+
+function fillSlot(tpl, slot, value) {
   return tpl.split(slot).join(value);
 }
 
@@ -131,7 +142,7 @@ function numericLiteral(dialect, v, pos) {
 
 // A text past this many characters is escaped by one regex pass built from the dialect's
 // rules; shorter text keeps the per-character scan, which beats building the signature
-// that keeps the regex honest (JS-P25).
+// that keeps the regex honest.
 const ESCAPE_SCAN_MAX = 64;
 const ESCAPE_PLANS = new WeakMap();
 
@@ -270,7 +281,7 @@ export class Emit {
   // operand comparisons, IN over a list, and the inRelation skeleton — and only
   // one of those is a two-operand template.
   textOperand(f) {
-    if (f.exact) return f;
+    if (f.exactCollation) return f;
     const cast = this.lex('textCast');
     const collate = String(this.lex('textCollate') ?? '');
     let parts = f.parts;
@@ -328,19 +339,12 @@ export class Emit {
   //
   // The cycle is refused rather than a depth capped, because the cycle is the
   // actual mistake and a depth cap would need a number nobody can justify. With
-  // cycles refused the chain is bounded by the number of lexical keys, which is
-  // fifteen.
+  // cycles refused the chain is bounded by the number of lexical keys
+  // (RULES.lexicalTypes).
   fill(tpl, args, pos = null, expanding = null) {
     const parts = [];
 
-    const push = (s) => {
-      if (s === '') return;
-      if (parts.length && typeof parts[parts.length - 1] === 'string') {
-        parts[parts.length - 1] += s;
-      } else {
-        parts.push(s);
-      }
-    };
+    const push = (s) => appendSql(parts, s);
 
     const splice = (f) => {
       for (const p of f.parts) {
@@ -395,13 +399,6 @@ export class Emit {
           + `entry of dialect ${this._dialect}`, pos);
       }
       if (arg === null || arg === '') { push(val); continue; }
-      // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
-      // already BIN needs no conversion, and on PostgreSQL converting it is
-      // destructive: text::bytea parses its input as a bytea *literal*, where \\
-      // is one backslash and \x41 is a byte, so the round trip changes the bytes
-      // or fails the query. Every other cast is idempotent and applied
-      // unconditionally; this is the one whose input kind decides whether it
-      // means anything.
       if (expanding !== null && expanding.has(key)) {
         refuse('E_SQL_UNSUPPORTED',
           `the ${key} lexical entry of dialect ${this._dialect} expands into `
@@ -411,6 +408,13 @@ export class Emit {
       const each = arg === '*' ? args.map((_, n) => String(n)) : [arg];
       each.forEach((one, at2) => {
         if (at2 > 0) push(', ');
+        // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
+        // already BIN needs no conversion, and on PostgreSQL converting it is
+        // destructive: text::bytea parses its input as a bytea *literal*, where \\
+        // is one backslash and \x41 is a byte, so the round trip changes the bytes
+        // or fails the query. Every other cast is idempotent and applied
+        // unconditionally; this is the one whose input kind decides whether it
+        // means anything.
         const castArg = key === 'binaryCast' ? slotIndex(one) : null;
         if (castArg !== null && castArg < args.length
             && args[castArg] instanceof Fragment && args[castArg].kind === 'BIN') {

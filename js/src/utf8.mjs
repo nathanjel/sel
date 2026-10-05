@@ -52,7 +52,7 @@ export function toCodePoints(str, pos) {
 }
 
 export function fromCodePoints(cps) {
-  // Short arrays are the common case and need no slice (JS-P27).
+  // Short arrays are the common case and need no slice.
   const n = cps.length;
   if (n === 0) return '';
   if (n <= 4096) return String.fromCodePoint.apply(null, cps);
@@ -64,13 +64,36 @@ export function fromCodePoints(cps) {
   return out;
 }
 
+// Any UTF-16 surrogate unit. A string without one has one unit per code point,
+// so its native length, positions and order are SEL's; one with them is the slow
+// path everywhere (and, at the host boundary, checked for an unpaired one).
+export const ANY_SURROGATE = /[\uD800-\uDFFF]/;
+
+// The code point index of UTF-16 offset `u` in `s` (for engine offsets: indexOf,
+// regex match positions).
+export function cpIndex(s, u) {
+  let count = 0;
+  let i = 0;
+  while (i < u) {
+    const c = s.charCodeAt(i);
+    i += (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) ? 2 : 1;
+    count++;
+  }
+  return count;
+}
+
 // --- bytes ------------------------------------------------------------------
+
+// The UTF-8 length of one code point (SEL text has no lone surrogates).
+export function cpUtf8Length(cp) {
+  return cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+}
 
 export function encodeUtf8(str, pos) {
   // Two passes over the code units: the first measures the result and finds an unpaired
   // surrogate (handed to toCodePoints, which raises E_UTF8 with the same message and
   // position as ever), the second writes into a buffer of exactly that size. This was a
-  // code point array, an array of bytes and a copy of it (JS-P7).
+  // code point array, an array of bytes and a copy of it.
   const n = str.length;
   let size = 0;
   for (let i = 0; i < n; i++) {
@@ -127,7 +150,7 @@ export function decodeSource(bytes) {
 export function decodeUtf8(bytes, pos) {
   // Code units are collected and turned into a string in blocks; the code points decoded
   // so far are only needed to place an error when the text being decoded is the program
-  // source, and are rebuilt from the output then (JS-P7).
+  // source, and are rebuilt from the output then.
   let flushed = '';
   const units = [];
   const n = bytes.length;
@@ -202,9 +225,8 @@ export function bytesEqual(a, b) {
 
 // Text order is UTF-8 byte order, which is code point order. UTF-16 unit order is the
 // same order except where a surrogate meets U+E000..U+FFFF, so two strings with no
-// surrogate in either compare natively (a fast path the engine optimises; JS-P8), and
+// surrogate in either compare natively (a fast path the engine optimises), and
 // anything else compares as encoded bytes.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 export function compareText(a, b) {
   if (!ANY_SURROGATE.test(a) && !ANY_SURROGATE.test(b)) return a < b ? -1 : a > b ? 1 : 0;
   return bytesCompare(encodeUtf8(a, null), encodeUtf8(b, null));

@@ -20,6 +20,13 @@ export class Bindings {
   constructor(bindings) {
     // A Map, not an object: the names come from the application, and `{}`
     // answers for every Object.prototype name.
+    // Another Bindings is already validated: take its names as they are, so
+    // every entry point accepts one (planHybrid always did; translate and
+    // translateStatement refused it as a binding named `_map`).
+    if (bindings instanceof Bindings) {
+      this._map = new Map(bindings._map);
+      return;
+    }
     this._map = new Map();
     const pairs = bindings instanceof Map ? [...bindings] : Object.entries(bindings ?? {});
     for (const [name, b] of pairs) {

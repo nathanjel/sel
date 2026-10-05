@@ -14,9 +14,9 @@
 // The corpus format and the one-line-per-program protocol are specified in
 // tools/README.md, and this reader is the same five lines as the others.
 
-import { readFileSync } from 'node:fs';
 import { compile, SelError } from '../src/sel.mjs';
 import { Binding, Sql, SqlError } from '../src/sql/index.mjs';
+import { readTextOrExit } from './read-input.mjs';
 
 // The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 // same in every host's runner: two tables, a NUM join key, a TEXT field whose
@@ -45,10 +45,14 @@ const attempt = (fn) => {
 
 // A third argument `statement` prints only translateStatement's inline SQL (or
 // `!CODE@line:col`), one line per program: what php/bin/sqlo's cross-host
-// statement oracle executes against a real server (review 2026-09-25 TEST-04),
+// statement oracle executes against a real server,
 // so every host's translator -- not only PHP's -- is asked whether its SQL
 // means what SEL means.
 const [path, dialect = 'mariadb', mode = 'all'] = process.argv.slice(2);
+if (path === undefined) {
+  process.stderr.write('usage: sqlfuzz.mjs CORPUS [dialect] [statement]\n');
+  process.exit(2);
+}
 
 function readCorpus(text) {
   const records = [];
@@ -60,8 +64,15 @@ function readCorpus(text) {
   return records.map((lines) => lines.join('\n').replace(/\n$/, ''));
 }
 
+// Exactly one trailing newline comes off each record (the corpus rule in
+// CLAUDE.md); a CR anywhere is program text.
+const corpus = readCorpus(readTextOrExit(path));
+if (corpus.length === 0) {
+  process.stderr.write(`no programs in ${path}\n`);
+  process.exit(1);
+}
 const lines = [];
-for (const src of readCorpus(readFileSync(path, 'utf8'))) {
+for (const src of corpus) {
   let program;
   try {
     program = compile(src);
@@ -75,30 +86,23 @@ for (const src of readCorpus(readFileSync(path, 'utf8'))) {
     lines.push(attempt(() => Sql.translateStatement(program, dialect, bindings).asStatement()));
     continue;
   }
-  try {
-    // `asValue` rather than `asCondition`: the corpus is arbitrary expressions,
-    // most of which are not BOOL, and refusing them all for that would compare
-    // the same refusal a thousand times.
-    //
-    // Three renderings, not one. Inline alone would have missed a whole class:
-    // whether a slot is a literal or a placeholder is a `params`-mode decision,
-    // and the bound values are a third thing again -- a host that emits the same
-    // string while binding different values is exactly what this lane is for.
-    lines.push([
-      attempt(() => render(Sql.translate(program, dialect, bindings))),
-      attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
-      attempt(() => {
-        const plan = Sql.planHybrid(program, dialect, bindings);
-        const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
-        return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
-      }),
-    ].join(' || '));
-  } catch (e) {
-    if (e instanceof SqlError) lines.push(`!${e.code}@${e.line}:${e.col}`);
-    // A SEL error raised DURING translation is still a translator answer -- the
-    // layer evaluates constant subtrees -- and must agree like any other.
-    else if (e instanceof SelError) lines.push(`!SEL ${e.code}@${e.line}:${e.col}`);
-    else lines.push(`!HOST ${e.constructor.name}: ${e.message}`);
-  }
+  // `asValue` rather than `asCondition`: the corpus is arbitrary expressions,
+  // most of which are not BOOL, and refusing them all for that would compare
+  // the same refusal a thousand times.
+  //
+  // Three renderings, not one. Inline alone would have missed a whole class:
+  // whether a slot is a literal or a placeholder is a `params`-mode decision,
+  // and the bound values are a third thing again -- a host that emits the same
+  // string while binding different values is exactly what this lane is for.
+  // Each is its own attempt(), which turns every outcome into a line.
+  lines.push([
+    attempt(() => render(Sql.translate(program, dialect, bindings))),
+    attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
+    attempt(() => {
+      const plan = Sql.planHybrid(program, dialect, bindings);
+      const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+      return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
+    }),
+  ].join(' || '));
 }
 process.stdout.write(lines.map((l) => l.replace(/\n/g, '\\n')).join('\n') + '\n');

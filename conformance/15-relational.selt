@@ -1295,3 +1295,12 @@ X = LIST(RECORD("k", 1), RECORD("k", 2)); Y = LIST(RECORD("id", 2)); LIST(COUNT(
 --- expect
 tree -{"1"=t"1", "2"=t"1"}
 ===
+### name: rel.link.five-argument-binders-checked-left-to-right
+--- note
+Both binder slots of the five-argument form hold a non-name: the first one
+(argument 3) is the error, as evaluation is left to right (SPEC 6.2, 7.4).
+--- source
+LINK(LIST(1), LIST(2), 1, 2, TRUE)
+--- expect
+error E_EXPECT_SYMBOL at 1:24
+===

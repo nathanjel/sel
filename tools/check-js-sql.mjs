@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // JS SQL layer: regression checks that are about the host, not the shared corpus
-// (sql/cases holds the portable ones). T08-T11 of the 2026-09-29 review:
-// bounded work on hostile programs, no host exception where an answer is owed,
+// (sql/cases holds the portable ones): bounded work on hostile programs, no host exception where an answer is owed,
 // and hybrid execution that never writes the caller's context.
 //
 //     node tools/check-js-sql.mjs
@@ -116,7 +115,7 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
     outcome(() => map.defineDialect('mariadb', { extends: null, version: '11' })).error instanceof Error);
 }
 
-// --- text literals: the regex pass and the per-character scan agree (JS-P25) ------
+// --- text literals: the regex pass and the per-character scan agree ------
 {
   const { map } = sql;
   const { textLiteral } = await import('../js/src/sql/emit.mjs');
@@ -155,7 +154,7 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
     before === naive('js-esc', long) && after.includes('x\\%y') && textLiteral('js-esc', long) === before);
 }
 
-// --- the dialect chain is cached, frozen, and follows registrations (JS-P26) -------
+// --- the dialect chain is cached, frozen, and follows registrations -------
 {
   const { map } = sql;
   check('chain(mariadb) is self first, then up to ansi', JSON.stringify(map.chain('mariadb')) === '["mariadb","mysql-family","ansi"]',
@@ -325,6 +324,113 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   const r2 = sql.executeHybrid(plan, null, ctx);
   check('ast replace: r2 reflects callback', r2.get('k').asText() === '333');
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
+}
+
+// js/src is plain ESM with no Node built-ins (the bundle is built for the
+// neutral platform, and sel-lang/sql ships unbundled): no Buffer, no process,
+// no node: import. The 63-byte PostgreSQL alias check counts UTF-8 bytes with
+// the host's own codec arithmetic, at the boundary of a two-byte character.
+{
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const walkDir = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walkDir(join(dir, e.name)) : e.name.endsWith('.mjs') ? [join(dir, e.name)] : []);
+  const srcDir = new URL('../js/src/', import.meta.url).pathname;
+  const offenders = walkDir(srcDir).filter((f) => /\bBuffer\.|\bprocess\.|from 'node:|\brequire\(/
+    .test(readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '')));
+  check('js/src uses no Node built-ins', offenders.length === 0, offenders.join(' '));
+  const keys = (a, b) => `T .> MAP(RECORD("${a}", _["X"], "${b}", _["X"]))`;
+  const T = { T: Binding.relation('t', null, { X: Binding.column('x', 't', 'NUM') }) };
+  const pg = (src) => outcome(() => Sql.translateStatement(compile(src), 'postgresql', T).asStatement());
+  const e31 = 'é'.repeat(31);
+  check('63 bytes: two names differing in their 63rd byte are two aliases',
+    pg(keys(`${e31}a`, `${e31}b`)).value !== undefined);
+  check('64 bytes: two names differing only in byte 64 collide',
+    pg(keys(`${e31}aa`, `${e31}ab`)).error?.code === 'E_SQL_UNSUPPORTED');
+  check('a two-byte character that would straddle byte 63 is cut whole',
+    pg(keys(`${e31}éx`, `${e31}éy`)).error?.code === 'E_SQL_UNSUPPORTED');
+}
+
+// The parser holds every call to its arity, so the statement planner decodes
+// only the counts a form takes; a hand-built tree with another count is a bug
+// in its builder, an Error, which tryTranslateStatement does not swallow.
+{
+  const program = compile('ORDERS .> TAKE(1)');
+  const ast = { ...program.ast, args: [...program.ast.args, program.ast.args[1]] };
+  const bad = outcome(() => Sql.tryTranslateStatement(new (program.constructor)('', ast), 'sqlite', R));
+  check('a hand-built TAKE of three arguments is an Error, not a refusal',
+    bad.error instanceof Error && !(bad.error instanceof SqlError) && /malformed parse tree/.test(bad.error.message),
+    String(bad.error ?? bad.value));
+}
+
+// The two exactnesses a Fragment carries are different questions.
+// exactCollation: this TEXT already compares bytes, so no COLLATE wrap -- set
+// by an `exact` binding or by a builder; isExact(): no caveat was recorded.
+{
+  const cond = (src, b) => Sql.translate(compile(src), 'mariadb', b);
+  const exactCol = cond('N $== "a"', { N: Binding.column('name', null, 'TEXT', true) });
+  const plainCol = cond('N $== "a"', { N: Binding.column('name', null, 'TEXT') });
+  check('exact binding: compared without a collation', exactCol.asValue() === "(`name` = 'a')", exactCol.asValue());
+  check('plain binding: compared under the binary collation', /COLLATE utf8mb4_nopad_bin/.test(plainCol.asValue()), plainCol.asValue());
+  check('collation exactness is not caveat exactness: both translations are isExact()',
+    exactCol.isExact() && plainCol.isExact());
+  const division = cond('1 / 3', {});
+  check('a caveat makes isExact() false', !division.isExact() && division.caveats.includes('division-scale'));
+  check('a returned fragment carries no collation state', exactCol.exactCollation === false);
+  registerFunction('JS_BYTES_NAME', 0, 0, () => Value.text(''));
+  sql.map.defineBuilder('mariadb', 'funcs', 'JS_BYTES_NAME',
+    () => new sql.Fragment(['`name`'], 'TEXT', 'mariadb', [], [], [], true));
+  const built = cond('JS_BYTES_NAME() $== "a"', {});
+  check('a builder\'s exactCollation fragment skips the collation, and its caveat still makes it inexact',
+    built.asValue() === "(`name` = 'a')" && !built.isExact() && built.caveats.includes('host-function'),
+    `${built.asValue()} ${built.caveats}`);
+  sql.map.reset();
+}
+
+// A Bindings instance is accepted wherever a plain map of bindings is: by
+// translate and translateStatement as by planHybrid (and by Python's twins).
+{
+  const catalog = new sql.Bindings({ X: Binding.column('x', null, 'NUM'), ...R });
+  const viaMap = { X: Binding.column('x', null, 'NUM'), ...R };
+  const t = outcome(() => Sql.translate(compile('X > 1'), 'sqlite', catalog).asCondition());
+  check('translate takes a Bindings instance', t.value === Sql.translate(compile('X > 1'), 'sqlite', viaMap).asCondition(),
+    t.error ? `${t.error.code} ${t.error.message}` : t.value);
+  const pipe = compile('ORDERS .> FILTER(_["ID"] > 1)');
+  const s = outcome(() => Sql.translateStatement(pipe, 'sqlite', catalog).asStatement());
+  check('translateStatement takes a Bindings instance', s.value === Sql.translateStatement(pipe, 'sqlite', viaMap).asStatement(),
+    s.error ? `${s.error.code} ${s.error.message}` : s.value);
+  const copy = outcome(() => new sql.Bindings(catalog).names().join());
+  check('a Bindings built from a Bindings keeps its names', copy.value === catalog.names().join(), copy.error?.message);
+}
+
+// A source the program reassigns and a continuation step then reads as a value
+// (sql/cases/48-scope-and-slots.sqlt pins only the form no step reads): the SQL
+// takes the DROP as its OFFSET, and COUNT(ORDERS) in the continuation is the
+// reassigned helper (4 rows), not the whole relation. The prefix runs on a real
+// SQLite, and run() over the same rows is the answer.
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE orders (id INTEGER); INSERT INTO orders VALUES (1),(2),(3),(4),(5),(6);');
+  registerFunction('JS_REREAD_HOSTF', 1, 1, (args) => args.val(0));
+  const src = 'ORDERS = ORDERS .> DROP(2); '
+    + 'ORDERS .> TAKE(3) .> MAP(RECORD("n", COUNT(ORDERS), "x", JS_REREAD_HOSTF(_["ID"])))';
+  const plan = sql.planHybrid(compile(src), 'sqlite', R);
+  const stmt = plan.sqlStatement ? plan.sqlStatement.asStatement('inline') : '';
+  check('reread source: the SQL prefix is LIMIT 3 OFFSET 2', /LIMIT 3 OFFSET 2$/.test(stmt), stmt);
+  const runner = (q, bound) => db.prepare(q).all(...bound.map((v) => v.toNative()))
+    .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.toUpperCase(), String(v)])));
+  const rows = () => Value.fromNative({ ORDERS: db.prepare('SELECT id FROM orders').all().map((r) => ({ ID: String(r.id) })) });
+  const ctx = rows();
+  const before = ctx.dump();
+  const hybrid = outcome(() => sql.executeHybrid(plan, runner, ctx));
+  const direct = outcome(() => compile(src).run(rows()));
+  check('reread source: hybrid equals run()', hybrid.value !== undefined && direct.value !== undefined
+    && hybrid.value.dump() === direct.value.dump(),
+    `${hybrid.value?.dump() ?? hybrid.error} vs ${direct.value?.dump() ?? direct.error}`);
+  check('reread source: n is 4 in three rows', direct.value?.dump()
+    === '-{"1"=-{"n"=t"4", "x"=t"3"}, "2"=-{"n"=t"4", "x"=t"4"}, "3"=-{"n"=t"4", "x"=t"5"}}', direct.value?.dump());
+  check('reread source: the caller\'s context is not written', ctx.dump() === before);
 }
 
 console.log(count === 0 ? 'no checks' : `js sql: ${count - failures}/${count} checks pass`);

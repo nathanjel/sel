@@ -4,20 +4,22 @@
 // not a bug report, it is an answer. *This rule cannot be pushed into this
 // database, and here is what stopped it.*
 
-export class SqlError extends Error {
-  // One class, one message. No diagnostics object, no `explain()` API.
-  constructor(code, message, pos) {
-    super(message);
-    this.name = 'SqlError';
-    this.code = code;
-    this.line = pos ? pos.line : 0;
-    this.col = pos ? pos.col : 0;
-    this.offset = pos ? pos.offset : 0;
-  }
+import { CodedError } from '../errors.mjs';
 
-  toString() {
-    return `${this.code} at ${this.line}:${this.col}: ${this.message}`;
+// One class, one message. No diagnostics object, no `explain()` API.
+export class SqlError extends CodedError {
+  constructor(code, message, pos) {
+    super('SqlError', code, message, pos);
   }
+}
+
+// What an application handed a registration or a constructor, for its message.
+export function typeName(v) {
+  if (v === null) return 'null';
+  if (v === undefined) return 'undefined';
+  if (Array.isArray(v)) return 'list';
+  if (typeof v === 'object') return v.constructor ? v.constructor.name : 'object';
+  return typeof v;
 }
 
 // Raise at the point of failure. Nothing wraps this on the way out, the same

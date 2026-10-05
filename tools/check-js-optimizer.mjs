@@ -89,8 +89,7 @@ same(names(optimizedSteps(
 // Late materialization runs the MAP on the sorted rows; on the logical path a
 // relation's rows carry their fields, so `_["x"] + 1` cannot raise there. In
 // memory it can (E_NO_KEY, E_NOT_NUM), and moving the MAP behind the sort
-// changed which row raised first -- or, behind a TOP, whether any did (review
-// 2026-09-25 SEM-08).
+// changed which row raised first -- or, behind a TOP, whether any did.
 const late = optimizedSteps(
   '((RECORD("x", 3), RECORD("x", 1), RECORD("x", 2)))'
   + ' .> MAP(RECORD("x", _["x"], "heavy", _["x"] + 1))'
@@ -254,7 +253,7 @@ function failure(fn) {
   try { fn(); return 'no error'; } catch (e) { return `${e.code}@${e.line}:${e.col}`; }
 }
 //
-// Review 2026-09-15 finding AJ: a helper assignment stage 1 inlines carried
+// A helper assignment stage 1 inlines carried
 // its definition-site position into the continuation, so `Y = "x"; ... + Y`
 // reported 1:5 there and 1:45 from run(). The planner now inlines a helper
 // only when it is a literal (stamped at the read), unwinds through a helper
@@ -289,7 +288,7 @@ for (const [source, kind, want] of [
 
 // --- an executed plan answers what run() answers ---
 //
-// Review 2026-09-15 findings I, AI and P: plans that pushed a bare bucket to
+// Plans that pushed a bare bucket to
 // the end, re-grouped a bucket, or re-applied a MAP's RECORD over rows the SQL
 // had already projected, all answered something else than run(). The database
 // is stood in for by SEL itself: the SQL prefix's own AST evaluated over the
@@ -318,8 +317,7 @@ for (const [source, kind] of [
   // answer's keys); over the MAP's derived table sqlite cannot render its NUM
   // guard, so nothing pushes down. A later step that renumbers again used to
   // let the swap through -- but the MAP calls REPEAT, which can raise, and a
-  // FILTER in front of it would skip that on the rows it drops (review
-  // 2026-09-25 SEM-07), so it stays behind and nothing pushes down.
+  // FILTER in front of it would skip that on the rows it drops, so it stays behind and nothing pushes down.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
@@ -345,7 +343,7 @@ for (const [source, kind] of [
   check(executed === want, `${source}: the executed plan answers ${executed}, run() ${want}`);
 }
 
-// The runner contract (finding AK): the statement in `params` mode with
+// The runner contract: the statement in `params` mode with
 // `bindings()` in placeholder order -- text literals as `?`, numbers inlined
 // -- in every host, so a driver binds what it is handed as it is. Lisp handed
 // the runner inline SQL and its creation-order slot list.

@@ -5,16 +5,16 @@
 import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
-import { toCodePoints, fromCodePoints } from '../utf8.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
+import { toCodePoints, fromCodePoints, ANY_SURROGATE, cpIndex } from '../utf8.mjs';
 import { cpLength, checkText, checkCollection } from '../budget.mjs';
 
 const cps = (s) => toCodePoints(s, null);
 
 // A text with no surrogate has one UTF-16 unit per code point, so every position, length
 // and slice below is the native one; the code point arrays are only for text that has an
-// astral character (JS-P5). A Value's text is well formed, so a surrogate in it is half of
+// astral character. A Value's text is well formed, so a surrogate in it is half of
 // a valid pair.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 const plain = (s) => !ANY_SURROGATE.test(s);
 
 // The UTF-16 offset of the code point at index `cp` (or the end when past it).
@@ -25,17 +25,6 @@ function unitOffset(s, cp) {
     i += c >= 0xd800 && c <= 0xdbff ? 2 : 1;
   }
   return i;
-}
-
-// The code point index of the UTF-16 offset `u`.
-function cpIndex(s, u) {
-  let n = 0;
-  for (let i = 0; i < u; i++) {
-    const c = s.charCodeAt(i);
-    if (c >= 0xd800 && c <= 0xdbff) i++;
-    n++;
-  }
-  return n;
 }
 
 define({ name: 'LEN', min: 1, max: 1, fn: (args) => Value.int(cpLength(args.text(0))) });
@@ -88,7 +77,7 @@ define({
     }
     if (needle === '') fail('E_BAD_ARG', 'FIND needle must not be empty', args.posOf(0));
     // The engine's indexOf is exact on well-formed UTF-16: a needle cannot begin with half
-    // of a pair, so it can only match at a code point boundary (JS-P6, the old loop was
+    // of a pair, so it can only match at a code point boundary (the old loop was
     // O(n*m) over number arrays). Only a haystack with astral characters needs its offsets
     // converted, once each way.
     if (plain(hay)) return Value.int(hay.indexOf(needle, from) + 1);
@@ -126,7 +115,7 @@ define({
     if (sep === '') fail('E_BAD_ARG', 'SPLIT separator must not be empty', args.posOf(1));
     const pieces = hay.split(sep);
     checkCollection(pieces.length, args.pos, 'SPLIT result');
-    return Value.list(pieces.map((piece) => Value.textOwned(piece)));
+    return Value.listOwned(pieces.map((piece) => Value.textOwned(piece)));
   },
 });
 
@@ -145,17 +134,11 @@ define({ name: 'TRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0)
 define({ name: 'LTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), true, false)) });
 define({ name: 'RTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), false, true)) });
 
-// ASCII only, deliberately. PHP's strtoupper is byte- and locale-based while JS's
-// toUpperCase applies full Unicode mapping; they cannot be reconciled without
-// shipping a case table, and guessing would break the invariant silently.
-function asciiCase(s, up) {
-  // Only a-z (or A-Z) move, and they are single units, so the astral characters and every
-  // other non-ASCII unit pass through untouched.
-  return up ? s.replace(/[a-z]+/g, (m) => m.toUpperCase()) : s.replace(/[A-Z]+/g, (m) => m.toLowerCase());
-}
-
-define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), true)) });
-define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), false)) });
+// ASCII only, deliberately (lexer.mjs asciiUpper): JS's toUpperCase applies
+// full Unicode mapping, and the hosts cannot be reconciled without shipping a
+// case table; guessing would break the invariant silently.
+define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiUpper(a.text(0))) });
+define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiLower(a.text(0))) });
 
 define({
   name: 'BACKWARDS', min: 1, max: 1,

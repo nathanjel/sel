@@ -20,18 +20,6 @@
 // E_DEPTH at 1:101 for 100 parens, 1:200 for a `-` chain and 1:797 for a NOT
 // chain. Prefix operators are counted only when actually consumed.
 
-import { RecordShape } from './value.mjs';
-
-function prepareRecordShape(name, args) {
-  if (name !== 'RECORD' || args.length === 0 || args.length % 2) return null;
-  const keys = [];
-  for (let i = 0; i < args.length; i += 2) {
-    if (args[i].t !== 'text') return null;
-    keys.push(args[i].v);
-  }
-  return new Set(keys).size === keys.length ? new RecordShape(keys) : null;
-}
-
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { tokenize, RESERVED } from './lexer.mjs';
@@ -315,17 +303,7 @@ class Parser {
       fail('E_SYNTAX', 'right-hand side of .> must be a function call or function name', t);
     }
     const nameTok = this.next();
-    let args = [];
-    if (this.atOp('(')) {
-      this.next();
-      if (this.atOp(')')) {
-        this.next();
-      } else {
-        const inner = this.parseSequence();
-        this.expectOp(')');
-        args = (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
-      }
-    }
+    const args = this.atOp('(') ? this.parseArgs() : [];
 
     const spec = lookup(nameTok.value);
     if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);
@@ -392,18 +370,22 @@ class Parser {
     }
   }
 
-  parseCall() {
-    const nameTok = this.next();
+  // `( args )`, the opening parenthesis next: a comma list's items, one
+  // argument otherwise, none for `()`.
+  parseArgs() {
     this.expectOp('(');
-    let args;
     if (this.atOp(')')) {
       this.next();
-      args = [];
-    } else {
-      const inner = this.parseSequence();
-      this.expectOp(')');
-      args = (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
+      return [];
     }
+    const inner = this.parseSequence();
+    this.expectOp(')');
+    return (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
+  }
+
+  parseCall() {
+    const nameTok = this.next();
+    const args = this.parseArgs();
 
     const spec = lookup(nameTok.value);
     if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);
@@ -424,8 +406,10 @@ function finishCall(nameTok, spec, args) {
     if (problem) fail('E_ARITY', problem, nameTok);
   }
   if (spec.compileCheck) spec.compileCheck(args);
-  return { t: 'call', name: spec.name, spec, args, pos: nameTok,
-    recordShape: prepareRecordShape(spec.name, args) };
+  // recordShape: the shape a RECORD with distinct literal keys builds, which
+  // the in-memory optimiser fills in (optimizer.mjs, recordShapeOf). Present,
+  // as null, on every call so that every call node has one layout.
+  return { t: 'call', name: spec.name, spec, args, pos: nameTok, recordShape: null };
 }
 
 function arityText(spec) {

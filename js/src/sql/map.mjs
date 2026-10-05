@@ -14,7 +14,7 @@
 import { asciiUpper } from '../lexer.mjs';
 import { hostArity } from '../registry.mjs';
 import { DIALECTS, RULES } from './_map.mjs';
-import { refuse } from './errors.mjs';
+import { refuse, typeName } from './errors.mjs';
 
 export const SECTIONS = ['ops', 'funcs', 'skel'];
 
@@ -52,6 +52,9 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 
 // --- registration ------------------------------------------------------------
 
+// Every key defineDialect() accepts. sql/MAP.md §3 is the normative list.
+const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
 // Declare a dialect.
 //
 // The usual reason is an older or newer server than the shipped map assumes,
@@ -62,9 +65,6 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 //
 // Throws Error, not SqlError: a malformed registration is a mistake in the
 // application's startup, and `tryTranslate` must not swallow it.
-// Every key defineDialect() accepts. sql/MAP.md §3 is the normative list.
-const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
-
 export function defineDialect(name, spec) {
   // A registered dialect may be declared again under the same parent -- the
   // later declaration replaces it -- but a name never changes what it extends,
@@ -268,7 +268,7 @@ function quotedRuns(tpl) {
 export function checkNumericGuard(dialect) {
   if (guardChecked.has(dialect)) return;
   // Marked as checked only AFTER it has passed. Marking first made the first use
-  // raise and every later one emit the SQL the check had refused (JS-C24).
+  // raise and every later one emit the SQL the check had refused.
   const guard = lexical(dialect, 'numericGuard');
   if (typeof guard !== 'string') { guardChecked.add(dialect); return; }
   const isnum = entry(dialect, 'funcs', 'ISNUM');
@@ -332,7 +332,7 @@ export function requireTarget(dialect, pos = null) {
 
 // Self first, then extends, up to ansi.
 //
-// Built once per dialect and handed back frozen (JS-P26): every lexical() and
+// Built once per dialect and handed back frozen: every lexical() and
 // entry() lookup asks, and rebuilding the array each time was a tenth of a
 // translation's own time. A registration or a reset is what can change an answer,
 // and both empty the cache.
@@ -416,12 +416,6 @@ const SLOT_IN_TPL = /\{([^}]*)\}/g;
 // `typeof` is not the name Python's type().__name__ gives, and it does not need
 // to be: sql/cases/README.md says messages are never asserted. What matters is
 // that a reader can tell what they passed.
-function typeName(v) {
-  if (v === null) return 'null';
-  if (Array.isArray(v)) return 'list';
-  return typeof v;
-}
-
 function checkLexical(key, v, where) {
   const types = RULES.lexicalTypes;
   if (!has(types, key)) {

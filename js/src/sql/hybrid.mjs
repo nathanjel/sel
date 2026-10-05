@@ -23,10 +23,10 @@
 
 import { Program, Value } from '../sel.mjs';
 import { MAX_DEPTH } from '../eval.mjs';
-import { optimizeAstLogical, unwindPipeline, buildPipeline, PIPELINE_OPS } from '../optimizer.mjs';
+import { optimizeAstLogical, unwindPipeline, buildPipeline, LITERAL_TYPES, mapDetails } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
-import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
+import { childNodes, walkNodes, fieldReads, readsName, mentionsKey, callsApplication } from '../ast.mjs';
 import * as sqlmap from './map.mjs';
 import * as constants from './constants.mjs';
 import * as normalise from './normalise.mjs';
@@ -62,10 +62,6 @@ export class HybridPlan {
   get is_hybrid() { return this.isHybrid; }
   get pure_sql() { return this.pureSql; }
   get pure_memory() { return this.pureMemory; }
-  get pureSqlExecution() { return this.pureSql; }
-  get pureMemoryExecution() { return this.pureMemory; }
-  get pureSqlP() { return this.pureSql; }
-  get pureMemoryP() { return this.pureMemory; }
   get source_tables() { return this.sourceTables; }
   get selected_member() { return this.selectedMember; }
 }
@@ -193,7 +189,7 @@ function bucketRowsAreKeys(steps) {
 // promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
 // LINK makes the rows exact again -- what they compute is over the promoted
 // fields, or is refused -- so a prefix whose LINK nothing has projected is
-// not a split point and not a full pushdown (finding Y, lanes): its
+// not a split point and not a full pushdown: its
 // continuation would read `_["C"]` where the database sent nothing.
 function joinRowsLackBinders(steps) {
   let joined = false;
@@ -213,7 +209,7 @@ function joinRowsLackBinders(steps) {
 // gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
 // decides which rows survive, not any of this. A prefix that ends before that step
 // is exact; one that includes it answers in another order
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 const ORDER_SORTS = new Set(['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY']);
 function orderIsLost(steps) {
   let sorted = false;
@@ -240,7 +236,7 @@ function rowsAreNotTheValue(steps) {
 }
 
 const SQL_SPECIAL_CALLS = new Set([
-  'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
+  'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'MIN', 'MAX', 'RECORD', 'LIST',
 ]);
 
 // `defs` are the helper definitions: a read of one is as unsupported as its
@@ -257,16 +253,7 @@ function containsUnsupportedSql(node, dialect, defs = null, seen = new Set()) {
     }
     return node.args.some((item) => containsUnsupportedSql(item, dialect, defs, seen));
   }
-  const inner = (item) => containsUnsupportedSql(item, dialect, defs, seen);
-  if (node.args && node.args.some(inner)) return true;
-  if (node.items && node.items.some(inner)) return true;
-  if (node.l && inner(node.l)) return true;
-  if (node.r && inner(node.r)) return true;
-  if (node.x && inner(node.x)) return true;
-  if (node.obj && inner(node.obj)) return true;
-  if (node.idx && inner(node.idx)) return true;
-  if (node.target && inner(node.target)) return true;
-  return Boolean(node.value && inner(node.value));
+  return childNodes(node).some((item) => containsUnsupportedSql(item, dialect, defs, seen));
 }
 
 // The field names read as `binder["field"]` in `node`, first seen first and
@@ -274,39 +261,9 @@ function containsUnsupportedSql(node, dialect, defs = null, seen = new Set()) {
 // `Name` are two fields. `binder` null means a read under ANY name counts --
 // a downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
 function collectFieldReferences(node, binder = '_') {
-  const wanted = binder === null ? null : new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
-  const refs = [];
-  const seen = new Set();
-  const visit = (item) => {
-    if (!item) return;
-    if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text'
-        && (wanted === null || wanted.has(item.obj.name.toUpperCase()))) {
-      const key = String(item.idx.v);
-      if (!seen.has(key)) {
-        seen.add(key);
-        refs.push(key);
-      }
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return refs;
+  return fieldReads(node, binder);
 }
 
-// The steps the MAP fall-through may push past the MAP. Each keeps the rows
-// as they are -- the same records, fewer or reordered -- so the custom half of
-// the projection still runs over its own input. A step that changes the row
-// shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
-// the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
-// the dependency columns SQL carries where SEL compares the custom values.
 // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
 // The rows the database returns are a rowset numbered 1..n. run() has those keys
 // only when the last step that decides them renumbers: every step except FILTER
@@ -317,20 +274,19 @@ function collectFieldReferences(node, binder = '_') {
 // continuation can observe them: it reads `_K` before something renumbers, or the
 // keys are the answer itself.
 const KEY_RETAINING = new Set(['FILTER']);
+
+// The steps the MAP fall-through may push past the MAP. Each keeps the rows
+// as they are -- the same records, fewer or reordered -- so the custom half of
+// the projection still runs over its own input. A step that changes the row
+// shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
+// the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
+// the dependency columns SQL carries where SEL compares the custom values.
 const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
 
+// Whether a step's own arguments mention `_K` (optimizer's stepReadsKey: one
+// question, one answer).
 function argsReadKey(step) {
-  let found = false;
-  const visit = (n) => {
-    if (found || !n) return;
-    if (n.t === 'var') { if (n.name === '_K') found = true; return; }
-    if (n.args) n.args.forEach(visit);
-    if (n.items) n.items.forEach(visit);
-    if (n.entries) n.entries.forEach(([, v]) => visit(v));
-    for (const c of [n.l, n.r, n.x, n.obj, n.idx]) visit(c);
-  };
-  step.args.slice(1).forEach(visit);
-  return found;
+  return step.args.slice(1).some(mentionsKey);
 }
 
 function keysObservable(prefixSteps, continuationSteps) {
@@ -348,28 +304,7 @@ function keysObservable(prefixSteps, continuationSteps) {
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
 // can stand in for.
 function readsWholeRow(node, binder) {
-  const wanted = new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
-  let found = false;
-  const visit = (item) => {
-    if (!item || found) return;
-    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
-    if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text') {
-      // A field read; the object is not a whole-row read.
-      visit(item.idx);
-      return;
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return found;
+  return readsName(node, [binder, '_', '_1', '_2']);
 }
 
 // Whether a pushable pair is the plain field read `binder[key]` of its own key,
@@ -377,16 +312,13 @@ function readsWholeRow(node, binder) {
 function isOwnFieldRead(pair, binder) {
   const value = pair.value;
   return value.t === 'index' && value.obj?.t === 'var' && value.idx?.t === 'text'
-    && value.obj.name.toUpperCase() === binder.toUpperCase()
+    && value.obj.name === binder
     && String(value.idx.v) === String(pair.key.v);
 }
 
 function mapRecordDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const binder = explicit ? args[1].name : '_';
-  const body = explicit ? args[2] : args[1];
-  if (!body || body.t !== 'call' || body.name !== 'RECORD'
+  const { explicit, binder, body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD'
       || body.args.length % 2 !== 0) return null;
   const pairs = [];
   const seen = new Set();
@@ -526,7 +458,7 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
 // plan, because that half is a program run() evaluates and §12.1 promises it
 // reports errors where run() would: run() evaluates the READ of Y at the use
 // site and reports `+`'s operand there, and it evaluates the definition once,
-// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// before the pipeline, not once per row. So
 // the planner does not inline. It plans the program as written, three ways:
 //
 //   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -546,7 +478,6 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
 //     assignment nothing after the split reads is dropped, as stage 1 drops
 //     it for translate() -- the one departure, and the same one.
 
-const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
 
 // The leading statements and the result expression of a program.
 function statements(ast) {
@@ -634,7 +565,8 @@ function unwindThroughHelpers(result, defs, literals) {
   // The source the loop stopped at reads the catalogue's binding when its name is
   // also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`): mark
   // it, so wrapping the pipeline in the helpers again does not inline the helper
-  // into the very read that was its own definition (PHP-C34 -- DROP twice).
+  // into the very read that was its own definition (DROP twice; the shape
+  // sql/cases/48-scope-and-slots.sqlt pins).
   if (source && source.t === 'var' && defs.has(source.name)) {
     source = { ...source, binding: true };
   }
@@ -644,18 +576,11 @@ function unwindThroughHelpers(result, defs, literals) {
 // The names a tree reads, binders included: an over-approximation that can
 // only keep an assignment the tree does not need, never drop one it does.
 function readNames(node, out = new Set()) {
-  if (!node) return out;
-  if (node.t === 'var') {
+  walkNodes(node, (n) => {
     // A read of the BINDING, reached by unwinding through a helper of the same
     // name (`ORDERS = ORDERS .> DROP(2)`), is not a read of that helper.
-    if (!node.binding) out.add(node.name);
-    return out;
-  }
-  if (node.args) node.args.forEach((item) => readNames(item, out));
-  if (node.items) node.items.forEach((item) => readNames(item, out));
-  for (const child of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-    readNames(child, out);
-  }
+    if (n.t === 'var' && !n.binding) out.add(n.name);
+  });
   return out;
 }
 
@@ -709,12 +634,7 @@ function tooDeepToPlan(ast) {
     const [node, depth] = stack.pop();
     if (!node) continue;
     if (depth > limit) return true;
-    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-      if (c) stack.push([c, depth + 1]);
-    }
-    for (const list of [node.args, node.items]) {
-      if (list) for (const c of list) stack.push([c, depth + 1]);
-    }
+    for (const c of childNodes(node)) if (c) stack.push([c, depth + 1]);
   }
   return false;
 }
@@ -724,28 +644,15 @@ function tooDeepToPlan(ast) {
 function flatSourceTables(ast, catalog) {
   const out = [];
   const seen = new Set();
-  const stack = [ast];
-  const pending = [];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node) continue;
-    if (node.t === 'var') {
-      if (catalog.has(node.name)) {
-        const b = catalog.get(node.name, node.pos);
-        if (b.kind === 'relation') {
-          const table = physicalSource(b);
-          if (!seen.has(table)) { seen.add(table); out.push(table); }
-        }
+  walkNodes(ast, (node) => {
+    if (node.t === 'var' && catalog.has(node.name)) {
+      const b = catalog.get(node.name, node.pos);
+      if (b.kind === 'relation') {
+        const table = physicalSource(b);
+        if (!seen.has(table)) { seen.add(table); out.push(table); }
       }
-      continue;
     }
-    pending.length = 0;
-    for (const list of [node.items, node.args]) if (list) pending.push(...list);
-    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-      if (c) pending.push(c);
-    }
-    for (let i = pending.length - 1; i >= 0; i--) stack.push(pending[i]);
-  }
+  });
   return out;
 }
 
@@ -753,50 +660,76 @@ function latestFieldName(n) {
   return n?.t === 'index' && n.obj.t === 'var' && n.obj.name === '_' && n.idx.t === 'text' ? n.idx.v : null;
 }
 
+// The "latest member per group" plan (docs/internals/sql-translation.md §12.1):
+// `[FILTER...] [SORT_BY(_["rev"])] .> BUCKET(_["part"]) .> MAP(RECORD(k1,
+// _K, k2, TOP_BY(_, _["rev"], "DESC", 1)))` over a relation with a unique
+// revision key keeps, per partition, the row with the highest revision -- in
+// SQL, through a MAX join -- and leaves the grouping itself to the
+// continuation. Null when the program is not that shape.
 function tryLatestMember(source, steps, dialect, catalog, opts, helpers) {
   if (!['mariadb', 'mysql', 'postgresql', 'sqlite'].includes(dialect)) return null;
-  const rel = catalog.get(source.name, source.pos), revision = rel.unique_key;
-  const at = steps.findIndex((s) => s.name === 'BUCKET');
-  if (!revision || at < 0 || typeof rel.from !== 'string' || rel.correlate) return null;
-  const ba = steps[at].args, partition = [2, 3].includes(ba.length) ? latestFieldName(ba[1]) : null;
-  let body = ba.length === 3 ? ba[2] : null;
-  const m = steps[at + 1];
-  if (!body && m?.name === 'MAP' && m.args.length === 2) body = m.args[1];
-  const pf = rel.fields[asciiUpper(partition ?? '')] ?? {}, rf = rel.fields[asciiUpper(revision)] ?? {};
-  if (partition === null || body?.t !== 'call' || body.name !== 'RECORD' || body.args.length !== 4
-      || !['NUM', 'TEXT'].includes(pf.type) || rf.type !== 'NUM' || pf.column !== partition
-      || rf.column !== revision || pf.raw || rf.raw || rf.guard) return null;
-  const ra = body.args, values = [ra[1], ra[3]];
-  if (ra[0].t !== 'text' || ra[2].t !== 'text' || ra[0].v === ra[2].v) return null;
+  const relation = catalog.get(source.name, source.pos);
+  const revision = relation.unique_key;
+  const bucketAt = steps.findIndex((s) => s.name === 'BUCKET');
+  if (!revision || bucketAt < 0 || typeof relation.from !== 'string' || relation.correlate) return null;
+
+  // BUCKET(_["part"]) with its projection inline, or in the MAP that follows.
+  const bucketArgs = steps[bucketAt].args;
+  const partition = [2, 3].includes(bucketArgs.length) ? latestFieldName(bucketArgs[1]) : null;
+  let projection = bucketArgs.length === 3 ? bucketArgs[2] : null;
+  const next = steps[bucketAt + 1];
+  if (!projection && next?.name === 'MAP' && next.args.length === 2) projection = next.args[1];
+  const partitionField = relation.fields[asciiUpper(partition ?? '')] ?? {};
+  const revisionField = relation.fields[asciiUpper(revision)] ?? {};
+  if (partition === null || projection?.t !== 'call' || projection.name !== 'RECORD'
+      || projection.args.length !== 4
+      || !['NUM', 'TEXT'].includes(partitionField.type) || revisionField.type !== 'NUM'
+      || partitionField.column !== partition || revisionField.column !== revision
+      || partitionField.raw || revisionField.raw || revisionField.guard) return null;
+
+  // RECORD(k1, v1, k2, v2): one value is _K, the other TOP_BY(_, _["rev"], "DESC", 1).
+  const recordArgs = projection.args;
+  const values = [recordArgs[1], recordArgs[3]];
+  if (recordArgs[0].t !== 'text' || recordArgs[2].t !== 'text' || recordArgs[0].v === recordArgs[2].v) return null;
   const top = values.find((n) => n.t === 'call' && n.name === 'TOP_BY');
   if (!top || !values.some((n) => n.t === 'var' && n.name === '_K')) return null;
-  const ta = top.args;
-  if (ta.length !== 4 || ta[0].t !== 'var' || ta[0].name !== '_' || latestFieldName(ta[1]) !== revision
-      || ta[2].t !== 'text' || ta[2].v !== 'DESC' || ta[3].t !== 'num' || ta[3].v !== '1') return null;
-  for (const s of steps.slice(0, at)) {
+  const topArgs = top.args;
+  if (topArgs.length !== 4 || topArgs[0].t !== 'var' || topArgs[0].name !== '_'
+      || latestFieldName(topArgs[1]) !== revision
+      || topArgs[2].t !== 'text' || topArgs[2].v !== 'DESC'
+      || topArgs[3].t !== 'num' || topArgs[3].v !== '1') return null;
+
+  // Before the BUCKET: FILTERs, and sorts by the revision ascending.
+  for (const s of steps.slice(0, bucketAt)) {
     if (s.name === 'FILTER') continue;
     if (s.name !== 'SORT_BY' || ![2, 3].includes(s.args.length) || latestFieldName(s.args[1]) !== revision
         || (s.args.length === 3 && (s.args[2].t !== 'text' || s.args[2].v !== 'ASC'))) return null;
   }
-  const dummy = { t: 'call', name: 'FILTER', pos: source.pos, args: [source, { t: 'bool', v: true, pos: source.pos }] };
-  const prefix = helpers.wrap(buildPipeline(source, at ? steps.slice(0, at) : [dummy]));
+  const passAll = { t: 'call', name: 'FILTER', pos: source.pos, args: [source, { t: 'bool', v: true, pos: source.pos }] };
+  const prefix = helpers.wrap(buildPipeline(source, bucketAt ? steps.slice(0, bucketAt) : [passAll]));
   const sql = tryStatement(prefix, dialect, catalog, opts);
   if (!sql) return null;
   try {
     const emit = new Emit(dialect);
-    let input = '_sel_input', groups = '_sel_latest';
-    while (asciiUpper(input) === asciiUpper(rel.from)) input += '_';
-    while ([asciiUpper(rel.from), asciiUpper(input)].includes(asciiUpper(groups))) groups += '_';
-    const [qi, qg, qr, qmax, qfirst] = [input, groups, revision, '_sel_revision', '_sel_first'].map((s) => emit.ident(s));
-    let key = emit.textOperand(new Fragment([emit.ident(partition)], pf.type, dialect)).asValue();
-    const parts = [`WITH ${qi} AS (`, ...sql.parts,
-      `), ${qg} AS (SELECT MAX(${qr}) AS ${qmax}, MIN(${qr}) AS ${qfirst} FROM ${qi} GROUP BY ${key}) `
-      + `SELECT ${qi}.* FROM ${qi} JOIN ${qg} ON ${qi}.${qr} = ${qg}.${qmax} ORDER BY ${qg}.${qfirst} ASC`];
-    const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[at].pos }, steps.slice(at)));
+    // CTE names that cannot collide with the table, nor with each other.
+    let inputName = '_sel_input';
+    let groupsName = '_sel_latest';
+    while (asciiUpper(inputName) === asciiUpper(relation.from)) inputName += '_';
+    while ([asciiUpper(relation.from), asciiUpper(inputName)].includes(asciiUpper(groupsName))) groupsName += '_';
+    const input = emit.ident(inputName);
+    const groups = emit.ident(groupsName);
+    const rev = emit.ident(revision);
+    const maxRev = emit.ident('_sel_revision');
+    const firstRev = emit.ident('_sel_first');
+    const key = emit.textOperand(new Fragment([emit.ident(partition)], partitionField.type, dialect)).asValue();
+    const parts = [`WITH ${input} AS (`, ...sql.parts,
+      `), ${groups} AS (SELECT MAX(${rev}) AS ${maxRev}, MIN(${rev}) AS ${firstRev} FROM ${input} GROUP BY ${key}) `
+      + `SELECT ${input}.* FROM ${input} JOIN ${groups} ON ${input}.${rev} = ${groups}.${maxRev} ORDER BY ${groups}.${firstRev} ASC`];
+    const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[bucketAt].pos }, steps.slice(bucketAt)));
     return new HybridPlan({ dialect,
       sqlStatement: new Fragment(parts, 'STATEMENT', dialect, sql.params, sql.paramKinds, sql.caveats),
       sqlPrefixAst: prefix, continuationAst: continuation, continuationProgram: new Program('', continuation),
-      sourceTables: [rel.from], selectedMember: { partition_key: partition, revision_key: revision } });
+      sourceTables: [relation.from], selectedMember: { partition_key: partition, revision_key: revision } });
   } catch (e) {
     if (e instanceof SqlError) return null;
     throw e;
@@ -838,7 +771,12 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   const isRelation = (node) => node && node.t === 'var' && catalog.has(node.name)
     && catalog.get(node.name, node.pos).kind === 'relation';
   const unwound = unwindThroughHelpers(result, defs, literals);
-  if (!unwound.steps.length || !isRelation(unwound.source)) {
+  // A pipeline of more than MAX_DEPTH steps, counted as written (through its
+  // helpers, before the logical optimiser drops any), is a pure-memory plan
+  // in every host (docs/internals/sql-translation.md §12.1): rendered whole it
+  // is deeper than the cap, and probing every shorter prefix costs time
+  // quadratic in the chain to push down a step or two.
+  if (!unwound.steps.length || unwound.steps.length > MAX_DEPTH || !isRelation(unwound.source)) {
     return pureMemoryPlan(program, dialect, catalog);
   }
   const optimized = optimizeAstLogical(buildPipeline(unwound.source, unwound.steps), opts);
@@ -887,7 +825,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     const remaining = steps.slice(count);
     // A 3-argument LINK names the two sides of the row it builds after the variables it
     // joined: the left side is the pipeline's own source variable, wherever in the
-    // continuation the LINK falls (spec 7.4; PHP-C9). The rows are therefore fed to the
+    // continuation the LINK falls (spec 7.4). The rows are therefore fed to the
     // continuation under that name, or the joined row would carry the left side under
     // `_INPUT` where run() has it under ORDERS. A step that also READS that name (a
     // self-join `ORDERS .> TAKE(4) .> LINK(ORDERS, ...)`) would find the truncated rows
@@ -931,30 +869,15 @@ function continuationEffects(ast) {
   if (cached) return cached;
   const names = new Set();
   let callsApp = false;
-  const stack = [ast];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n || typeof n !== 'object') continue;
+  walkNodes(ast, (n) => {
     if (n.t === 'assign') {
       let target = n.target;
-      while (target && target.t === 'index') {
-        if (target.idx) stack.push(target.idx);
-        target = target.obj;
-      }
+      while (target && target.t === 'index') target = target.obj;
       if (target && target.t === 'var') names.add(target.name);
-      if (n.value) stack.push(n.value);
-      continue;
+    } else if (callsApplication(n)) {
+      callsApp = true;
     }
-    if (n.t === 'call') {
-      const upper = (n.name || '').toUpperCase();
-      if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, upper)) {
-        callsApp = true;
-      }
-    }
-    if (n.args) for (const item of n.args) stack.push(item);
-    if (n.items) for (const item of n.items) stack.push(item);
-    for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (n[key]) stack.push(n[key]);
-  }
+  });
   cached = { assignedRoots: names, callsApplicationFunction: callsApp };
   EFFECTS.set(ast, cached);
   return cached;
@@ -992,4 +915,3 @@ export function executeHybrid(plan, dbRunner, context = null) {
   return plan.continuationProgram.run(root);
 }
 
-export { PIPELINE_OPS };

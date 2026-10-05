@@ -498,6 +498,21 @@ O .> BUCKET(_["CAT"], RECORD("s", SUM(_, "x")))
 E_SQL_INVALID
 ===
 
+### name: agg.bucket-sum.a-non-name-binder-is-refused
+--- note
+The three-argument SUM over a group names its binder: a slot that is not a bare name is E_EXPECT_SYMBOL in SEL, so the translation must refuse rather than sum the slot as the body (it emitted SUM('1')).
+--- dialect
+mariadb
+--- bindings
+{"O": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CAT": {"table": "o", "column": "cat", "type": "TEXT"}, "AMT": {"table": "o", "column": "amt", "type": "NUM"}}}}
+--- as
+statement
+--- source
+O .> BUCKET(_["CAT"], RECORD("s", SUM(_, 1, _["AMT"])))
+--- error
+E_SQL_SHAPE
+===
+
 ### name: agg.in-relation.bool-column-needle-is-refused
 --- note
 `x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes. (PY-C21)

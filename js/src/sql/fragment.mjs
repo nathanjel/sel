@@ -15,7 +15,7 @@ export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST', 'STATEMEN
 // be confused about where a literal ends, whatever the literal contains, and
 // that is the class of bug this shape exists to make unreachable.
 export class Fragment {
-  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null, exact = false, sargable = false, guard = false) {
+  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null, exactCollation = false, sargable = false, guard = false) {
     this.parts = parts;
     this.kind = kind;
     this.dialect = dialect;
@@ -25,7 +25,13 @@ export class Fragment {
     // cannot be derived — see emit.literal.
     this.paramKinds = paramKinds ?? [];
     this.caveats = caveats ?? [];
-    this.exact = Boolean(exact);
+    // COLLATION exactness: this TEXT already compares bytes as SEL does (a
+    // column bound `exact`, or text already put under a binary collation), so
+    // a comparison needs no COLLATE wrap. Composition state, read while the
+    // tree is rendered; it is unrelated to isExact(), which is the absence of
+    // caveats, and is false on what translate() returns. It was named `exact`,
+    // which read as the same question.
+    this.exactCollation = Boolean(exactCollation);
     this.sargable = Boolean(sargable);
     this.guard = Boolean(guard);
     this.prefilter = null;
@@ -36,6 +42,9 @@ export class Fragment {
     // per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
     // SQLite, ansi) -- and text is what SQL sorts by its bytes.
     this.canonical = false;
+    // For a SUM body over rows: the test a row's value must pass to be summed
+    // (Translator.sumBody), rendered beside the cast; null otherwise.
+    this.sumTest = null;
   }
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,
@@ -133,7 +142,8 @@ export class Fragment {
     return kind === 'NUM' || kind === 'BOOL' || kind === 'BIN';
   }
 
-  // True when nothing about this translation is inexact.
+  // TRANSLATION exactness: true when nothing about this translation is
+  // inexact, i.e. no caveat was recorded. Not the exactCollation flag above.
   isExact() {
     return this.caveats.length === 0;
   }
@@ -141,7 +151,7 @@ export class Fragment {
   #join(mode) {
     // The mode is checked before anything is rendered: it used to be looked at
     // only when a slot was reached, so `asValue('bogus')` on a fragment with no
-    // parameter quietly answered as inline (PHP-C57, PY-C46).
+    // parameter quietly answered as inline.
     if (mode !== 'inline' && mode !== 'params' && mode !== 'debug') {
       throw new Error(`unknown render mode ${mode}; use inline, params or debug`);
     }
@@ -165,10 +175,8 @@ export class Fragment {
         // it is a creation number, and a reordering template emits creation
         // numbers out of order.
         out.push(emit.placeholder(this.dialect, nth));
-      } else if (mode === 'debug') {
+      } else { // debug: the mode was checked above
         out.push(`~${nth}~`);
-      } else {
-        throw new Error(`unknown render mode ${mode}; use inline, params or debug`);
       }
     }
     return out.join('');

@@ -1,10 +1,11 @@
 // TypeScript definitions for SEL -> SQL translation layer
-// Public host interface. See docs/internals/sql-translation.md §10.
+// Public host interface. See docs/sql.md and docs/internals/sql-translation.md §10.
+// tools/check-js-dts.mjs holds these to js/src/sql/index.mjs: every name,
+// member and parameter list below exists, and everything public is here.
 
 import { Program, Value, Pos } from './sel.js';
 
 export type SqlKind = 'NUM' | 'TEXT' | 'BOOL' | 'BIN' | 'UNKNOWN' | 'LIST' | 'STATEMENT';
-export declare const KINDS: readonly SqlKind[];
 
 export type RenderMode = 'inline' | 'params' | 'debug';
 
@@ -25,7 +26,17 @@ export class Fragment {
   dialect: string;
   params: Value[];
   paramKinds: SqlKind[];
+  /** The closed-vocabulary names of every inexact map entry this translation
+   *  used; empty means the translation is exact (see isExact()). */
   caveats: string[];
+  /** COLLATION exactness, a different thing from isExact(): this TEXT SQL
+   *  already compares bytes the way SEL does -- a column bound with
+   *  `exact: true` (a binary collation), or text already put under one -- so a
+   *  comparison needs no COLLATE wrap. A builder (map.defineBuilder) may set
+   *  it on the fragment it returns. It is composition state: false on what
+   *  translate() returns, and it says nothing about caveats. (Named `exact`
+   *  before 0.11.) */
+  exactCollation: boolean;
   // A number in its canonical form (spec §7.6 CANON).
   canonical: boolean;
 
@@ -35,40 +46,82 @@ export class Fragment {
     dialect: string,
     params?: Value[] | null,
     paramKinds?: SqlKind[] | null,
-    caveats?: string[] | null
+    caveats?: string[] | null,
+    exactCollation?: boolean,
+    sargable?: boolean,
+    guard?: boolean
   );
 
   asValue(mode?: RenderMode): string;
   asCondition(mode?: RenderMode): string;
   asStatement(mode?: RenderMode): string;
   bindings(): Value[];
+  /** TRANSLATION exactness: true when `caveats` is empty, so the SQL answers
+   *  as SEL does for every row. Not the exactCollation flag above. */
+  isExact(): boolean;
 }
 
 export type ColumnType = 'NUM' | 'TEXT' | 'BOOL' | 'BIN' | 'UNKNOWN';
+
+/** Spellings of a column's collation (docs/sql.md, "Bindings"). */
+export type Collation = 'exact' | 'binary' | 'sargable' | 'prefilter' | 'default';
+/** Where a relation's pre-filter goes in an EXISTS. */
+export type Prefilter = 'separate' | 'inline';
 
 export class Binding {
   readonly spec: any;
 
   constructor(spec: any);
 
-  static column(column: string, table?: string | null, type?: ColumnType): Binding;
-  static raw(sql: string, type?: ColumnType): Binding;
+  /** `exact`: the column already compares bytes exactly; `sargable`: its
+   *  collation is case-insensitive; `guard`: a NUM column whose values may not
+   *  all be numbers; `collation` spells the first two; `splitSargable` is a
+   *  shorthand for `prefilter: 'separate'`. */
+  static column(
+    column: string,
+    table?: string | null,
+    type?: ColumnType,
+    exact?: boolean,
+    sargable?: boolean,
+    guard?: boolean,
+    collation?: Collation | null,
+    prefilter?: Prefilter | null,
+    splitSargable?: boolean
+  ): Binding;
+  static raw(
+    sql: string,
+    type?: ColumnType,
+    exact?: boolean,
+    sargable?: boolean,
+    guard?: boolean,
+    collation?: Collation | null,
+    prefilter?: Prefilter | null,
+    splitSargable?: boolean
+  ): Binding;
   static columns(...items: Binding[]): Binding;
   static relation(
     from: string,
     alias?: string | null,
     fields?: Record<string, Binding> | Map<string, Binding> | null,
     scalar?: string | null,
-    correlate?: string | null
+    correlate?: string | null,
+    prefilter?: Prefilter | null,
+    splitSargable?: boolean
   ): Binding;
   static relationQuery(
     query: string,
     alias?: string | null,
     fields?: Record<string, Binding> | Map<string, Binding> | null,
     scalar?: string | null,
-    correlate?: string | null
+    correlate?: string | null,
+    prefilter?: Prefilter | null,
+    splitSargable?: boolean
   ): Binding;
   static value(v: Value, type?: 'NUM' | null): Binding;
+
+  /** On a relation: a single-column unique, non-null key, which enables the
+   *  "latest member per group" plan. */
+  withUniqueKey(key: string): Binding;
 }
 
 export class Bindings {
@@ -80,21 +133,27 @@ export class Bindings {
   checkAliases(pos?: Pos | null): void;
 }
 
+// The statement compiler's intermediate representation. No public call returns
+// one; the classes are exported for tools that build plans themselves.
 export class JoinPlan {
   type: 'INNER' | 'LEFT';
-  kind: 'INNER' | 'LEFT';
   sourceName: string;
   sourceRelation: any;
   sourceTable: any;
   sourceAlias: string | null;
-  leftBinder: string;
-  rightBinder: string;
+  /** The names the LINK gives its sides, besides `_1` and `_2` (spec §7.4). */
+  leftNames: string[];
+  rightNames: string[];
   onPred: any;
   pos: Pos | null;
+
+  constructor();
 }
 
 export class RelationalPlan {
   sourceName: string;
+  /** The variable the pipeline starts from; null once a LINK has joined. */
+  rootName: string | null;
   sourceRelation: any;
   sourceTable: any;
   sourceAlias: string | null;
@@ -106,11 +165,18 @@ export class RelationalPlan {
   projections: any[] | null;
   filters: any[];
   groupBy: any[] | null;
+  /** An open or sealed BUCKET, or null. */
+  bucket: any;
+  /** Whether the grouping was written as a bare BUCKET. */
+  bareKey: boolean;
   having: any[];
-  aggregateAliases: Record<string, any>;
   orderBy: any[];
-  limit: number | null;
-  offset: number | null;
+  limit: bigint | null;
+  /** Set on a derived table built over sorted rows with no LIMIT. */
+  orderDropped: boolean;
+  offset: bigint | null;
+
+  constructor();
 }
 
 export class HybridPlan {
@@ -123,6 +189,8 @@ export class HybridPlan {
   pureSql: boolean;
   pureMemory: boolean;
   sourceTables: string[];
+  /** The grouped-latest strategy's keys, or null (docs/internals/sql-translation.md §12.1). */
+  selectedMember: { partition_key: string; revision_key: string } | null;
   readonly isHybrid: boolean;
   readonly is_hybrid: boolean;
   readonly sql_query: Fragment | null;
@@ -134,6 +202,7 @@ export class HybridPlan {
   readonly pure_sql: boolean;
   readonly pure_memory: boolean;
   readonly source_tables: string[];
+  readonly selected_member: { partition_key: string; revision_key: string } | null;
 }
 
 export function planHybrid(
@@ -151,23 +220,43 @@ export function executeHybrid(
 
 export declare const DIALECTS: Record<string, any>;
 
+/** Runtime extension of the dialect map (sql/MAP.md, docs/extending.md). */
 export namespace map {
   export declare const SECTIONS: readonly ['ops', 'funcs', 'skel'];
+  /** What entry() answers when no dialect in the chain mentions the key. */
   export declare const MISSING: string;
+  /** Every dialect that may be named in a translate() call, sorted. */
   export function targets(): string[];
-  export function hasDialect(name: string): boolean;
+  /** Whether a dialect (a target or a base) is known. */
+  export function exists(dialect: string): boolean;
+  /** Define, replace or (with a string or null) withdraw one entry. */
   export function define(dialect: string, section: string, key: string, entry: any): void;
+  /** Declare a dialect; sql/MAP.md §3 is the normative list of keys. */
   export function defineDialect(
     name: string,
-    parent?: string | null,
-    options?: {
-      comment?: string;
-      quote?: string;
-      textCollate?: string;
-      numericGuard?: string;
-    } | null
+    spec: {
+      extends?: string;
+      version?: string;
+      target?: boolean;
+      lexical?: Record<string, any>;
+    }
   ): void;
-  export function lookup(dialect: string, section: string, key: string): any;
+  /** The escape hatch: an entry built by code from the rendered arguments. */
+  export function defineBuilder(
+    dialect: string,
+    section: string,
+    key: string,
+    fn: (...args: any[]) => Fragment
+  ): void;
+  /** Forget every runtime registration (for tests). */
+  export function reset(): void;
+  /** The dialect, then what it extends, up to ansi. */
+  export function chain(dialect: string): readonly string[];
+  export function version(dialect: string): string;
+  /** A lexical value, or null. */
+  export function lexical(dialect: string, key: string): any;
+  /** One entry, or MISSING. */
+  export function entry(dialect: string, section: string, key: string): any;
 }
 
 export class Sql {

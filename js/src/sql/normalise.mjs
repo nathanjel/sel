@@ -8,6 +8,7 @@
 import { MAX_DEPTH } from '../eval.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { bindingForm } from '../registry.mjs';
+import { childNodes as children } from '../ast.mjs';
 import * as constants from './constants.mjs';
 import { refuse } from './errors.mjs';
 
@@ -31,14 +32,23 @@ export class CList {
   }
 }
 
+// The helper definitions stage 1 has recorded, by name, and the state that
+// travels with them. A Map: the names come from the program, and `{}` answers
+// for every Object.prototype name, so `constructor = 1; constructor` would
+// inline a function.
+class Definitions extends Map {
+  constructor(constNames) {
+    super();
+    this.constNames = constNames;   // the value bindings, which are constants
+    this.sizes = new Map();         // expandedSize's memo, shared by every definition
+    this.freshCounter = 0;          // suffixes that keep a renamed binder apart
+  }
+}
+
 export function run(ast, constNames = null, ctx = null) {
   const stmts = ast.t === 'seq' ? [...ast.items] : [ast];
   const result = stmts.pop();
-  // A Map: the names come from the program, and `{}` answers for every
-  // Object.prototype name, so `constructor = 1; constructor` would inline a
-  // function.
-  const defs = new Map();
-  defs.constNames = constNames ?? new Map();
+  const defs = new Definitions(constNames ?? new Map());
 
   // Counting starts where the evaluator's count would stand: the `;` sequence
   // costs a level and each assignment it inlines one more (spec §6.4), so
@@ -86,7 +96,7 @@ function record(s, defs, constNames, ctx, depth = 0) {
   // below walks the tree. Its expanded size is known cheaply, node by node, and a
   // definition already past the translator's budget is refused here rather than
   // after that walk (E_SQL_SIZE; docs/internals/sql-translation.md §7.4).
-  expandedSize(value, defs.sizes ??= new Map(), s.pos);
+  expandedSize(value, defs.sizes, s.pos);
 
   // Validated here, and only here, because after this the subtree may be gone: a
   // definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
@@ -163,7 +173,7 @@ function substitute(node, defs, bound, depth = 0) {
     // A read is a value, not a reference (spec §3.4): a keyed list read here is
     // what it holds NOW, so a later `R[2] = 6` must not reach a `X = R` written
     // before it, nor a write through X reach R. The entries' values are
-    // immutable nodes, so copying the list of entries is a copy (GO-C4).
+    // immutable nodes, so copying the list of entries is a copy.
     return def.t === 'clist' ? new CList(def.pos, def.entries.map(([k, v]) => [k, v])) : def;
   }
 
@@ -214,7 +224,7 @@ function substitute(node, defs, bound, depth = 0) {
     // free name in it means what it meant at the assignment: `X2 = A; ALL((5, 6),
     // A, X2 > 0)` must read the column A in X2, not the element. Renaming the
     // binder, and every read of it in the body that is still its own, leaves no
-    // name for the inlined text to be captured by (JS-C26).
+    // name for the inlined text to be captured by.
     let args = node.args;
     let binds = form ? form.binds : [];
     if (form) {
@@ -227,7 +237,7 @@ function substitute(node, defs, bound, depth = 0) {
         // is left as written.
         if (!defs.constNames.has(arg.name)
             && ![...defs.values()].some((def) => mentions(def, arg.name))) return arg;
-        const apart = `${arg.name}\u0001${defs.freshCounter = (defs.freshCounter ?? 0) + 1}`;
+        const apart = `${arg.name}\u0001${++defs.freshCounter}`;
         fresh.set(arg.name, apart);
         return { ...arg, name: apart };
       });
@@ -363,16 +373,4 @@ function expandedSize(root, memo, pos) {
     memo.set(node, [size, height]);
   }
   return memo.get(root)?.[0] ?? 1;
-}
-
-function children(node) {
-  switch (node.t) {
-    case 'un': return [node.x];
-    case 'bin': return [node.l, node.r];
-    case 'index': return [node.obj, node.idx];
-    case 'list': return node.items;
-    case 'clist': return node.entries.map(([, v]) => v);
-    case 'call': return node.args;
-    default: return [];
-  }
 }

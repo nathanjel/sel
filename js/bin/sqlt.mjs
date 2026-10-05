@@ -223,7 +223,7 @@ function runCase(c) {
   // error. A translator that keeps state between calls -- a dialect marked as
   // checked before it was checked, a map iterated in a different order each
   // time, a parameter list that grows -- passes a single translation and fails
-  // here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+  // here.
   if (program !== null && bindings !== null) {
     const outcome = (o) => (o.thrown ? `${o.thrown.constructor.name} (${o.thrown.message})`
       : o.error ? `${o.error.code} at ${o.error.line}:${o.error.col}` : JSON.stringify(o.sql));
@@ -275,7 +275,7 @@ function runCase(c) {
   // public full-delegation entry point, which must say exactly what
   // translate() says -- the same text, or the same refusal at the same
   // column. Two hosts ran the logical optimiser in that lane and three did
-  // not, and only a twin check can see it (review 2026-09-15 finding C).
+  // not, and only a twin check can see it.
   if (as === 'statement' && program !== null) {
     let twinSql = null;
     let twinError = null;
@@ -386,20 +386,13 @@ function main(argv) {
     const mirror = Object.hasOwn(MIRRORS, c.dialect) ? MIRRORS[c.dialect] : null;
     if (mirror === null || (c.register !== null && c.register !== undefined)) continue;
     sqlmap.reset();
-    // Spread is RIGHT-wins here, where PHP's `+` is left-wins; the assertion
-    // below is the same one php/bin/sqlt carries, because getting this backwards
-    // re-runs every mariadb case as mariadb and the count line still prints a
-    // plausible number.
+    // Spread is RIGHT-wins, so `dialect` is the mirror's. (PHP's `+` is
+    // left-wins, and php/bin/sqlt asserts the result for that reason: getting it
+    // backwards re-runs every mariadb case as mariadb.)
     const mirrorCase = { ...c, dialect: mirror };
     // Pin the one SQL spelling difference: each server's NO PAD collation.
     if (mirrorCase.expect) mirrorCase.expect = mirrorCase.expect.replaceAll(
       ' COLLATE utf8mb4_nopad_bin', ' COLLATE utf8mb4_0900_bin');
-    if (mirrorCase.dialect !== mirror) {
-      process.stdout.write(`SUITE ERROR the mirrored case for ${c.name} is still `
-        + `${mirrorCase.dialect}, so nothing is being mirrored\n`);
-      suiteErrors += 1;
-      continue;
-    }
     try {
       problem = mirrorCase.plan ? runPlanCase(mirrorCase) : runCase(mirrorCase);
     } catch (e) {
@@ -421,6 +414,11 @@ function main(argv) {
 
   process.stdout.write(`\n${passed} passed (${mirrored} also checked against a `
     + `mirrored dialect), ${failures.length} failed, ${suiteErrors} suite errors\n`);
+  // A filter that matched nothing tested nothing: say so, and do not pass.
+  if (passed + failures.length + suiteErrors === 0) {
+    process.stdout.write(filters.length ? `no case matches ${filters.join(' ')}\n` : 'no case was run\n');
+    return 1;
+  }
   return failures.length === 0 && suiteErrors === 0 ? 0 : 1;
 }
 
