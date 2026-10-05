@@ -33,3 +33,40 @@ func TestValueBindingOfANonTextDeclaredNum(t *testing.T) {
 		}
 	}
 }
+
+// Fragment.Exact and Fragment.IsExact are two properties. Exact is about text
+// and is what a builder reads off its arguments; IsExact is about the whole
+// translation and is what a caller reads off the result.
+func TestFragmentExactAndIsExactAreDifferentProperties(t *testing.T) {
+	defer Reset()
+	DefineDialect("exactness-probe", map[string]interface{}{"extends": "mariadb"})
+	var argExact []bool
+	DefineBuilder("exactness-probe", "funcs", "LEN", func(emit *Emit, args []*Fragment, _ Pos) *Fragment {
+		argExact = append(argExact, args[0].Exact)
+		return NewFragment(args[0].Parts, KindNum, emit.Dialect(), nil, nil, nil)
+	})
+	b := NewBindings(map[string]*Binding{
+		"E": ColumnBinding("e", "", KindText, true, false, false, "", "", false),
+		"T": ColumnBinding("t", "", KindText, false, false, false, "", "", false),
+		"N": ColumnBinding("n", "", KindNum, false, false, false, "", "", false),
+	})
+	for _, c := range []struct {
+		src      string
+		argExact bool
+		isExact  bool
+	}{
+		{`LEN(E)`, true, true},           // byte-exact text, nothing inexact
+		{`LEN(T)`, false, true},          // collated text, still nothing inexact
+		{`LEN(T & N / 3)`, false, false}, // division-scale is a caveat
+	} {
+		argExact = nil
+		f, err := Translate(sel.MustCompile(c.src), "exactness-probe", b, Options{})
+		if err != nil {
+			t.Fatalf("%s: %v", c.src, err)
+		}
+		if len(argExact) != 1 || argExact[0] != c.argExact || f.IsExact() != c.isExact {
+			t.Errorf("%s: argument Exact %v, result IsExact %v (caveats %v); want %v, %v",
+				c.src, argExact, f.IsExact(), f.Caveats, c.argExact, c.isExact)
+		}
+	}
+}
