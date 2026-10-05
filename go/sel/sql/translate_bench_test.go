@@ -1,7 +1,7 @@
 package sql
 
-// Round-2 SQL workloads (GO-P16 … GO-P18), docs/interim/2026-09-29/worklist/
-// performance/go.md. Fixed inputs; TestPerf2SqlChecksums pins a hash of every
+// SQL workloads for translation and rendering, IN-list folding and hybrid
+// execution. Fixed inputs; TestTranslateWorkloadChecksums pins a hash of every
 // rendered output so a speedup that changes a byte fails a test.
 
 import (
@@ -22,7 +22,7 @@ func perfBindings() *Bindings {
 	})
 }
 
-// predicates builds the GO-P16 rule: n conjuncts mixing arithmetic, text
+// predicates builds the translated rule: n conjuncts mixing arithmetic, text
 // comparison with a quote in the literal, and LEN.
 func predicates(n int) string {
 	parts := make([]string, n)
@@ -110,7 +110,7 @@ func bigContext(n int) *sel.Value {
 		})
 	}
 	ctx := sel.NewNone()
-	ctx.Set("BIG", sel.NewListOwned(items))
+	ctx.Set("BIG", sel.NewList(items))
 	ctx.Set("SMALL", sel.NewList([]*sel.Value{sel.NewInt(1), sel.NewInt(2), sel.NewInt(3)}))
 	return ctx
 }
@@ -120,7 +120,7 @@ func orderRows() *sel.Value {
 	for i := range items {
 		items[i] = sel.NewRecordFromEntries([]sel.Entry{{Key: "id", Val: sel.NewInt(int64(i + 3))}})
 	}
-	return sel.NewListOwned(items)
+	return sel.NewList(items)
 }
 
 const hybridSrc = `ORDERS .> FILTER(_["id"] > 2) .> MAP(_["id"] + COUNT(SMALL))`
@@ -163,7 +163,7 @@ var perf2SqlChecksums = map[string]string{
 	"p18 hybrid_sum":     "100/5550/300",
 }
 
-func TestPerf2SqlChecksums(t *testing.T) {
+func TestTranslateWorkloadChecksums(t *testing.T) {
 	got := map[string]string{
 		"p16 predicates_30":  digest(translateRender(t, "mariadb", predicates(30))),
 		"p16 predicates_pg":  digest(translateRender(t, "postgresql", predicates(9))),

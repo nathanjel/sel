@@ -8,7 +8,7 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-// T10 (2026-09-29 review). The questions a snapshot of ONE translation cannot
+// The questions a snapshot of ONE translation cannot
 // ask: does the same program translate to the same bytes every time, is a
 // refused dialect refused on every use, is an unknown render mode refused, and
 // may several goroutines translate at once (`go test -race`).
@@ -38,7 +38,7 @@ func itemsAndTags() *Bindings {
 	})
 }
 
-// GO-C18: the derived table's select list followed Go's map iteration order, so
+// The derived table's select list followed Go's map iteration order, so
 // the same program gave a different statement on different runs.
 func TestDerivedTableColumnOrderIsStable(t *testing.T) {
 	seen := map[string]int{}
@@ -58,7 +58,7 @@ func TestDerivedTableColumnOrderIsStable(t *testing.T) {
 	}
 }
 
-// JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42: sql/MAP.md section 7, rule
+// sql/MAP.md section 7, rule
 // 10 at run time -- a numericGuard that lacks ISNUM's numeral pattern is refused
 // every time the guard is used, not only the first.
 func TestDialectWithABadNumericGuardIsRefusedOnEveryUse(t *testing.T) {

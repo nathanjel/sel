@@ -1,9 +1,44 @@
 package sel
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/nathanjel/sel/go/internal/decimal"
 )
+
+// compareValues is the total order every sort, TOP and bucket key uses, written
+// out directly: the oracle cmpSortKey is held to. Values
+// of one rank compare within it (numbers by exact decimal value, text and BIN
+// bytewise, FALSE before TRUE); values of different ranks compare by rank.
+// Equal values tie, and the caller keeps input order for a tie.
+func compareValues(a, b *Value) int {
+	a, b = sortLeaf(a), sortLeaf(b)
+	ra, rb := sortRank(a), sortRank(b)
+	if ra != rb {
+		if ra < rb {
+			return -1
+		}
+		return 1
+	}
+	switch ra {
+	case 1:
+		av, bv := 0, 0
+		if a.boolVal {
+			av = 1
+		}
+		if b.boolVal {
+			bv = 1
+		}
+		return av - bv
+	case 2:
+		return decimal.Cmp(a.AsDecimal(Pos{}), b.AsDecimal(Pos{}))
+	case 3, 4:
+		return bytes.Compare(a.AsBytes(Pos{}), b.AsBytes(Pos{}))
+	}
+	return 0
+}
 
 func sgn(x int) int {
 	switch {
@@ -15,7 +50,7 @@ func sgn(x int) int {
 	return 0
 }
 
-// GO-P2: the keys are classified once; the classified order must be the order
+// The keys are classified once; the classified order must be the order
 // compareValues defines, for every pair of a list spanning every kind.
 func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 	var vals []*Value
@@ -30,8 +65,8 @@ func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 		vals = append(vals, NewText(s))
 	}
 	vals = append(vals, NewInt(5), NewInt(-5), NewInt(0))
-	vals = append(vals, rec("a", "x", "b", 2), rec("a", 3, "b", 1), rec("a", "4"), NewListOwned([]*Value{NewInt(9), NewInt(1)}),
-		NewListOwned([]*Value{rec("q", "deep")}))
+	vals = append(vals, rec("a", "x", "b", 2), rec("a", 3, "b", 1), rec("a", "4"), newListOwned([]*Value{NewInt(9), NewInt(1)}),
+		newListOwned([]*Value{rec("q", "deep")}))
 	for i, a := range vals {
 		ka := classifySortKey(a)
 		for j, b := range vals {
@@ -44,7 +79,7 @@ func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 	}
 }
 
-// GO-P3: a bounded selection returns what the full sort's prefix returns, ties in
+// A bounded selection returns what the full sort's prefix returns, ties in
 // input order, in both directions, for every limit on both sides of the switch.
 func TestTopSelectionEqualsTheSortedPrefix(t *testing.T) {
 	ctx := func() *Value {
@@ -53,7 +88,7 @@ func TestTopSelectionEqualsTheSortedPrefix(t *testing.T) {
 		for i := range items {
 			items[i] = rec("n", int(s.next()%12), "id", i, "t", fmt.Sprintf("x%02d", s.next()%30))
 		}
-		return ctxWith("L", NewListOwned(items), "M", NewListOwned(func() []*Value {
+		return ctxWith("L", newListOwned(items), "M", newListOwned(func() []*Value {
 			s := lcg(7)
 			out := make([]*Value, 240)
 			for i := range out {

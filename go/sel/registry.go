@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nathanjel/sel/go/internal/manifest"
@@ -20,6 +21,9 @@ var (
 	hostFuncs  = make(map[string]struct{})
 )
 
+// Define adds a builtin to the function table, as the shipped builtins are
+// added (examples/fn-simple and examples/fn-complex show both kinds). An
+// application's own functions are registered with RegisterFunction instead.
 func Define(spec *Spec) {
 	key := utf8.AsciiUpper(spec.Name)
 	registryMu.Lock()
@@ -48,7 +52,7 @@ func Define(spec *Spec) {
 			wrong = append(wrong, "an arity rule of its own, which the manifest owns")
 		}
 		if len(wrong) > 0 {
-			panic(fmt.Sprintf("SEL function %s disagrees with spec/builtins.json: %s", key, stringsJoin(wrong, "; ")))
+			panic(fmt.Sprintf("SEL function %s disagrees with spec/builtins.json: %s", key, strings.Join(wrong, "; ")))
 		}
 		spec.ArityError = m.ArityError
 	}
@@ -56,22 +60,11 @@ func Define(spec *Spec) {
 	funcTable[key] = spec
 }
 
-func stringsJoin(elems []string, sep string) string {
-	if len(elems) == 0 {
-		return ""
-	}
-	s := elems[0]
-	for _, e := range elems[1:] {
-		s += sep + e
-	}
-	return s
-}
-
 // The manifest (spec/builtins.json) names every built-in; each is defined by some
 // module's init. Definition-by-definition mismatches are refused in Define, but a
 // name no module defined would only surface as an unknown function at parse time.
 // So the first lookup, by which every init has run, checks coverage once and keeps
-// refusing if it failed (GO-C41; JS does the same in assertManifestCovered).
+// refusing if it failed (JS does the same in assertManifestCovered).
 var (
 	manifestOnce    sync.Once
 	manifestMissing string
@@ -89,7 +82,7 @@ func assertManifestCovered() {
 		}
 		if len(missing) > 0 {
 			sort.Strings(missing)
-			manifestMissing = fmt.Sprintf("spec/builtins.json names %s but no module defines it", stringsJoin(missing, ", "))
+			manifestMissing = fmt.Sprintf("spec/builtins.json names %s but no module defines it", strings.Join(missing, ", "))
 		}
 	})
 	if manifestMissing != "" {
@@ -97,7 +90,7 @@ func assertManifestCovered() {
 	}
 }
 
-func Lookup(name string) *Spec {
+func lookup(name string) *Spec {
 	assertManifestCovered()
 	key := utf8.AsciiUpper(name)
 	registryMu.RLock()
@@ -105,17 +98,34 @@ func Lookup(name string) *Spec {
 	return funcTable[key]
 }
 
+// BindingFormResult is the binding form of a call: each argument's scope and the names it binds.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type BindingFormResult struct {
 	Scopes []manifest.Scope
 	Binds  []string
 }
 
+// nodeShape is a call's argument nodes as manifest.MatchForm reads them.
+type nodeShape []*Node
+
+func (s nodeShape) IsName(i int) bool { return s[i].T == NodeVar && !s[i].Grouped }
+func (s nodeShape) IsText(i int) bool { return s[i].T == NodeText }
+
+// sortRoles is which argument of a sort-family call is the binder, the key, the
+// direction and the count, from the manifest's forms (-1 where there is none).
+func sortRoles(name string, nodes []*Node) manifest.SortRoles {
+	r, _ := manifest.Sort(utf8.AsciiUpper(name), len(nodes), nodeShape(nodes))
+	return r
+}
+
+// BindingForm decodes the binding form of a call from the builtin manifest.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func BindingForm(name string, args []*Node, spec *Spec) *BindingFormResult {
 	key := utf8.AsciiUpper(name)
-	forms, ok := manifest.BindingForms[key]
+	_, ok := manifest.BindingForms[key]
 	if !ok {
 		if spec == nil {
-			spec = Lookup(key)
+			spec = lookup(key)
 		}
 		if spec == nil || !spec.Binds {
 			return nil
@@ -136,22 +146,7 @@ func BindingForm(name string, args []*Node, spec *Spec) *BindingFormResult {
 		return nil
 	}
 
-	for _, f := range forms {
-		if f.Count != len(args) {
-			continue
-		}
-		if f.WhenArg >= 0 {
-			a := args[f.WhenArg]
-			var matches bool
-			if f.WhenKind == manifest.WhenName {
-				matches = a.T == NodeVar && !a.Grouped
-			} else if f.WhenKind == manifest.WhenText {
-				matches = a.T == NodeText
-			}
-			if !matches {
-				continue
-			}
-		}
+	if f := manifest.MatchForm(key, len(args), nodeShape(args)); f != nil {
 		bound := make([]string, len(f.Binds))
 		copy(bound, f.Binds)
 		for i, sc := range f.Scopes {
@@ -204,6 +199,8 @@ func RegisterFunction(name string, min, max int, fn func(args *Args) *Value) {
 	hostFuncs[key] = struct{}{}
 }
 
+// HostArity is the argument range of a function registered with RegisterFunction, and false for any other name.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func HostArity(name string) (int, int, bool) {
 	key := utf8.AsciiUpper(name)
 	registryMu.RLock()
@@ -215,10 +212,45 @@ func HostArity(name string) (int, int, bool) {
 	return spec.Min, spec.Max, true
 }
 
-// isHostFunction reports whether name is an application-registered function
-// (which may have effects) rather than a builtin.
-func isHostFunction(name string) bool {
-	key := utf8.AsciiUpper(name)
-	_, inManifest := manifest.Builtins[key]
+// outsideManifest reports a function that is not one of SEL's shipped builtins
+// (spec/builtins.json): an application's (RegisterFunction) or one Define added.
+// Either may have effects, so it is what every "can this subtree change
+// anything?" question asks (subtreeIsPure). hostFuncs answers a narrower one,
+// "was this registered by the application?", for HostArity and RegisterFunction.
+func outsideManifest(name string) bool {
+	_, inManifest := manifest.Builtins[utf8.AsciiUpper(name)]
 	return !inManifest
+}
+
+// subtreeIsPure reports that evaluating the subtree twice, or not at all, cannot
+// be observed and changes no value: it holds no assignment and calls only
+// shipped builtins. Iterative, because a flat chain as long as the source can be
+// is as deep as it is long; the stack starts in a fixed buffer, so a small
+// subtree costs no allocation.
+func subtreeIsPure(root *Node) bool {
+	var buf [32]*Node
+	stack := append(buf[:0], root)
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n == nil {
+			continue
+		}
+		switch n.T {
+		case NodeAssign:
+			return false
+		case NodeCall:
+			if outsideManifest(n.S) {
+				return false
+			}
+		}
+		if n.L != nil {
+			stack = append(stack, n.L)
+		}
+		if n.R != nil {
+			stack = append(stack, n.R)
+		}
+		stack = append(stack, n.Items...)
+	}
+	return true
 }

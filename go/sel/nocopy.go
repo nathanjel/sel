@@ -1,8 +1,6 @@
 package sel
 
-import "github.com/nathanjel/sel/go/internal/manifest"
-
-// Copy elision for a FILTER that feeds straight into a consumer (GO-REG-1).
+// Copy elision for a FILTER that feeds straight into a consumer.
 //
 // SPEC §3.4: FILTER copies the rows it keeps, so its result shares nothing with its
 // source. That copy is needed when the result can be held, returned or changed. It is
@@ -31,11 +29,11 @@ func noCopyAllowed(consumer string, nodes []*Node) bool {
 		return false
 	}
 	n0 := nodes[0]
-	if n0 == nil || n0.T != NodeCall || n0.S != "FILTER" || !nodesCannotChangeValues(n0) {
+	if n0 == nil || n0.T != NodeCall || n0.S != "FILTER" || !subtreeIsPure(n0) {
 		return false
 	}
 	for _, other := range nodes[1:] {
-		if !nodesCannotChangeValues(other) {
+		if !subtreeIsPure(other) {
 			return false
 		}
 	}
@@ -49,45 +47,20 @@ func (a *Args) offerNoCopy() {
 	if a.ctx == nil || a.call == nil || !noCopyAllowed(a.name, a.nodes) {
 		return
 	}
-	a.ctx.NoCopy = a.nodes[0]
-}
-
-// nodesCannotChangeValues reports that evaluating the subtree changes no value: it
-// holds no assignment and calls only built-in functions. Iterative, because a flat
-// chain as long as the source is as deep as it is long.
-func nodesCannotChangeValues(root *Node) bool {
-	stack := []*Node{root}
-	for len(stack) > 0 {
-		n := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if n == nil {
-			continue
-		}
-		switch n.T {
-		case NodeAssign:
-			return false
-		case NodeCall:
-			if _, builtin := manifest.Builtins[n.S]; !builtin {
-				return false
-			}
-		}
-		stack = append(stack, n.L, n.R)
-		stack = append(stack, n.Items...)
-	}
-	return true
+	a.ctx.noCopy = a.nodes[0]
 }
 
 // checkCopyDepth fails as CloneAt(depth) would for a value nested too deeply to be
 // copied, without building the copy: a FILTER that keeps its rows aliased must still
 // refuse exactly the rows it would have refused to copy (SPEC §6.4).
 func (v *Value) checkCopyDepth(depth int, pos Pos) {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", pos)
 	}
 	// A leaf (the usual child of a row) needs only the depth test, which the level
 	// above has made for it: no call per field.
 	if len(v.storage) > 0 {
-		if depth+1 > MAX_DEPTH {
+		if depth+1 > maxDepth {
 			fail("E_DEPTH", "value nested too deeply", pos)
 		}
 		for _, child := range v.storage {
@@ -96,7 +69,7 @@ func (v *Value) checkCopyDepth(depth int, pos Pos) {
 			}
 		}
 	} else if len(v.entries) > 0 {
-		if depth+1 > MAX_DEPTH {
+		if depth+1 > maxDepth {
 			fail("E_DEPTH", "value nested too deeply", pos)
 		}
 		for _, e := range v.entries {

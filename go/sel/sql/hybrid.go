@@ -5,6 +5,7 @@ package sql
 import (
 	"fmt"
 
+	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
@@ -29,23 +30,7 @@ type HybridPlan struct {
 	SourceTables          []string        `json:"source_tables"`
 }
 
-func (p *HybridPlan) SqlQuery() *Fragment {
-	return p.SqlStatement
-}
-
 type DbRunner func(query string, params []*sel.Value) (*sel.Value, error)
-
-func copyAstNode(n *sel.Node) *sel.Node {
-	if n == nil {
-		return nil
-	}
-	cp := *n
-	if n.Items != nil {
-		cp.Items = make([]*sel.Node, len(n.Items))
-		copy(cp.Items, n.Items)
-	}
-	return &cp
-}
 
 func varNode(name string, pos Pos) *sel.Node {
 	n := sel.NewNode(sel.NodeVar, pos)
@@ -68,7 +53,7 @@ func indexNode(obj *sel.Node, idx *sel.Node, pos Pos) *sel.Node {
 
 var sqlSpecialCalls = map[string]bool{
 	"IF": true, "COND": true, "COALESCE": true, "COUNT": true, "SUM": true,
-	"AVG": true, "MIN": true, "MAX": true, "RECORD": true, "LIST": true,
+	"MIN": true, "MAX": true, "RECORD": true, "LIST": true,
 }
 
 func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool) bool {
@@ -76,8 +61,7 @@ func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel
 }
 
 // containsUnsupportedMemo remembers each helper's verdict: a helper read twice
-// by the next one (`H1 = H0 + H0`) was walked twice per level, 2^n in all
-// (GO-C21).
+// by the next one (`H1 = H0 + H0`) was walked twice per level, 2^n in all.
 func containsUnsupportedMemo(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool, memo map[string]bool) bool {
 	if node == nil {
 		return false
@@ -100,7 +84,7 @@ func containsUnsupportedMemo(node *sel.Node, dialect string, defs map[string]*se
 	if node.T == sel.NodeCall {
 		if !sqlSpecialCalls[node.S] {
 			entry := Entry(dialect, "funcs", utf8.AsciiUpper(node.S))
-			if entry == nil || entry == MISSING {
+			if entry == nil || entry == missingEntry {
 				return true
 			}
 			if rec, ok := entry.(*EntryRecord); ok {
@@ -300,10 +284,10 @@ func rowsAreNotTheValue(steps []*sel.Node, count int) bool {
 }
 
 func physicalSource(b *Binding) string {
-	if b.Relation.From.IsRaw {
-		return b.Relation.From.Raw
+	if b.relation.From.IsRaw {
+		return b.relation.From.Raw
 	}
-	return b.Relation.From.Table
+	return b.relation.From.Table
 }
 
 // sourceTables lists the physical sources a tree reads: a name that a binder or
@@ -325,7 +309,7 @@ func sourceTables(ast *sel.Node, bindings *Bindings) []string {
 			}
 			if bindings.Has(n.S) {
 				b := bindings.Get(n.S, n.Pos)
-				if b.Kind == BindingKindRelation {
+				if b.kind == bindingKindRelation {
 					table := physicalSource(b)
 					if !seen[table] {
 						seen[table] = true
@@ -422,7 +406,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		if containsString(bound, node.S) || literals[node.S] == nil {
 			return node
 		}
-		cp := copyAstNode(literals[node.S])
+		cp := literals[node.S].Copy()
 		cp.Pos = node.Pos
 		return cp
 	}
@@ -433,18 +417,18 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		return inlineLiterals(child, literals, scope)
 	}
 	if t == sel.NodeUn {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.L = inlineChild(node.L, bound)
 		return cp
 	}
 	if t == sel.NodeBin || t == sel.NodeIndex {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.L = inlineChild(node.L, bound)
 		cp.R = inlineChild(node.R, bound)
 		return cp
 	}
 	if t == sel.NodeList || t == sel.NodeSeq {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.Items = make([]*sel.Node, len(node.Items))
 		for i, item := range node.Items {
 			cp.Items[i] = inlineChild(item, bound)
@@ -452,7 +436,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		return cp
 	}
 	if t == sel.NodeAssign {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.R = inlineChild(node.R, bound)
 		return cp
 	}
@@ -460,13 +444,13 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		// Scopes come from the binding form, so a binder in any spelling (the
 		// four- and five-argument forms too) is left as the name it is, and what
 		// it binds is in scope in the body: a literal helper named like a binder
-		// was inlined into the binder slot (PY-C24, LISP-C28).
+		// was inlined into the binder slot.
 		form := sel.BindingForm(node.S, node.Items, node.Spec)
 		inner := append([]string{}, bound...)
 		if form != nil {
 			inner = append(inner, form.Binds...)
 		}
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.Items = make([]*sel.Node, len(node.Items))
 		for i, item := range node.Items {
 			scope := bound
@@ -500,13 +484,14 @@ func literalHelpers(leading []*sel.Node) map[string]*sel.Node {
 	return literals
 }
 
-// unwindThroughHelpers reads the pipeline the result is written through. The
-// second result names the helpers whose definitions it unwound into the pipeline:
-// their assignments are spent, and must not be carried in front of the tree as
-// well, or `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` applies the DROP twice
-// (once unwound, once when stage 1 inlines the helper at the source's read;
-// PHP-C34).
-func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node, map[string]bool) {
+// unwindThroughHelpers is the pipeline the planner probes: the result unwound,
+// and where its source is a helper, that helper's definition unwound in turn.
+// The source the loop stops at reads the catalogue's binding when its name is
+// also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`): it is
+// marked BindingRead, so wrapping the pipeline in the helpers again neither
+// keeps the helper for that read nor inlines it there (which would apply the
+// DROP twice), while a step that reads ORDERS as a value still gets the helper.
+func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node) {
 	source, steps := sel.UnwindPipeline(inlineLiterals(result, literals, nil))
 	seen := make(map[string]bool)
 	for source != nil && source.T == sel.NodeVar && defs[source.S] != nil && !seen[source.S] {
@@ -515,7 +500,11 @@ func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals 
 		source = innerSrc
 		steps = append(innerSteps, steps...)
 	}
-	return source, steps, seen
+	if source != nil && source.T == sel.NodeVar && defs[source.S] != nil {
+		source = source.Copy()
+		source.BindingRead = true
+	}
+	return source, steps
 }
 
 func readNames(node *sel.Node, out map[string]bool) {
@@ -523,7 +512,11 @@ func readNames(node *sel.Node, out map[string]bool) {
 		return
 	}
 	if node.T == sel.NodeVar {
-		out[node.S] = true
+		// A read of the binding a same-named helper shadows is not a read of
+		// that helper (unwindThroughHelpers).
+		if !node.BindingRead {
+			out[node.S] = true
+		}
 		return
 	}
 	if node.L != nil {
@@ -540,7 +533,7 @@ func readNames(node *sel.Node, out map[string]bool) {
 // referencedAssignments keeps the assignments the node reads, and those they
 // read in turn, in the order the program wrote them. A worklist over the names,
 // each assignment's reads taken once: the fixed-point loop it replaced went round
-// once per link of a helper chain, and a chain of 20,000 was quadratic (GO-C21).
+// once per link of a helper chain, and a chain of 20,000 was quadratic.
 func referencedAssignments(leading []*sel.Node, node *sel.Node) []*sel.Node {
 	byName := make(map[string][]*sel.Node)
 	for _, s := range leading {
@@ -605,7 +598,7 @@ func (h *helpersContext) wrap(node *sel.Node) *sel.Node {
 }
 
 func (h *helpersContext) tables(wrapped *sel.Node) []string {
-	normalized := Normalise(wrapped, h.names, h.constRoot).ToNode()
+	normalized := normalise(wrapped, h.names, h.constRoot).ToNode()
 	if normalized == nil {
 		normalized = wrapped
 	}
@@ -640,10 +633,10 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 		return nil
 	}
 	binding := catalog.Get(source.S, source.Pos)
-	if binding.Kind != BindingKindRelation {
+	if binding.kind != bindingKindRelation {
 		return nil
 	}
-	rel := binding.Relation
+	rel := binding.relation
 	if rel.UniqueKey == "" || rel.From.IsRaw || rel.Correlate != "" {
 		return nil
 	}
@@ -739,7 +732,7 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 		return nil
 	}
 
-	emit := NewEmit(dialect)
+	emit := newEmit(dialect)
 	input := "_sel_input"
 	groups := "_sel_latest"
 	fromTable := physicalSource(binding)
@@ -837,7 +830,7 @@ type mapRecordDetails struct {
 	explicit bool
 	binder   string
 	body     *sel.Node
-	pairs    []Pair[*sel.Node, *sel.Node]
+	pairs    []pair[*sel.Node, *sel.Node]
 }
 
 func getMapRecordDetails(step *sel.Node) *mapRecordDetails {
@@ -862,14 +855,14 @@ func getMapRecordDetails(step *sel.Node) *mapRecordDetails {
 		return nil
 	}
 	seen := make(map[string]bool)
-	var pairs []Pair[*sel.Node, *sel.Node]
+	var pairs []pair[*sel.Node, *sel.Node]
 	for i := 0; i < len(body.Items); i += 2 {
 		k := body.Items[i]
 		if k.T != sel.NodeText || seen[k.S] {
 			return nil
 		}
 		seen[k.S] = true
-		pairs = append(pairs, Pair[*sel.Node, *sel.Node]{Key: k, Val: body.Items[i+1]})
+		pairs = append(pairs, pair[*sel.Node, *sel.Node]{Key: k, Val: body.Items[i+1]})
 	}
 	return &mapRecordDetails{explicit: explicit, binder: binder, body: body, pairs: pairs}
 }
@@ -891,8 +884,8 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		return nil
 	}
 
-	var pushable []Pair[*sel.Node, *sel.Node]
-	var custom []Pair[*sel.Node, *sel.Node]
+	var pushable []pair[*sel.Node, *sel.Node]
+	var custom []pair[*sel.Node, *sel.Node]
 	for _, pair := range details.pairs {
 		if containsUnsupportedSql(pair.Val, dialect, helpers.defs, make(map[string]bool)) {
 			custom = append(custom, pair)
@@ -972,7 +965,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		}
 	}
 
-	rewrittenRecord := copyAstNode(details.body)
+	rewrittenRecord := details.body.Copy()
 	rewrittenRecord.Items = nil
 	for _, pair := range pushable {
 		rewrittenRecord.Items = append(rewrittenRecord.Items, pair.Key, pair.Val)
@@ -982,7 +975,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		rewrittenRecord.Items = append(rewrittenRecord.Items, k, indexNode(varNode(details.binder, mapStep.Pos), k, mapStep.Pos))
 	}
 
-	rewrittenMap := copyAstNode(mapStep)
+	rewrittenMap := mapStep.Copy()
 	rewrittenMap.Items = []*sel.Node{mapStep.Items[0]}
 	if details.explicit {
 		rewrittenMap.Items = append(rewrittenMap.Items, mapStep.Items[1])
@@ -1004,7 +997,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		return nil
 	}
 
-	continuationRecord := copyAstNode(details.body)
+	continuationRecord := details.body.Copy()
 	continuationRecord.Items = nil
 	for _, pair := range details.pairs {
 		continuationRecord.Items = append(continuationRecord.Items, pair.Key)
@@ -1022,7 +1015,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		}
 	}
 
-	continuationMap := copyAstNode(mapStep)
+	continuationMap := mapStep.Copy()
 	continuationMap.Items = []*sel.Node{varNode("_INPUT", mapStep.Pos)}
 	if details.explicit {
 		continuationMap.Items = append(continuationMap.Items, mapStep.Items[1])
@@ -1046,32 +1039,23 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 
 // PlanHybrid splits a relational pipeline at the longest SQL-translatable prefix.
 func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, options Options) *HybridPlan {
-	RequireTarget(dialect, sel.Pos{})
+	requireTarget(dialect, sel.Pos{})
 	checked := bindings
 	if checked == nil {
 		checked = NewBindings(nil)
 	}
 	checked.CheckAliases(sel.Pos{})
 
-	constNames, constRoot := Scope(checked)
+	constNames, constRoot := scope(checked)
 	identityBarrier := false
-	var earlyPureMemory bool
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if _, ok := r.(*SqlError); ok {
-					earlyPureMemory = true
-				} else if _, ok := r.(SqlError); ok {
-					earlyPureMemory = true
-				} else {
-					panic(r)
-				}
-			}
-		}()
-		normalized := Normalise(program.AST(), constNames, constRoot)
-		identityBarrier = IdentityLossBeforeGrouping(normalized, nil)
-	}()
-	if earlyPureMemory {
+	refusal, selErr := catch(func() {
+		normalized := normalise(program.AST(), constNames, constRoot)
+		identityBarrier = identityLossBeforeGrouping(normalized, nil)
+	})
+	if selErr != nil {
+		panic(selErr)
+	}
+	if refusal != nil {
 		return pureMemoryPlan(program, dialect, checked)
 	}
 
@@ -1080,28 +1064,19 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 	defs := definitions(partsLeading)
 
 	isRelation := func(node *sel.Node) bool {
-		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).Kind == BindingKindRelation
+		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).kind == bindingKindRelation
 	}
 
-	unwoundSource, unwoundSteps, consumed := unwindThroughHelpers(partsResult, defs, literals)
+	unwoundSource, unwoundSteps := unwindThroughHelpers(partsResult, defs, literals)
 	if len(unwoundSteps) == 0 || !isRelation(unwoundSource) {
 		return pureMemoryPlan(program, dialect, checked)
 	}
-	// A spent helper the steps still read cannot be dropped from the tree without
-	// changing what they read; that program stays in memory.
-	for name := range consumed {
-		if readsName(unwoundSteps, name) {
-			return pureMemoryPlan(program, dialect, checked)
-		}
-	}
-	if len(consumed) > 0 {
-		var kept []*sel.Node
-		for _, st := range partsLeading {
-			if !consumed[assignedName(st)] {
-				kept = append(kept, st)
-			}
-		}
-		partsLeading = kept
+	// A pipeline of more than MAX_DEPTH steps, counted as written (through its
+	// helpers, before the optimiser drops any), is a pure-memory plan in every
+	// host: rendered whole it is deeper than the cap, and probing each shorter
+	// prefix costs time quadratic in the chain to push down a step or two.
+	if len(unwoundSteps) > limits.MAX_DEPTH {
+		return pureMemoryPlan(program, dialect, checked)
 	}
 
 	optimized := sel.OptimizeAstLogical(sel.BuildPipeline(unwoundSource, unwoundSteps))
@@ -1162,8 +1137,8 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 			continue
 		}
 		// A 3-argument LINK names the left side of its joined row after the variable
-		// the pipeline started from, wherever in the continuation it falls (spec 7.4,
-		// GO-C22), so the rows are bound to that name first. A step that also READS the
+		// the pipeline started from, wherever in the continuation it falls (spec 7.4),
+		// so the rows are bound to that name first. A step that also READS the
 		// name (a self-join) would find the truncated rows where run() finds the whole
 		// relation: that split is not made. The same rule in every host; a LINK in the
 		// prefix has already named its sides.
@@ -1173,25 +1148,15 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		}
 		prefixAst := helpers.wrap(sel.BuildPipeline(source, steps[:count]))
 		if identityBarrier {
+			// A refusal or a SEL error skips this split (catch lets a Go
+			// runtime panic, a bug, surface).
 			skip := false
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						// Only a refusal (SqlError) or a SEL error skips this
-						// split; a Go runtime panic is a bug and must surface.
-						switch r.(type) {
-						case *SqlError, SqlError, *sel.SelError:
-							skip = true
-						default:
-							panic(r)
-						}
-					}
-				}()
-				norm := Normalise(prefixAst, constNames, constRoot)
-				if IdentityLossBeforeGrouping(norm, &NeededFields{All: true}) {
-					skip = true
-				}
-			}()
+			if refusal, selErr := catch(func() {
+				norm := normalise(prefixAst, constNames, constRoot)
+				skip = identityLossBeforeGrouping(norm, &neededFields{All: true})
+			}); refusal != nil || selErr != nil {
+				skip = true
+			}
 			if skip {
 				continue
 			}
@@ -1206,7 +1171,7 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		continuationAst := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", remaining[0].Pos), remaining))
 		if needsRebind {
 			// A joined row names its left side after the relation it came from
-			// (ORDERS, orders), never after `_INPUT` (spec §7.4, GO-C22): the
+			// (ORDERS, orders), never after `_INPUT` (spec §7.4): the
 			// rows are bound to that name for the continuation, which reads it
 			// from nothing else (checked above).
 			bind := sel.NewNode(sel.NodeAssign, remaining[0].Pos)
@@ -1292,11 +1257,13 @@ func continuationEffectsOf(ast *sel.Node) continuationEffects {
 }
 
 // privateContext is the context a continuation runs in: the caller's variables,
-// copied only as far as the program can change them. A continuation containing
-// any application-defined call receives a full private context copy. Builtin-only
-// continuations retain their existing assignment-based copy optimization:
-// a continuation that never assigns gets a new root holding the caller's own
-// children; one that assigns gets a deep copy.
+// copied only as far as the program can change them, so the caller's context is
+// never written. A continuation that calls an application-defined function gets
+// a full private copy: the function may change any value it is handed. One that
+// calls builtins only gets a new root holding the caller's own children, each
+// root it assigns (A = …, A["k"] = …) deep-copied and every other one shared --
+// a builtin never changes its arguments, and assignment copies -- so a large
+// variable the continuation only reads is not copied.
 func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
 	if context == nil || context.IsNull() {
 		return sel.NewRecordFromEntries(nil)
@@ -1307,10 +1274,14 @@ func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
 	}
 	if ast != nil {
 		effects := continuationEffectsOf(ast)
-		if !effects.callsApplicationFunction && len(effects.assignedRoots) == 0 {
+		if !effects.callsApplicationFunction {
 			root := sel.NewNone()
 			for _, e := range context.Entries() {
-				root.Set(e.Key, e.Val)
+				val := e.Val
+				if effects.assignedRoots[e.Key] {
+					val = val.CloneAt(2, sel.Pos{})
+				}
+				root.Set(e.Key, val)
 			}
 			return root
 		}
@@ -1343,8 +1314,8 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 		return nil, fmt.Errorf("hybrid plan has no continuation program")
 	}
 	// IsNone is the kind of every list and record too; the test for "no value" is
-	// IsNull, and using the wrong one threw away every variable the caller held
-	// (GO-C5). privateContext keeps that test.
+	// IsNull, and using the wrong one threw away every variable the caller held.
+	// privateContext keeps that test.
 	continuationContext := privateContext(plan, context)
 	continuationContext.Set(plan.ContinuationSourceVar, rows)
 	return plan.ContinuationProgram.Run(continuationContext)

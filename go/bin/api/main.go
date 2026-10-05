@@ -4,28 +4,25 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 
-	"github.com/nathanjel/sel/go/internal/decimal"
-	"github.com/nathanjel/sel/go/internal/limits"
-	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 )
 
-var out []string
-var counter int
+var probes harness.Probes
 
-func say(name, value string) {
-	counter++
-	out = append(out, fmt.Sprintf("%02d %s = %s", counter, name, value))
-}
+func say(name, value string) { probes.Say(name, value) }
 
-func b(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
+var b = harness.Bool
+
+// numFromStr is the other hosts' Value.num("1.50"): Go has no number-from-text
+// constructor (a number is its text), so the text is read as a number and the
+// decimal form built from it, through the public API alone.
+func numFromStr(s string) *sel.Value {
+	return sel.NewDecimal(sel.NewText(s).Decimal(sel.Pos{}))
 }
 
 func repeat(unit string, n int) string {
@@ -64,20 +61,20 @@ func main() {
 	say("kind.const.bin", "BIN")
 	say("kind.const.bool", "BOOL")
 	say("kind.static.bool", "BOOL")
-	say("kind.of.text", eval("\"x\"").Kind.String())
-	say("kind.of.bool", eval("TRUE").Kind.String())
-	say("kind.of.none", eval("(1,2)").Kind.String())
-	say("pred.isText", b(eval("\"x\"").Kind == sel.KindText))
-	say("pred.isBool", b(eval("TRUE").Kind == sel.KindBool))
-	say("pred.isNone", b(eval("(1,2)").Kind == sel.KindNone))
-	say("pred.isBin", b(eval("TO_UTF8(\"x\")").Kind == sel.KindBin))
-	say("pred.isText.on.bool", b(eval("TRUE").Kind == sel.KindText))
+	say("kind.of.text", eval("\"x\"").Kind().String())
+	say("kind.of.bool", eval("TRUE").Kind().String())
+	say("kind.of.none", eval("(1,2)").Kind().String())
+	say("pred.isText", b(eval("\"x\"").Kind() == sel.KindText))
+	say("pred.isBool", b(eval("TRUE").Kind() == sel.KindBool))
+	say("pred.isNone", b(eval("(1,2)").Kind() == sel.KindNone))
+	say("pred.isBin", b(eval("TO_UTF8(\"x\")").Kind() == sel.KindBin))
+	say("pred.isText.on.bool", b(eval("TRUE").Kind() == sel.KindText))
 
 	// --- constructors
 	say("ctor.text", sel.NewText("hi").Dump())
 	say("ctor.bool", sel.NewBool(true).Dump())
 	say("ctor.none", sel.NewNone().Dump())
-	say("ctor.num.canonicalises", sel.NewNum(decimal.Parse("007", utf8.Pos{}, func(c, m string, p utf8.Pos) {})).Dump())
+	say("ctor.num.canonicalises", numFromStr("007").Dump())
 	say("ctor.int", sel.NewInt(-3).Dump())
 	say("ctor.list", sel.NewList([]*sel.Value{sel.NewText("a"), sel.NewText("b")}).Dump())
 
@@ -121,11 +118,11 @@ func main() {
 	say("program.deps.forms.link.named-binders", strings.Join(sel.MustCompile("LINK(A, B, X, Y, X[\"a\"] == Y[\"b\"] AND Z)").Dependencies(), " "))
 
 	ctx := sel.NewNone()
-	ctx.Set("TOTAL", sel.NewNum(decimal.Parse("59.97", utf8.Pos{}, func(c, m string, p utf8.Pos) {})))
+	ctx.Set("TOTAL", numFromStr("59.97"))
 	say("program.run.reads.context", eval("TOTAL > 10.00", ctx).Dump())
 	eval("SEEN = TOTAL * 2", ctx)
 	say("program.run.mutates.context", ctx.Get("SEEN").AsText(sel.Pos{}))
-	// A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+	// A BOOL a host hands in is an ordinary value (see tools/api.mjs).
 	{
 		a, bb := sel.NewNone(), sel.NewNone()
 		a.Set("FLAG", sel.NewBool(true))
@@ -163,18 +160,6 @@ func main() {
 		sel.MustCompile("NOPE(1)")
 	}()
 
-	numFromStr := func(s string) *sel.Value {
-		var se *sel.SelError
-		d := decimal.Parse(s, utf8.Pos{}, func(code, msg string, pos utf8.Pos) {
-			se = &sel.SelError{Code: code, Message: msg, Pos: pos}
-			panic(se)
-		})
-		if d == nil {
-			panic(&sel.SelError{Code: "E_NOT_NUM", Message: "not a number: " + s})
-		}
-		return sel.NewNum(d)
-	}
-
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -204,22 +189,11 @@ func main() {
 			dig   string
 			scale int32
 		}
+		// The decimal form through the public constructor, as the other hosts'
+		// Value.num({neg, digits, scale}).
 		numFromDec := func(spec decSpec) *sel.Value {
-			if spec.scale < 0 {
-				panic(&sel.SelError{Code: "E_BAD_ARG", Message: "the scale is negative"})
-			}
-			if spec.scale > limits.MAX_FRAC_DIGITS {
-				panic(&sel.SelError{Code: "E_RANGE", Message: "fractional digits exceed limit"})
-			}
-			d := decimal.Parse(spec.dig, utf8.Pos{}, func(c, m string, p utf8.Pos) {
-				panic(&sel.SelError{Code: c, Message: m})
-			})
-			d.Scale = spec.scale
-			d.Neg = spec.neg
-			if spec.dig == "0" {
-				d.Neg = false
-			}
-			return sel.NewNum(d)
+			digits, _ := new(big.Int).SetString(spec.dig, 10)
+			return sel.NewDecimal(sel.Decimal{Neg: spec.neg, Digits: digits, Scale: int(spec.scale)})
 		}
 
 		probes := []struct {
@@ -404,7 +378,7 @@ func main() {
 		say("host.fn.replace", earlyVal.AsText(sel.Pos{})+" "+eval("HOST_V()").AsText(sel.Pos{}))
 	}
 
-	// --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+	// --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
 	// dependency when some read of it can happen before the program has definitely
 	// assigned it, in evaluation order. Assignments under a condition, a short
 	// circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -437,7 +411,7 @@ func main() {
 	say("program.deps.top-arg-is-not-a-binder-in-the-three-argument-form", deps("L = LIST(1,2); TOP(L, A, (A = 1; 1))"))
 	say("program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection", deps("L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)"))
 
-	// --- T12: a Program is reusable: after a caught error it runs again, and two
+	// --- a Program is reusable: after a caught error it runs again, and two
 	// contexts are independent whatever the interleaving.
 	{
 		divide := sel.MustCompile("A / B")
@@ -475,7 +449,7 @@ func main() {
 		say("program.reuse.two-contexts", r1+" "+r2+" "+r3+" "+r4)
 	}
 
-	// --- T12: input the API cannot take is E_BAD_ARG, never a host panic or a
+	// --- input the API cannot take is E_BAD_ARG, never a host panic or a
 	// different SEL error (spec/SPEC.md §8). This host is statically typed: source
 	// is a string and there is no native conversion, so the first three cannot be
 	// posed; they print n/a with the reason, and tools/check-api.sh leaves an n/a
@@ -530,7 +504,7 @@ func main() {
 		say("host.fn.arg.out-of-range", r)
 	}
 
-	// --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+	// --- a host-supplied value nested past the cap, handed to RECORD beside a
 	// key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
 	// so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
 	// arguments are known good. C++ built the pair in one expression and let the copy run first.
@@ -550,5 +524,5 @@ func main() {
 		say("program.run.over-deep-host-value.key-error-first", at("RECORD(TRUE, V)")+"|"+at("RECORD(\"k\", V)"))
 	}
 
-	os.Stdout.WriteString(strings.Join(out, "\n") + "\n")
+	os.Stdout.WriteString(probes.Text())
 }

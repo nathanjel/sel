@@ -4,25 +4,29 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
+// RecordShape is the key list of a record, shared by every record built with it
+// (InternRecordShape, NewShapedRecord). It is opaque and immutable.
 type RecordShape struct {
-	Keys   []string
-	KeyMap map[string]int
-	Size   int
+	keys   []string
+	keyMap map[string]int
+	size   int
 
 	// keyHashes[i] is fnvHash(Keys[i]), built on the first structural hash of a
-	// record of this shape and then shared by every such record (GO-P26).
+	// record of this shape and then shared by every such record.
 	keyHashes atomic.Pointer[[]uint64]
 }
 
-// KeyHashes returns the hash of each key, computed once per shape.
-func (s *RecordShape) KeyHashes() []uint64 {
+// hashes returns the hash of each key, computed once per shape.
+func (s *RecordShape) hashes() []uint64 {
 	if p := s.keyHashes.Load(); p != nil {
 		return *p
 	}
-	hs := make([]uint64, len(s.Keys))
-	for i, k := range s.Keys {
+	hs := make([]uint64, len(s.keys))
+	for i, k := range s.keys {
 		hs[i] = fnvHash(k)
 	}
 	s.keyHashes.CompareAndSwap(nil, &hs)
@@ -40,7 +44,7 @@ var (
 	shapeCache = make(map[string]*RecordShape)
 )
 
-func NewRecordShape(keys []string) *RecordShape {
+func newRecordShape(keys []string) *RecordShape {
 	k := make([]string, len(keys))
 	copy(k, keys)
 	km := make(map[string]int, len(keys))
@@ -48,9 +52,9 @@ func NewRecordShape(keys []string) *RecordShape {
 		km[key] = i
 	}
 	return &RecordShape{
-		Keys:   k,
-		KeyMap: km,
-		Size:   len(k),
+		keys:   k,
+		keyMap: km,
+		size:   len(k),
 	}
 }
 
@@ -74,14 +78,32 @@ func cachedShape(sig []byte) *RecordShape {
 	return s
 }
 
+// InternRecordShape returns the shape of a record with these keys in this order,
+// for NewShapedRecord: build it once, then every row of that shape shares it.
+// The keys must be distinct and valid UTF-8; otherwise it panics with a
+// *SelError, E_BAD_ARG or E_UTF8. Interning is cached, so a second call with the same keys
+// returns the same shape.
 func InternRecordShape(keys []string) *RecordShape {
+	for _, k := range keys {
+		utf8.ValidateText(k, Pos{}, fail)
+	}
+	s := uniqueRecordShape(keys)
+	if s == nil {
+		fail("E_BAD_ARG", "a record shape's keys must be distinct", Pos{})
+	}
+	return s
+}
+
+// internRecordShape is the shape of keys, built once and cached; keys are not
+// checked (a repeated key builds a shape uniqueRecordShape will not hand out).
+func internRecordShape(keys []string) *RecordShape {
 	var stack [192]byte
 	sig := shapeSignature(stack[:0], keys)
 	if s := cachedShape(sig); s != nil {
 		return s
 	}
 
-	s := NewRecordShape(keys)
+	s := newRecordShape(keys)
 
 	totalLen := 0
 	for _, key := range keys {
@@ -99,14 +121,14 @@ func InternRecordShape(keys []string) *RecordShape {
 	return s
 }
 
-// UniqueRecordShape is the shape of keys, or nil when a key repeats. The cache is
-// asked first (GO-P14): a hit whose map has as many entries as it has keys was
+// uniqueRecordShape is the shape of keys, or nil when a key repeats. The cache is
+// asked first: a hit whose map has as many entries as it has keys was
 // built from distinct keys, which answers the uniqueness question without the
 // per-call set. A miss checks for a repeat — pairwise for a short key list, with a
 // set beyond that — and only then builds and caches the shape.
-func UniqueRecordShape(keys []string) *RecordShape {
+func uniqueRecordShape(keys []string) *RecordShape {
 	var stack [192]byte
-	if s := cachedShape(shapeSignature(stack[:0], keys)); s != nil && len(s.KeyMap) == len(s.Keys) {
+	if s := cachedShape(shapeSignature(stack[:0], keys)); s != nil && len(s.keyMap) == len(s.keys) {
 		return s
 	}
 	if len(keys) <= 8 {
@@ -117,7 +139,7 @@ func UniqueRecordShape(keys []string) *RecordShape {
 				}
 			}
 		}
-		return InternRecordShape(keys)
+		return internRecordShape(keys)
 	}
 	seen := make(map[string]struct{}, len(keys))
 	for _, k := range keys {
@@ -126,7 +148,7 @@ func UniqueRecordShape(keys []string) *RecordShape {
 		}
 		seen[k] = struct{}{}
 	}
-	return InternRecordShape(keys)
+	return internRecordShape(keys)
 }
 
 func parseListSlot(key string, length int) int {

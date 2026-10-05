@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Item 1: AddInto, SubInto and MulInto write a result into a register the caller
+// AddInto, SubInto and MulInto write a result into a register the caller
 // owns and reuses. Against Add, Sub and Mul (the reference: what every caller
 // outside a plan still uses) they must give the same sign, scale and magnitude,
 // raise the same E_RANGE at the same place, never write an operand they do not
@@ -148,7 +148,7 @@ func TestRegistersNeverWriteWhatTheyDoNotOwn(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	pos := Pos{}
 	z, scratch := new(big.Int), new(big.Int)
-	singletons := []*big.Int{zeroBig, oneBig, twoBig, tenBig, Zero.Digits}
+	singletons := []*big.Int{zeroBig, oneBig, twoBig, tenBig}
 	singletons = append(singletons, pow10List[:]...)
 	before := make([]string, len(singletons))
 	for i, s := range singletons {
@@ -200,7 +200,7 @@ func TestRegistersRaiseWhereTheReferenceRaises(t *testing.T) {
 		}
 	}
 	// One digit short of the cap passes both ways.
-	if e := catch(func() { AddInto(z, scratch, NumOf(wide), NumOf(Zero), pos, failRange) }); e != nil {
+	if e := catch(func() { AddInto(z, scratch, NumOf(wide), NumOf(Make(false, nil, 0)), pos, failRange) }); e != nil {
 		t.Fatalf("at the cap: %v", e)
 	}
 }

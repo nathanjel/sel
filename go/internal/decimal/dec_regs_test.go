@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-// Item 1 lets a math plan keep its intermediates in registers it reuses. Add, Sub
+// A math plan may keep its intermediates in registers it reuses. Add, Sub
 // and Mul -- what every caller outside a plan uses -- must still never write an
 // operand or a shared constant, and must return a magnitude no operand shares.
 func TestOperationsNeverWriteTheirOperands(t *testing.T) {
 	rng := rand.New(rand.NewSource(20261001))
 	fail := func(code, msg string, pos Pos) { t.Fatalf("%s: %s", code, msg) }
-	singletons := append([]*big.Int{zeroBig, oneBig, twoBig, tenBig, Zero.Digits}, pow10List[:]...)
+	singletons := append([]*big.Int{zeroBig, oneBig, twoBig, tenBig}, pow10List[:]...)
 	before := make([]string, len(singletons))
 	for i, s := range singletons {
 		before[i] = s.String()

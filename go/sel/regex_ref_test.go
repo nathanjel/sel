@@ -1,6 +1,6 @@
 package sel
 
-// The pre-GO-P5 regex walk (rune slices, a per-byte offset table, a folded copy of
+// The earlier regex walk (rune slices, a per-byte offset table, a folded copy of
 // the subject), kept as the reference the byte-offset implementation is held to.
 
 import (
@@ -188,14 +188,14 @@ func refRReplace(cr *compiledRegex, repl, subj string, ic bool) string {
 	return out.String()
 }
 
-// BenchmarkP5Reference is the BEFORE of GO-P5: the retired rune walk on the same
+// BenchmarkP5Reference is the before of the byte-offset walk: the retired rune walk on the same
 // subjects as BenchmarkP5Regex (which measures the built-ins as they are now).
 func BenchmarkP5Reference(b *testing.B) {
 	for _, reps := range []int{62500, 125000, 250000} {
 		sub := strings.Repeat("123-45,", reps)
-		cr, _ := compileRegex(`.`, "", Pos{}, Pos{})
-		cf, _ := compileRegex(`5,$`, "", Pos{}, Pos{})
-		cg, _ := compileRegex(`(\d+)-(\d+)`, "", Pos{}, Pos{})
+		cr := compileRegex(`.`, "", Pos{}, Pos{})
+		cf := compileRegex(`5,$`, "", Pos{}, Pos{})
+		cg := compileRegex(`(\d+)-(\d+)`, "", Pos{}, Pos{})
 		b.Run(fmt.Sprintf("rmatch_dot/chars=%d", len(sub)), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -224,7 +224,7 @@ func BenchmarkP5Reference(b *testing.B) {
 		{"short_rgroups", `(\d+)-(\d+)`, func(cr *compiledRegex) { refRGroups(cr, "123-45", false) }},
 		{"short_rreplace", `-`, func(cr *compiledRegex) { refRReplace(cr, "+", "123-45", false) }},
 	} {
-		cr, _ := compileRegex(c.pat, "", Pos{}, Pos{})
+		cr := compileRegex(c.pat, "", Pos{}, Pos{})
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

@@ -7,11 +7,11 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-// GO-P6: posAt answers from a cursor on the previous line before it searches; the
+// PosAt answers from a cursor on the previous line before it searches; the
 // answer must be the naive line/column for every offset in any order.
 func TestPosAtCursorMatchesTheNaiveCount(t *testing.T) {
 	src := "ab\n\n  cdé\n😀x\n" + strings.Repeat("line of text\n", 50) + "tail"
-	l := NewLexer(src)
+	l := newLexer(src)
 	runes := []rune(src)
 	naive := func(off int) Pos {
 		line, col := 1, 1
@@ -54,7 +54,7 @@ func TestAsciiUpperKeepsAnUpperCaseStringAndUpperCasesTheRest(t *testing.T) {
 }
 
 func TestTokenizeUpperCasesIdentifiersAndKeepsOperators(t *testing.T) {
-	toks := Tokenize("abc_1 += Foo??bar ?? x<=y $== z .> f")
+	toks := tokenize("abc_1 += Foo??bar ?? x<=y $== z .> f")
 	var got []string
 	for _, tk := range toks {
 		got = append(got, tk.Value)

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// GO-C6 (T12): reading is not writing. A Value the caller hands to Run and does not
+// Reading is not writing. A Value the caller hands to Run and does not
 // change must be safe to hand to several goroutines at once: evaluation over it may
 // not write a lazy cache (parsed decimal, text form, shape slot) into the shared
 // Value. concurrency_test.go shares Programs and gives every worker its own Values;

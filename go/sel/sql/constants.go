@@ -1,8 +1,8 @@
 package sql
 
 import (
-	"github.com/nathanjel/sel/go/internal/decimal"
 	"fmt"
+	"github.com/nathanjel/sel/go/internal/decimal"
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/limits"
@@ -42,7 +42,7 @@ func (k SqlKind) String() string {
 }
 
 func KindFromName(name string) SqlKind {
-	switch strings.ToUpper(strings.TrimSpace(name)) {
+	switch utf8.AsciiUpper(strings.TrimSpace(name)) {
 	case "NUM":
 		return KindNum
 	case "TEXT":
@@ -80,7 +80,7 @@ func (m Mode) String() string {
 }
 
 func ModeFromName(name string) Mode {
-	switch strings.ToLower(strings.TrimSpace(name)) {
+	switch utf8.AsciiLower(strings.TrimSpace(name)) {
 	case "params":
 		return ModeParams
 	case "debug":
@@ -95,20 +95,7 @@ func ModeFromName(name string) Mode {
 	}
 }
 
-func SelKindToSqlKind(k sel.Kind) SqlKind {
-	switch k {
-	case sel.KindText:
-		return KindText
-	case sel.KindBool:
-		return KindBool
-	case sel.KindBin:
-		return KindBin
-	default:
-		return KindUnknown
-	}
-}
-
-func Scope(bindings *Bindings) (map[string]bool, *sel.Value) {
+func scope(bindings *Bindings) (map[string]bool, *sel.Value) {
 	names := make(map[string]bool)
 	root := sel.NewNull()
 	if bindings == nil {
@@ -116,10 +103,10 @@ func Scope(bindings *Bindings) (map[string]bool, *sel.Value) {
 	}
 	for _, name := range bindings.Names() {
 		b := bindings.Get(name, Pos{})
-		if b.Kind != BindingKindValue {
+		if b.kind != bindingKindValue {
 			continue
 		}
-		v := b.Val
+		v := b.val
 		if v == nil || v.IsNone() || v.Size() > 0 {
 			continue
 		}
@@ -129,29 +116,42 @@ func Scope(bindings *Bindings) (map[string]bool, *sel.Value) {
 	return names, root
 }
 
-func IsBinderName(node *SNode) bool {
-	return node != nil && node.T == SNodeVar && !node.Grouped
+// sNodeShape is a call's argument nodes as manifest.MatchForm reads them.
+type sNodeShape []*sNode
+
+func (s sNodeShape) IsName(i int) bool { return isBinderName(s[i]) }
+func (s sNodeShape) IsText(i int) bool { return s[i].T == sNodeText }
+
+// writtenShape is a call's arguments as the program wrote them, for
+// manifest.MatchForm: before stage 1 inlined any helper into them.
+type writtenShape []*sel.Node
+
+func (s writtenShape) IsName(i int) bool { return s[i].T == sel.NodeVar && !s[i].Grouped }
+func (s writtenShape) IsText(i int) bool { return s[i].T == sel.NodeText }
+
+func isBinderName(node *sNode) bool {
+	return node != nil && node.T == sNodeVar && !node.Grouped
 }
 
-type NeededFields struct {
+type neededFields struct {
 	All    bool
 	Fields map[string]bool
 }
 
-func newNeededFields() *NeededFields {
-	return &NeededFields{Fields: make(map[string]bool)}
+func newNeededFields() *neededFields {
+	return &neededFields{Fields: make(map[string]bool)}
 }
 
-func (nf *NeededFields) IsNeeded() bool {
+func (nf *neededFields) IsNeeded() bool {
 	return nf != nil && (nf.All || len(nf.Fields) > 0)
 }
 
-func textLiteralResults(node *SNode, depth int) bool {
-	if node == nil || depth >= 180 || node.T != SNodeCall || (node.Str != "IF" && node.Str != "COND") {
+func textLiteralResults(node *sNode, depth int) bool {
+	if node == nil || depth >= 180 || node.T != sNodeCall || (node.Str != "IF" && node.Str != "COND") {
 		return false
 	}
 	args := node.Kids
-	var results []*SNode
+	var results []*sNode
 	if node.Str == "IF" {
 		if len(args) < 2 {
 			return false
@@ -167,23 +167,23 @@ func textLiteralResults(node *SNode, depth int) bool {
 		results = append(results, args[len(args)-1])
 	}
 	for _, r := range results {
-		if r == nil || (r.T != SNodeText && !textLiteralResults(r, depth+1)) {
+		if r == nil || (r.T != sNodeText && !textLiteralResults(r, depth+1)) {
 			return false
 		}
 	}
 	return true
 }
 
-func identityProjection(node *SNode, depth int) bool {
+func identityProjection(node *sNode, depth int) bool {
 	if node == nil || depth >= 180 {
 		return false
 	}
 	switch node.T {
-	case SNodeVar, SNodeNum, SNodeText, SNodeBool, SNodeNull:
+	case sNodeVar, sNodeNum, sNodeText, sNodeBool, sNodeNull:
 		return true
-	case SNodeIndex:
+	case sNodeIndex:
 		return identityProjection(node.Obj(), depth+1) && identityProjection(node.Idx(), depth+1)
-	case SNodeCall:
+	case sNodeCall:
 		name := node.Str
 		if name == "COUNT" || name == "LEN" || name == "BLEN" || name == "CANON" {
 			return true
@@ -206,29 +206,29 @@ func identityProjection(node *SNode, depth int) bool {
 	return false
 }
 
-func identityInputs(n *SNode, depth int) *NeededFields {
+func identityInputs(n *sNode, depth int) *neededFields {
 	if n == nil || depth >= 180 {
-		return &NeededFields{All: true}
+		return &neededFields{All: true}
 	}
 	switch n.T {
-	case SNodeNum, SNodeText, SNodeBool, SNodeNull:
+	case sNodeNum, sNodeText, sNodeBool, sNodeNull:
 		return newNeededFields()
-	case SNodeVar:
+	case sNodeVar:
 		if n.Str == "_K" {
 			return newNeededFields()
 		}
-		return &NeededFields{All: true}
-	case SNodeIndex:
-		if n.Idx() == nil || n.Idx().T != SNodeText {
-			return &NeededFields{All: true}
+		return &neededFields{All: true}
+	case sNodeIndex:
+		if n.Idx() == nil || n.Idx().T != sNodeText {
+			return &neededFields{All: true}
 		}
-		if n.Obj() != nil && n.Obj().T == SNodeVar {
+		if n.Obj() != nil && n.Obj().T == sNodeVar {
 			nf := newNeededFields()
 			nf.Fields[n.Idx().Str] = true
 			return nf
 		}
 		return identityInputs(n.Obj(), depth+1)
-	case SNodeCall:
+	case sNodeCall:
 		name := n.Str
 		if name == "COUNT" || name == "LEN" || name == "BLEN" || name == "CANON" {
 			return newNeededFields()
@@ -237,7 +237,7 @@ func identityInputs(n *SNode, depth int) *NeededFields {
 			return newNeededFields()
 		}
 		if name == "RECORD" || name == "LIST" {
-			var items []*SNode
+			var items []*sNode
 			if name == "RECORD" {
 				for i := 1; i < len(n.Kids); i += 2 {
 					items = append(items, n.Kids[i])
@@ -249,7 +249,7 @@ func identityInputs(n *SNode, depth int) *NeededFields {
 			for _, item := range items {
 				f := identityInputs(item, depth+1)
 				if f.All {
-					return &NeededFields{All: true}
+					return &neededFields{All: true}
 				}
 				for k := range f.Fields {
 					out.Fields[k] = true
@@ -257,12 +257,12 @@ func identityInputs(n *SNode, depth int) *NeededFields {
 			}
 			return out
 		}
-	case SNodeList:
+	case sNodeList:
 		out := newNeededFields()
 		for _, item := range n.Kids {
 			f := identityInputs(item, depth+1)
 			if f.All {
-				return &NeededFields{All: true}
+				return &neededFields{All: true}
 			}
 			for k := range f.Fields {
 				out.Fields[k] = true
@@ -270,21 +270,21 @@ func identityInputs(n *SNode, depth int) *NeededFields {
 		}
 		return out
 	}
-	return &NeededFields{All: true}
+	return &neededFields{All: true}
 }
 
-func IdentityLossBeforeGrouping(node *SNode, needed *NeededFields) bool {
-	for node != nil && node.T == SNodeCall && len(node.Kids) > 0 {
+func identityLossBeforeGrouping(node *sNode, needed *neededFields) bool {
+	for node != nil && node.T == sNodeCall && len(node.Kids) > 0 {
 		name := node.Str
 		if needed.IsNeeded() && (name == "MAP" || (name == "BUCKET" && len(node.Kids) > 2)) {
 			body := node.Kids[len(node.Kids)-1]
-			values := []*SNode{body}
-			if !needed.All && body.T == SNodeCall && body.Str == "RECORD" {
+			values := []*sNode{body}
+			if !needed.All && body.T == sNodeCall && body.Str == "RECORD" {
 				found := make(map[string]bool)
 				values = nil
 				for i := 0; i+1 < len(body.Kids); i += 2 {
 					k := body.Kids[i]
-					if k.T == SNodeText && needed.Fields[k.Str] {
+					if k.T == sNodeText && needed.Fields[k.Str] {
 						found[k.Str] = true
 						values = append(values, body.Kids[i+1])
 					}
@@ -322,9 +322,9 @@ func IdentityLossBeforeGrouping(node *SNode, needed *NeededFields) bool {
 			needed = identityInputs(node.Kids[argIdx], 0)
 		}
 		if name == "DISTINCT" || name == "DEDUPE" {
-			needed = &NeededFields{All: true}
+			needed = &neededFields{All: true}
 		}
-		if needed != nil && !needed.All && (name == "LINK" || name == "LINK_LEFT") && len(node.Kids) > 1 && node.Kids[1].T == SNodeVar {
+		if needed != nil && !needed.All && (name == "LINK" || name == "LINK_LEFT") && len(node.Kids) > 1 && node.Kids[1].T == sNodeVar {
 			right := node.Kids[1].Str
 			if len(node.Kids) == 5 {
 				right = node.Kids[3].Str
@@ -346,7 +346,7 @@ func IdentityLossBeforeGrouping(node *SNode, needed *NeededFields) bool {
 // binderConstant prefixes the names of binders a constant aggregate introduced.
 const binderConstant = "\x00"
 
-func IsConstant(n *SNode, bound map[string]bool) bool {
+func isConstant(n *sNode, bound map[string]bool) bool {
 	if n == nil {
 		return false
 	}
@@ -369,55 +369,55 @@ func IsConstant(n *SNode, bound map[string]bool) bool {
 	return yes
 }
 
-func isConstantNode(n *SNode, bound map[string]bool) bool {
+func isConstantNode(n *sNode, bound map[string]bool) bool {
 	switch n.T {
-	case SNodeNum, SNodeText, SNodeBool:
+	case sNodeNum, sNodeText, sNodeBool:
 		return true
-	case SNodeVar:
+	case sNodeVar:
 		if bound == nil {
 			return false
 		}
 		// A binder is not the value binding that happens to share its name: a
 		// read stage 1 found bound is constant only if a constant aggregate bound
 		// it (binderConstant), never because a binding of that name is a value.
-		if n.VarScope == VarScopeBound {
+		if n.VarScope == varScopeBound {
 			return bound[binderConstant+n.Str]
 		}
 		return bound[n.Str]
-	case SNodeUn:
-		return IsConstant(n.L(), bound)
-	case SNodeBin:
-		return IsConstant(n.L(), bound) && IsConstant(n.R(), bound)
-	case SNodeIndex:
-		return IsConstant(n.Obj(), bound) && IsConstant(n.Idx(), bound)
-	case SNodeCList:
+	case sNodeUn:
+		return isConstant(n.L(), bound)
+	case sNodeBin:
+		return isConstant(n.L(), bound) && isConstant(n.R(), bound)
+	case sNodeIndex:
+		return isConstant(n.Obj(), bound) && isConstant(n.Idx(), bound)
+	case sNodeCList:
 		return false
-	case SNodeList:
+	case sNodeList:
 		for _, item := range n.Kids {
-			if !IsConstant(item, bound) {
+			if !isConstant(item, bound) {
 				return false
 			}
 		}
 		return true
-	case SNodeCall:
+	case sNodeCall:
 		return constantCall(n, bound)
 	default:
 		return false
 	}
 }
 
-func constantCall(n *SNode, bound map[string]bool) bool {
+func constantCall(n *sNode, bound map[string]bool) bool {
 	args := n.Kids
 	if n.Spec == nil || !n.Spec.Binds {
 		for _, a := range args {
-			if !IsConstant(a, bound) {
+			if !isConstant(a, bound) {
 				return false
 			}
 		}
 		return true
 	}
 
-	if len(args) == 0 || !IsConstant(args[0], bound) {
+	if len(args) == 0 || !isConstant(args[0], bound) {
 		return false
 	}
 
@@ -427,7 +427,7 @@ func constantCall(n *SNode, bound map[string]bool) bool {
 	}
 	body := 1
 	if len(args) >= 3 {
-		if !IsBinderName(args[1]) {
+		if !isBinderName(args[1]) {
 			return false
 		}
 		inner[args[1].Str] = true
@@ -439,14 +439,14 @@ func constantCall(n *SNode, bound map[string]bool) bool {
 	}
 
 	for i := body; i < len(args); i++ {
-		if !IsConstant(args[i], inner) {
+		if !isConstant(args[i], inner) {
 			return false
 		}
 	}
 	return true
 }
 
-func Validate(n *SNode, root *sel.Value) {
+func validate(n *sNode, root *sel.Value) {
 	// A shared subtree passes once (the walk meets the same node from both
 	// operands of every doubling step): repeating SEL's evaluation of it costs
 	// what its expansion does each time.
@@ -457,22 +457,27 @@ func Validate(n *SNode, root *sel.Value) {
 	n.valid = true
 }
 
-func validateNode(n *SNode, root *sel.Value) {
+// evalConstant runs a constant subtree as written (no optimiser) over root, or
+// over NULL when root is nil; ok is false for a subtree with no plain-tree form.
+func evalConstant(n *sNode, root *sel.Value) (val *sel.Value, ok bool, err error) {
 	node := n.ToNode()
 	if node == nil {
-		return
+		return nil, false, nil
 	}
-	prog := sel.NewProgram("", node)
 	if root == nil {
 		root = sel.NewNull()
 	}
-	_, err := prog.RunAsWritten(root)
-	if err != nil {
-		RefuseAsSel(err, n)
+	val, err = sel.NewProgram("", node).RunAsWritten(root)
+	return val, true, err
+}
+
+func validateNode(n *sNode, root *sel.Value) {
+	if _, _, err := evalConstant(n, root); err != nil {
+		refuseAsSel(err, n)
 	}
 }
 
-func RequireNumeric(n *SNode, root *sel.Value) {
+func requireNumeric(n *sNode, root *sel.Value) {
 	if n.numeric {
 		return
 	}
@@ -480,86 +485,56 @@ func RequireNumeric(n *SNode, root *sel.Value) {
 	n.numeric = true
 }
 
-func requireNumericNode(n *SNode, root *sel.Value) {
-	node := n.ToNode()
-	if node == nil {
+func requireNumericNode(n *sNode, root *sel.Value) {
+	val, ok, err := evalConstant(n, root)
+	if !ok {
 		return
 	}
-	prog := sel.NewProgram("", node)
-	if root == nil {
-		root = sel.NewNull()
-	}
-	val, err := prog.RunAsWritten(root)
 	if err != nil {
-		RefuseAsSel(err, n)
+		refuseAsSel(err, n)
 	}
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if selErr, ok := r.(*sel.SelError); ok {
-					RefuseAsSel(selErr, n)
-				}
-				panic(r)
-			}
-		}()
-		val.AsDecimal(n.Pos)
-	}()
+	if refusal, selErr := catch(func() { val.Decimal(n.Pos) }); selErr != nil {
+		refuseAsSel(selErr, n)
+	} else if refusal != nil {
+		panic(refusal)
+	}
 }
 
-// NumericTextConstant is the canonical spelling of a constant that is TEXT holding a
+// numericTextConstant is the canonical spelling of a constant that is TEXT holding a
 // number, and "" with false when it is anything else (or SEL refuses it: the operand's
-// own translation reports that). PHP-C33: in arithmetic SEL computes with such a text
+// own translation reports that). In arithmetic SEL computes with such a text
 // exactly, and MariaDB and MySQL would convert the quoted string to DOUBLE
 // (`'0.1' + '0.2' = 0.3` is false there), so the translator spells it as the exact
 // numeric literal it stands for.
-func NumericTextConstant(n *SNode, root *sel.Value) (text string, ok bool) {
-	node := n.ToNode()
-	if node == nil {
-		return "", false
-	}
-	if root == nil {
-		root = sel.NewNull()
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			if _, isSel := r.(*sel.SelError); isSel {
-				text, ok = "", false
-				return
-			}
-			panic(r)
-		}
-	}()
-	val, err := sel.NewProgram("", node).RunAsWritten(root)
-	if err != nil {
+func numericTextConstant(n *sNode, root *sel.Value) (text string, ok bool) {
+	val, ok, err := evalConstant(n, root)
+	if !ok || err != nil {
 		return "", false
 	}
 	if !val.IsText() || !val.LooksNumeric() {
 		return "", false
 	}
-	return decimal.Format(val.AsDecimal(n.Pos)), true
+	var d sel.Decimal
+	if refusal, selErr := catch(func() { d = val.Decimal(n.Pos) }); refusal != nil {
+		panic(refusal)
+	} else if selErr != nil {
+		return "", false
+	}
+	return decimal.Format(decimal.Make(d.Neg, d.Digits, int32(d.Scale))), true
 }
 
-func ConstantScale(n *SNode, root *sel.Value) int {
-	node := n.ToNode()
-	if node == nil {
+func constantScale(n *sNode, root *sel.Value) int {
+	val, ok, err := evalConstant(n, root)
+	if !ok {
 		return 0
 	}
-	prog := sel.NewProgram("", node)
-	if root == nil {
-		root = sel.NewNull()
-	}
-	val, err := prog.RunAsWritten(root)
 	if err != nil {
-		RefuseAsSel(err, n)
+		refuseAsSel(err, n)
 	}
-	dec := val.AsDecimal(n.Pos)
-	if dec == nil {
-		return 0
-	}
-	return int(dec.Scale)
+	return val.Decimal(n.Pos).Scale
 }
 
-func RefuseAsSel(err error, n *SNode) {
+func refuseAsSel(err error, n *sNode) {
 	if selErr, ok := err.(*sel.SelError); ok {
 		pos := n.Pos
 		if selErr.Line() > 0 {
@@ -568,10 +543,10 @@ func RefuseAsSel(err error, n *SNode) {
 		if selErr.Code == "E_DEPTH" {
 			// The nesting is of the translated expression, which inlining built;
 			// SEL evaluates the program as written. Blaming SEL would be false.
-			Refuse("E_SQL_DEPTH",
+			refuse("E_SQL_DEPTH",
 				fmt.Sprintf("this expression nests deeper than SEL will evaluate (%d) once its helpers are inlined, so there is nothing to translate", limits.MAX_DEPTH), pos)
 		}
-		Refuse("E_SQL_INVALID",
+		refuse("E_SQL_INVALID",
 			fmt.Sprintf("SEL rejects this expression (%s: %s), so there is nothing to translate; a database would answer something rather than fail", selErr.Code, selErr.Message),
 			pos)
 	}

@@ -6,6 +6,8 @@ import (
 	"github.com/nathanjel/sel/go/internal/decimal"
 )
 
+// NodeType is the kind of a syntax tree node.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type NodeType string
 
 const (
@@ -23,11 +25,11 @@ const (
 	NodeCall   NodeType = "call"
 )
 
-type SlotCache struct {
+type slotCache struct {
 	Shape *RecordShape
 	Slot  int
 	// Misses counts how many times this site replaced its entry because the row had
-	// another shape; a site that keeps alternating stops storing (GO-P25).
+	// another shape; a site that keeps alternating stops storing.
 	Misses int32
 }
 
@@ -37,7 +39,7 @@ type SlotCache struct {
 const slotCacheMissLimit = 8
 
 // storeSlot records shape→slot at a site, unless the site has proved polymorphic.
-func storeSlot(holder *atomic.Pointer[SlotCache], shape *RecordShape, slot int) {
+func storeSlot(holder *atomic.Pointer[slotCache], shape *RecordShape, slot int) {
 	var misses int32
 	if old := holder.Load(); old != nil {
 		if old.Misses >= slotCacheMissLimit {
@@ -45,9 +47,12 @@ func storeSlot(holder *atomic.Pointer[SlotCache], shape *RecordShape, slot int) 
 		}
 		misses = old.Misses + 1
 	}
-	holder.Store(&SlotCache{Shape: shape, Slot: slot, Misses: misses})
+	holder.Store(&slotCache{Shape: shape, Slot: slot, Misses: misses})
 }
 
+// Spec describes a builtin for Define: its name, its argument counts, and Fn. A
+// lazy builtin receives the argument nodes unevaluated (Args.Node,
+// Args.EvalNode); Binds says it binds names in its arguments.
 type Spec struct {
 	Name       string
 	Min        int
@@ -58,13 +63,13 @@ type Spec struct {
 	Fn         func(args *Args, ctx *Context) *Value
 }
 
-type MathStep struct {
+type mathStep struct {
 	Op   string
 	Dst  uint16
 	Src1 uint16
 	Src2 uint16
 	// Reg is where an ADD, SUB or MUL result lives: 0 for a fresh Dec, i for
-	// register i of the evaluation's register file (assignRegisters, item 1).
+	// register i of the evaluation's register file (assignRegisters).
 	Reg      uint16
 	Pos      Pos
 	AuxPos   Pos
@@ -73,8 +78,8 @@ type MathStep struct {
 	LeafNode *Node
 }
 
-type MathPlan struct {
-	Steps          []MathStep
+type mathPlan struct {
+	Steps          []mathStep
 	OutputSlot     uint16
 	ScratchpadSize uint16
 	// UsesRegs: the plan has an ADD, SUB or MUL, so an evaluation takes a
@@ -83,33 +88,62 @@ type MathPlan struct {
 	NumRegs  uint16
 }
 
+// Node is a node of a compiled program's syntax tree.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type Node struct {
 	T       NodeType
 	Pos     Pos
 	S       string
 	B       bool
 	Grouped bool
+	// BindingRead marks a NodeVar that reads the SQL catalogue's binding of its
+	// name although a helper assignment of the same name shadows it: the hybrid
+	// planner sets it on the source it reaches by unwinding `ORDERS = ORDERS .>
+	// DROP(2)`, so neither the helper's dependency walk nor the translator's
+	// inlining reads that source as the helper. The evaluator ignores it.
+	BindingRead bool
+	// stepDepth is where a pipeline step stood in the tree as written (the
+	// outermost step at its pipeline's own depth), 0 when unknown: the optimiser
+	// sets it for the rules that would deepen a subtree (FILTER fusion).
+	stepDepth int32
 
 	L     *Node
 	R     *Node
 	Items []*Node
 
-	Dec   *decimal.Dec
-	Shape *RecordShape
+	dec   *decimal.Dec
+	shape *RecordShape
 	Spec  *Spec
 	// The holder is shared safely when optimizers copy a node. Each load must
 	// use one immutable snapshot for both the shape check and slot lookup.
-	SlotCache *atomic.Pointer[SlotCache]
+	slotCache *atomic.Pointer[slotCache]
 
-	MathPlan *MathPlan
+	mathPlan *mathPlan
 
-	KeysUnobserved bool
+	keysUnobserved bool
+}
+
+// NewNode makes a node of type t.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
+// Copy is a shallow copy of the node: its own Items slice, the same children
+// (and the same slot-cache holder, which is safe to share).
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
+func (n *Node) Copy() *Node {
+	if n == nil {
+		return nil
+	}
+	cp := *n
+	if n.Items != nil {
+		cp.Items = make([]*Node, len(n.Items))
+		copy(cp.Items, n.Items)
+	}
+	return &cp
 }
 
 func NewNode(t NodeType, pos Pos) *Node {
 	n := &Node{T: t, Pos: pos}
 	if t == NodeIndex {
-		n.SlotCache = new(atomic.Pointer[SlotCache])
+		n.slotCache = new(atomic.Pointer[slotCache])
 	}
 	return n
 }

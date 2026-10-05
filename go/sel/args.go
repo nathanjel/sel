@@ -17,14 +17,14 @@ type Args struct {
 	call        *Node
 	vals        []*Value
 	// valsBuf backs vals for a call of up to four arguments, so the Args and its
-	// value slots are one allocation instead of two (GO-P12).
+	// value slots are one allocation instead of two.
 	valsBuf [4]*Value
 }
 
-func NewArgs(node *Node, ctx *Context) *Args {
+func newArgs(node *Node, ctx *Context) *Args {
 	a := &Args{
 		nodes:       node.Items,
-		recordShape: node.Shape,
+		recordShape: node.shape,
 		name:        node.S,
 		pos:         node.Pos,
 		ctx:         ctx,
@@ -59,10 +59,6 @@ func (a *Args) Pos() Pos {
 	return a.pos
 }
 
-func (a *Args) Ctx() *Context {
-	return a.ctx
-}
-
 func (a *Args) Node(i int) *Node {
 	a.has(i)
 	return a.nodes[i]
@@ -79,13 +75,13 @@ func (a *Args) Val(i int) *Value {
 		if i == 0 {
 			a.offerNoCopy()
 		}
-		a.vals[i] = EvalNode(a.nodes[i], a.ctx)
+		a.vals[i] = evalNode(a.nodes[i], a.ctx)
 	}
 	return a.vals[i]
 }
 
 func (a *Args) EvalNode(n *Node) *Value {
-	return EvalNode(n, a.ctx)
+	return evalNode(n, a.ctx)
 }
 
 func (a *Args) Text(i int) string {
@@ -100,23 +96,17 @@ func (a *Args) Bool(i int) bool {
 	return a.Val(i).AsBool(a.PosOf(i))
 }
 
-func (a *Args) Dec(i int) *decimal.Dec {
+func (a *Args) dec(i int) *decimal.Dec {
 	return a.Val(i).AsDecimal(a.PosOf(i))
 }
 
 func (a *Args) Int(i int) int64 {
-	d := a.Dec(i)
-	if !decimal.IsInteger(d) {
-		fail("E_NOT_INT", fmt.Sprintf("%s argument %d must be a whole number", a.name, i+1), a.PosOf(i))
-	}
-	return decimal.ToSafeInt(d)
+	return wholeArgument(a.dec(i), a.name, i+1, a.PosOf(i))
 }
 
 func (a *Args) NonNegInt(i int) int64 {
 	n := a.Int(i)
-	if n < 0 {
-		fail("E_RANGE", fmt.Sprintf("%s argument %d must not be negative", a.name, i+1), a.PosOf(i))
-	}
+	nonNegativeArgument(n, a.name, i+1, a.PosOf(i))
 	return n
 }
 

@@ -13,9 +13,9 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-var SECTIONS = []string{"ops", "funcs", "skel"}
+var sections = []string{"ops", "funcs", "skel"}
 
-const MISSING = "\x00missing"
+const missingEntry = "\x00missing"
 
 type BuilderFn func(emit *Emit, args []*Fragment, pos Pos) *Fragment
 
@@ -31,7 +31,7 @@ type EntryRecord struct {
 	Key      string
 	Kind     EntryKind
 	Reason   string
-	Tpl      interface{}       // string or map[string]string
+	Tpl      interface{} // string or map[string]string
 	Variants map[string]string
 	Ret      string
 	Caveat   string
@@ -41,7 +41,7 @@ type EntryRecord struct {
 	Builder  BuilderFn
 }
 
-type DialectRecord struct {
+type dialectRecord struct {
 	Name    string
 	Extends *string
 	Version string
@@ -52,7 +52,7 @@ type DialectRecord struct {
 	Skel    map[string]*EntryRecord
 }
 
-type RulesData struct {
+type rulesData struct {
 	OpArity      map[string][2]int
 	FuncArity    map[string][2]*int
 	SkelSlots    map[string][]string
@@ -66,11 +66,11 @@ type RulesData struct {
 
 var (
 	initOnce        sync.Once
-	shippedDialects map[string]*DialectRecord
-	shippedRules    RulesData
+	shippedDialects map[string]*dialectRecord
+	shippedRules    rulesData
 
 	mapMu        sync.Mutex
-	extra        = make(map[string]*DialectRecord)
+	extra        = make(map[string]*dialectRecord)
 	overlay      = make(map[string]map[string]map[string]*EntryRecord)
 	guardChecked = make(map[string]bool)
 	hostArities  = make(map[string]map[string][2]int)
@@ -93,15 +93,15 @@ func initShipped() {
 	}
 
 	var rawRules struct {
-		OpArity      map[string][2]int      `json:"opArity"`
+		OpArity      map[string][2]int        `json:"opArity"`
 		FuncArity    map[string][]interface{} `json:"funcArity"`
-		SkelSlots    map[string][]string    `json:"skelSlots"`
-		Variants     map[string][]string    `json:"variants"`
-		Caveats      []string               `json:"caveats"`
-		RetKinds     []string               `json:"retKinds"`
-		ArgKinds     []string               `json:"argKinds"`
-		LexicalTypes map[string]string      `json:"lexicalTypes"`
-		TemplateKeys []string               `json:"templateKeys"`
+		SkelSlots    map[string][]string      `json:"skelSlots"`
+		Variants     map[string][]string      `json:"variants"`
+		Caveats      []string                 `json:"caveats"`
+		RetKinds     []string                 `json:"retKinds"`
+		ArgKinds     []string                 `json:"argKinds"`
+		LexicalTypes map[string]string        `json:"lexicalTypes"`
+		TemplateKeys []string                 `json:"templateKeys"`
 	}
 	if err := json.Unmarshal([]byte(ShippedRulesJSON), &rawRules); err != nil {
 		panic("failed to parse ShippedRulesJSON: " + err.Error())
@@ -129,9 +129,9 @@ func initShipped() {
 	shippedRules.LexicalTypes = rawRules.LexicalTypes
 	shippedRules.TemplateKeys = rawRules.TemplateKeys
 
-	shippedDialects = make(map[string]*DialectRecord)
+	shippedDialects = make(map[string]*dialectRecord)
 	for name, d := range rawDialects {
-		rec := &DialectRecord{
+		rec := &dialectRecord{
 			Name:    d.Dialect,
 			Extends: d.Extends,
 			Version: d.Version,
@@ -252,7 +252,7 @@ func Reset() {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
-	extra = make(map[string]*DialectRecord)
+	extra = make(map[string]*dialectRecord)
 	chainMemo = make(map[string][]string)
 	escaperMemo = make(map[string]*escaper)
 	overlay = make(map[string]map[string]map[string]*EntryRecord)
@@ -267,7 +267,7 @@ func Exists(dialect string) bool {
 	return extra[dialect] != nil || shippedDialects[dialect] != nil
 }
 
-func getRecord(dialect string) *DialectRecord {
+func getRecord(dialect string) *dialectRecord {
 	if r, ok := extra[dialect]; ok {
 		return r
 	}
@@ -326,7 +326,10 @@ func ShippedSectionKeys(dialect, section string) []string {
 	return out
 }
 
-func Targets() []string {
+// Dialects returns the sorted names of the dialects a translation can target:
+// the shipped ones and those an application defined, without the bases
+// (ansi, mysql-family) that only exist to be inherited from.
+func Dialects() []string {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
@@ -349,26 +352,26 @@ func Targets() []string {
 	return out
 }
 
-func RequireTarget(dialect string, pos Pos) {
+func requireTarget(dialect string, pos Pos) {
 	if !Exists(dialect) {
-		Refuse("E_SQL_DIALECT", fmt.Sprintf("there is no SQL dialect %s; known targets are %s", dialect, strings.Join(Targets(), ", ")), pos)
+		refuse("E_SQL_DIALECT", fmt.Sprintf("there is no SQL dialect %s; known targets are %s", dialect, strings.Join(Dialects(), ", ")), pos)
 	}
 	mapMu.Lock()
 	rec := getRecord(dialect)
 	mapMu.Unlock()
 	if !rec.Target {
-		Refuse("E_SQL_DIALECT", fmt.Sprintf("%s is a base other dialects inherit from, not a server anyone runs; translate to one of %s", dialect, strings.Join(Targets(), ", ")), pos)
+		refuse("E_SQL_DIALECT", fmt.Sprintf("%s is a base other dialects inherit from, not a server anyone runs; translate to one of %s", dialect, strings.Join(Dialects(), ", ")), pos)
 	}
 }
 
-// chainMemo caches each dialect's inheritance chain (GO-P16): Chain ran for every
+// chainMemo caches each dialect's inheritance chain: Chain ran for every
 // identifier, literal, placeholder and template slot, each time allocating a set
 // and a slice and taking the lock. The chain is a function of the registered
 // dialects only, so it is cleared whenever extra changes (Reset, DefineDialect and
 // its rollback). Guarded by mapMu; the slices in it are never handed out.
 var chainMemo = make(map[string][]string)
 
-// escaperMemo caches each dialect's text quote and compiled escape replacer (GO-P28:
+// escaperMemo caches each dialect's text quote and compiled escape replacer (without it,
 // TextLiteral sorted the escape keys and scanned with a prefix test per key on every
 // literal). Like chainMemo it is a function of the registered dialects only, so it
 // is cleared wherever chainMemo is. Guarded by mapMu.
@@ -480,20 +483,13 @@ func Entry(dialect, section, key string) interface{} {
 		}
 	}
 
-	return MISSING
+	return missingEntry
 }
 
 var dottedRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
 var tplKeyRe = regexp.MustCompile(`^(0|[1-9][0-9]{0,2})$`)
 var unifyRe = regexp.MustCompile(`^@unify:[0-9]+(,[0-9]+)*$`)
 var slotInTplRe = regexp.MustCompile(`\{([^}]*)\}`)
-
-type DialectSpec struct {
-	Extends *string                `json:"extends"`
-	Version *string                `json:"version"`
-	Target  *bool                  `json:"target"`
-	Lexical map[string]interface{} `json:"lexical"`
-}
 
 // DefineDialect registers a dialect. Registration errors are panics, the
 // host's startup-error class, never a SqlError: TryTranslate must not swallow
@@ -573,7 +569,7 @@ func checkQuoting(name string) {
 	}
 }
 
-func defineDialectLocked(name string, spec map[string]interface{}) (*DialectRecord, bool) {
+func defineDialectLocked(name string, spec map[string]interface{}) (*dialectRecord, bool) {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
@@ -592,7 +588,7 @@ func defineDialectLocked(name string, spec map[string]interface{}) (*DialectReco
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		panic(fmt.Sprintf("SQL dialect %s declares %s, which a dialect declaration does not carry; ops, funcs and skel entries are defined one at a time with define()", name, strings.Join(unknown, ", ")))
+		panic(fmt.Sprintf("SQL dialect %s declares %s, which a dialect declaration does not carry; ops, funcs and skel entries are defined one at a time with Define", name, strings.Join(unknown, ", ")))
 	}
 
 	if _, ok := spec["extends"]; !ok {
@@ -677,7 +673,7 @@ func defineDialectLocked(name string, spec map[string]interface{}) (*DialectReco
 	}
 	chainMemo = make(map[string][]string)
 	escaperMemo = make(map[string]*escaper)
-	extra[name] = &DialectRecord{
+	extra[name] = &dialectRecord{
 		Name:    name,
 		Extends: ext,
 		Version: version,
@@ -717,8 +713,8 @@ func Define(dialect, section, key string, entry interface{}) {
 
 	var arity *[2]int
 	if section == "funcs" {
-		if min, max, ok := sel.HostArity(k); ok {
-			arity = &[2]int{min, max}
+		if lo, hi, ok := sel.HostArity(k); ok {
+			arity = &[2]int{lo, hi}
 		}
 	}
 	if arity != nil {
@@ -739,7 +735,7 @@ func DefineBuilder(dialect, section, key string, fn BuilderFn) {
 	Define(dialect, section, key, map[string]interface{}{"builder": fn})
 }
 
-func HostSpellingArity(dialect, key string) *[2]int {
+func hostSpellingArity(dialect, key string) *[2]int {
 	ch := Chain(dialect)
 	mapMu.Lock()
 	defer mapMu.Unlock()
@@ -772,7 +768,7 @@ func quotedRuns(tpl string) []string {
 	return out
 }
 
-func CheckNumericGuard(dialect string) {
+func checkNumericGuard(dialect string) {
 	mapMu.Lock()
 	if guardChecked[dialect] {
 		mapMu.Unlock()
@@ -819,7 +815,7 @@ func CheckNumericGuard(dialect string) {
 		panic(fmt.Sprintf("SQL dialect %s declares a numericGuard that does not carry %s, which its funcs.ISNUM tests; they ask the same question, and a guard that asks a different one answers for rows SEL refuses", dialect, strings.Join(missing, ", ")))
 	}
 	// Marked only once it has passed: a dialect that fails the check fails it on
-	// every use, not just the first (JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42).
+	// every use, not just the first.
 	markGuardChecked(dialect)
 }
 
@@ -886,7 +882,7 @@ func checkKey(section, key string) {
 		_, isSelFunc := shippedRules.FuncArity[upper]
 		_, _, isHostFunc := sel.HostArity(key)
 		if !isSelFunc && !isHostFunc {
-			panic(fmt.Sprintf("%s is neither a SEL function this layer maps nor a registered host function. A host function is registered (registerFunction) before it is given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never reach the funcs table", key))
+			panic(fmt.Sprintf("%s is neither a SEL function this layer maps nor a registered host function. A host function is registered (sel.RegisterFunction) before it is given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never reach the funcs table", key))
 		}
 	} else if section == "skel" {
 		if _, ok := shippedRules.SkelSlots[key]; !ok {
@@ -944,8 +940,8 @@ func checkEntry(section, key string, e interface{}) {
 
 	var host *[2]int
 	if section == "funcs" {
-		if min, max, ok := sel.HostArity(key); ok {
-			host = &[2]int{min, max}
+		if lo, hi, ok := sel.HostArity(key); ok {
+			host = &[2]int{lo, hi}
 		}
 	}
 
@@ -956,7 +952,7 @@ func checkEntry(section, key string, e interface{}) {
 	if bVal, ok := m["builder"]; ok && bVal != nil {
 		if _, ok := bVal.(BuilderFn); !ok {
 			if _, ok2 := bVal.(func(*Emit, []*Fragment, Pos) *Fragment); !ok2 {
-				panic(fmt.Sprintf("%s has a builder that is not callable; use map.defineBuilder()", where))
+				panic(fmt.Sprintf("%s has a builder that is not callable; use DefineBuilder", where))
 			}
 		}
 		return
@@ -1184,8 +1180,8 @@ func checkArgs(key string, argsVal interface{}, host *[2]int, where string) {
 }
 
 func checkSection(section string) {
-	if !containsString(SECTIONS, section) {
-		panic(fmt.Sprintf("unknown map section %s; use %s", section, strings.Join(SECTIONS, ", ")))
+	if !containsString(sections, section) {
+		panic(fmt.Sprintf("unknown map section %s; use %s", section, strings.Join(sections, ", ")))
 	}
 }
 
@@ -1218,7 +1214,7 @@ func typeName(v interface{}) string {
 	}
 }
 
-func VersionAtLeast(have, want string) bool {
+func versionAtLeast(have, want string) bool {
 	parse := func(s string) []int {
 		parts := strings.Split(s, ".")
 		out := make([]int, len(parts))

@@ -284,15 +284,15 @@ func runCase(c SqlCase, dialect string) (problem string, sErr error) {
 	}
 
 	var (
-		haveSql     bool
-		haveError   bool
-		haveThrown  bool
-		sqlStr      string
-		thrownWhat  string
-		sqlErr      *sql.SqlError
-		frag        *sql.Fragment
-		prog        *sel.Program
-		binds       *sql.Bindings
+		haveSql    bool
+		haveError  bool
+		haveThrown bool
+		sqlStr     string
+		thrownWhat string
+		sqlErr     *sql.SqlError
+		frag       *sql.Fragment
+		prog       *sel.Program
+		binds      *sql.Bindings
 	)
 
 	opts := sql.Options{Strict: c.Strict}
@@ -356,8 +356,7 @@ func runCase(c SqlCase, dialect string) (problem string, sErr error) {
 	// the same SQL, or the same refusal at the same place, or a startup error
 	// again. A translator that keeps state between calls -- a dialect marked as
 	// checked before it was checked, a map iterated in a different order each
-	// time, a parameter list that grows -- passes one translation and fails here
-	// (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+	// time, a parameter list that grows -- passes one translation and fails here.
 	if prog != nil && binds != nil {
 		describe := func(sqlText string, e *sql.SqlError, thrown string, sqlOK bool) string {
 			switch {
@@ -593,6 +592,7 @@ func main() {
 		return
 	}
 
+	ran := 0
 	passed := 0
 	mirrored := 0
 	compileRefused := 0
@@ -613,6 +613,7 @@ func main() {
 			}
 		}
 
+		ran++
 		if c.Unrepresentable != nil {
 			passed++
 			compileRefused++
@@ -681,6 +682,11 @@ func main() {
 	fmt.Printf("\n%d passed (%d also checked against a mirrored dialect, %d refused by the type system), %d failed, %d suite errors\n",
 		passed, mirrored, compileRefused, len(failures), suiteErrors)
 
+	if ran == 0 {
+		// A filter that matches nothing is a mistyped name, not a pass.
+		fmt.Fprintf(os.Stderr, "sqlt: no case matched %s\n", strings.Join(filters, " "))
+		os.Exit(1)
+	}
 	if len(failures) > 0 || suiteErrors > 0 {
 		os.Exit(1)
 	}

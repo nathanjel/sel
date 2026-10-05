@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GO-REG-1: a FILTER whose parent only reads or itself copies its rows keeps them
+// A FILTER whose parent only reads or itself copies its rows keeps them
 // aliased. These tests hold the elision to "cannot be told apart": every program gives
 // the same outcome with it on and off, it is declined wherever a value could change
 // while the rows are read, and it still refuses the rows the copy would have refused.
@@ -26,9 +26,9 @@ func bothWays(t *testing.T, src string, ctx func() *Value) string {
 func nestedRows(depth int) *Value {
 	v := NewInt(1)
 	for i := 1; i < depth; i++ {
-		v = NewListOwned([]*Value{v})
+		v = newListOwned([]*Value{v})
 	}
-	return NewListOwned([]*Value{v})
+	return newListOwned([]*Value{v})
 }
 
 func TestNoCopyGivesTheSameAnswerWithAndWithout(t *testing.T) {
@@ -139,7 +139,6 @@ func TestNoCopyProgramsThatMutateStillSeeTheCopy(t *testing.T) {
 
 func TestNoCopyStillRefusesTheRowsTheCopyWouldRefuse(t *testing.T) {
 	for depth := 195; depth <= 202; depth++ {
-		depth := depth
 		ctx := func() *Value { return ctxWith("L", nestedRows(depth)) }
 		for _, src := range []string{`COUNT(FILTER(L, TRUE))`, `SUM(FILTER(L, TRUE), 1)`, `COUNT(MAP(FILTER(L, TRUE), 1))`} {
 			got := bothWays(t, src, ctx)

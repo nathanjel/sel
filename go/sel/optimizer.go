@@ -3,56 +3,28 @@
 package sel
 
 import (
-	"bytes"
 	"math"
 	"math/big"
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/mathops"
+	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
-var pipelineOps = map[string]bool{
-	"FILTER":      true,
-	"BUCKET":      true,
-	"SELECT_COLS": true,
-	"MAP":         true,
-	"DISTINCT":    true,
-	"DEDUPE":      true,
-	"TAKE":        true,
-	"DROP":        true,
-	"SORT":        true,
-	"SORT_DESC":   true,
-	"SORT_BY":     true,
-	"TOP":         true,
-	"TOP_DESC":    true,
-	"TOP_BY":      true,
-	"LINK":        true,
-	"LINK_LEFT":   true,
+// isPipelineOp reports whether a function name is one of the pipeline operators.
+func isPipelineOp(name string) bool {
+	return vocab.IsPipelineOp(name)
 }
 
-// IsPipelineOp reports whether a function name is one of the pipeline operators.
-func IsPipelineOp(name string) bool {
-	return pipelineOps[name]
-}
-
-func copyNode(n *Node) *Node {
-	if n == nil {
-		return nil
-	}
-	cp := *n
-	if n.Items != nil {
-		cp.Items = make([]*Node, len(n.Items))
-		copy(cp.Items, n.Items)
-	}
-	return &cp
-}
+func copyNode(n *Node) *Node { return n.Copy() }
 
 // UnwindPipeline decomposes a nested pipeline call into its base source and sequence of steps.
 func UnwindPipeline(root *Node) (*Node, []*Node) {
 	var steps []*Node
 	curr := root
-	for curr != nil && curr.T == NodeCall && IsPipelineOp(curr.S) && len(curr.Items) > 0 {
+	for curr != nil && curr.T == NodeCall && isPipelineOp(curr.S) && len(curr.Items) > 0 {
 		steps = append(steps, curr)
 		curr = curr.Items[0]
 	}
@@ -84,7 +56,7 @@ func optBool(val bool, pos Pos) *Node {
 func optNum(val string, dec *decimal.Dec, pos Pos) *Node {
 	n := NewNode(NodeNum, pos)
 	n.S = val
-	n.Dec = dec
+	n.dec = dec
 	return n
 }
 
@@ -99,15 +71,10 @@ func hoistLiteral(child *Node, pos Pos) *Node {
 }
 
 func tryDec(fn func() *decimal.Dec) (res *decimal.Dec) {
-	defer func() {
-		if r := recover(); r != nil {
-			if !isSelPanic(r) {
-				panic(r)
-			}
-			res = nil
-		}
-	}()
-	return fn()
+	if catchSel(func() { res = fn() }) != nil {
+		return nil
+	}
+	return res
 }
 
 func optFold(node *Node) *Node {
@@ -119,7 +86,7 @@ func optFold(node *Node) *Node {
 			return optBool(!node.L.B, node.Pos)
 		}
 		if node.S == "NEG" && node.L.T == NodeNum {
-			dec := node.L.Dec
+			dec := node.L.dec
 			if dec == nil {
 				dec = tryDec(func() *decimal.Dec {
 					return decimal.Parse(node.L.S, node.Pos, fail)
@@ -153,13 +120,13 @@ func optFold(node *Node) *Node {
 		if left.T == NodeNum && right.T == NodeNum {
 			switch node.S {
 			case "+", "-", "*", "/", "%":
-				decL := left.Dec
+				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
 						return decimal.Parse(left.S, node.Pos, fail)
 					})
 				}
-				decR := right.Dec
+				decR := right.dec
 				if decR == nil {
 					decR = tryDec(func() *decimal.Dec {
 						return decimal.Parse(right.S, node.Pos, fail)
@@ -167,33 +134,20 @@ func optFold(node *Node) *Node {
 				}
 				if decL != nil && decR != nil {
 					res := tryDec(func() *decimal.Dec {
-						switch node.S {
-						case "+":
-							return decimal.Add(decL, decR, node.Pos, fail)
-						case "-":
-							return decimal.Sub(decL, decR, node.Pos, fail)
-						case "*":
-							return decimal.Mul(decL, decR, node.Pos, fail)
-						case "/":
-							return decimal.Div(decL, decR, node.Pos, fail)
-						case "%":
-							return decimal.Mod(decL, decR, node.Pos, fail)
-						default:
-							return nil
-						}
+						return arith(node.S, decL, decR, node.Pos)
 					})
 					if res != nil {
 						return optNum(decimal.Format(res), res, node.Pos)
 					}
 				}
 			case "==", "!=", "<", "<=", ">", ">=":
-				decL := left.Dec
+				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
 						return decimal.Parse(left.S, node.Pos, fail)
 					})
 				}
-				decR := right.Dec
+				decR := right.dec
 				if decR == nil {
 					decR = tryDec(func() *decimal.Dec {
 						return decimal.Parse(right.S, node.Pos, fail)
@@ -201,45 +155,14 @@ func optFold(node *Node) *Node {
 				}
 				if decL != nil && decR != nil {
 					c := decimal.Cmp(decL, decR)
-					var b bool
-					switch node.S {
-					case "==":
-						b = (c == 0)
-					case "!=":
-						b = (c != 0)
-					case "<":
-						b = (c < 0)
-					case "<=":
-						b = (c <= 0)
-					case ">":
-						b = (c > 0)
-					case ">=":
-						b = (c >= 0)
-					}
-					return optBool(b, node.Pos)
+					return optBool(compareResult(node.S, c, node.Pos), node.Pos)
 				}
 			}
 		}
 		if left.T == NodeText && right.T == NodeText {
-			switch node.S {
-			case "$==", "$!=", "$<", "$<=", "$>", "$>=":
-				c := bytes.Compare([]byte(left.S), []byte(right.S))
-				var b bool
-				switch node.S {
-				case "$==":
-					b = (c == 0)
-				case "$!=":
-					b = (c != 0)
-				case "$<":
-					b = (c < 0)
-				case "$<=":
-					b = (c <= 0)
-				case "$>":
-					b = (c > 0)
-				case "$>=":
-					b = (c >= 0)
-				}
-				return optBool(b, node.Pos)
+			if vocab.IsTextComparison(node.S) {
+				c := strings.Compare(left.S, right.S) // UTF-8 bytes: code point order
+				return optBool(compareResult(node.S[1:], c, node.Pos), node.Pos)
 			}
 		}
 		return node
@@ -259,10 +182,6 @@ func optFold(node *Node) *Node {
 	return node
 }
 
-func upperName(s string) string {
-	return strings.ToUpper(s)
-}
-
 func optFieldRefs(node *Node, binder string) []string {
 	var refs []string
 	seen := make(map[string]bool)
@@ -272,8 +191,8 @@ func optFieldRefs(node *Node, binder string) []string {
 			return
 		}
 		if n.T == NodeIndex && n.L != nil && n.R != nil && n.L.T == NodeVar && n.R.T == NodeText {
-			v := upperName(n.L.S)
-			if binder == "" || v == upperName(binder) || v == "_" || v == "_1" || v == "_2" {
+			v := utf8.AsciiUpper(n.L.S)
+			if binder == "" || v == utf8.AsciiUpper(binder) || v == "_" || v == "_1" || v == "_2" {
 				if !seen[n.R.S] {
 					seen[n.R.S] = true
 					refs = append(refs, n.R.S)
@@ -297,7 +216,7 @@ func optFieldRefs(node *Node, binder string) []string {
 func optReadsVar(node *Node, names []string) bool {
 	wanted := make(map[string]bool)
 	for _, n := range names {
-		wanted[upperName(n)] = true
+		wanted[utf8.AsciiUpper(n)] = true
 	}
 	found := false
 	var walk func(n *Node)
@@ -305,7 +224,7 @@ func optReadsVar(node *Node, names []string) bool {
 		if n == nil || found {
 			return
 		}
-		if n.T == NodeVar && wanted[upperName(n.S)] {
+		if n.T == NodeVar && wanted[utf8.AsciiUpper(n.S)] {
 			found = true
 			return
 		}
@@ -358,9 +277,9 @@ func optStepArgFolds(step *Node, index int) bool {
 }
 
 type optMapInfo struct {
-	binder          string
-	body            *Node
-	explicitBinder  bool
+	binder         string
+	body           *Node
+	explicitBinder bool
 }
 
 type optFilterInfo struct {
@@ -414,7 +333,7 @@ func optMapPassthroughs(step *Node) []string {
 		v := info.body.Items[i+1]
 		if k.T == NodeText && v.T == NodeIndex && v.L != nil && v.R != nil &&
 			v.L.T == NodeVar && v.R.T == NodeText &&
-			upperName(v.L.S) == upperName(info.binder) && v.R.S == k.S {
+			utf8.AsciiUpper(v.L.S) == utf8.AsciiUpper(info.binder) && v.R.S == k.S {
 			fields = append(fields, k.S)
 		}
 	}
@@ -429,47 +348,30 @@ func optMapHasComputed(step *Node) bool {
 	return len(optMapPassthroughs(step))*2 != len(info.body.Items)
 }
 
+// optSortInfo is a sort step's binder and key. valid is false for a form the
+// rewrites must leave where it is: a binder slot that is not a bare name (the
+// step raises E_EXPECT_SYMBOL) or a direction that is not a text literal (it is
+// computed, and may raise, per call).
 type optSortInfo struct {
 	binder string
 	key    *Node
+	valid  bool
 }
 
+func bareName(n *Node) bool { return n.T == NodeVar && !n.Grouped }
+
 func getOptSortInfo(step *Node) optSortInfo {
-	args := step.Items
-	count := len(args)
-	info := optSortInfo{binder: "_"}
-	if step.S == "SORT" || step.S == "SORT_DESC" {
-		if count == 1 {
-			return info
-		}
-		if count == 3 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
-		} else {
-			info.key = args[1]
-		}
-	} else if step.S == "TOP" || step.S == "TOP_DESC" {
-		if count == 2 {
-			return info
-		}
-		sortCount := count - 1
-		if sortCount == 3 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
-		} else {
-			info.key = args[1]
-		}
-	} else if step.S == "SORT_BY" || step.S == "TOP_BY" {
-		sortCount := count
-		if step.S == "TOP_BY" {
-			sortCount = count - 1
-		}
-		if sortCount == 2 || (sortCount == 3 && args[2].T == NodeText) {
-			info.key = args[1]
-		} else if count > 2 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
-		}
+	info := optSortInfo{binder: "_", valid: true}
+	roles := sortRoles(step.S, step.Items)
+	if roles.Binder >= 0 {
+		info.binder = step.Items[roles.Binder].S
+		info.valid = bareName(step.Items[roles.Binder])
+	}
+	if roles.Key >= 0 {
+		info.key = step.Items[roles.Key]
+	}
+	if roles.Dir >= 0 && step.Items[roles.Dir].T != NodeText {
+		info.valid = false
 	}
 	return info
 }
@@ -495,7 +397,7 @@ func optNumericLiteral(node *Node) (int64, bool) {
 	if node == nil || node.T != NodeNum {
 		return 0, false
 	}
-	dec := node.Dec
+	dec := node.dec
 	if dec == nil {
 		dec = tryDec(func() *decimal.Dec {
 			return decimal.Parse(node.S, node.Pos, fail)
@@ -522,8 +424,8 @@ func optRenameVar(node *Node, oldName string, newName string) *Node {
 	cp := copyNode(node)
 	// A compiled plan names the old binder in its loads; the copy is renamed, so
 	// the plan is stale and the copy is evaluated as a tree (or planned again).
-	cp.MathPlan = nil
-	if cp.T == NodeVar && upperName(cp.S) == upperName(oldName) {
+	cp.mathPlan = nil
+	if cp.T == NodeVar && utf8.AsciiUpper(cp.S) == utf8.AsciiUpper(oldName) {
 		cp.S = newName
 	}
 	if cp.L != nil {
@@ -552,10 +454,10 @@ func optCannotRaise(node *Node, binder string, logical bool) bool {
 	case NodeNum, NodeText, NodeBool, NodeNull:
 		return true
 	case NodeVar:
-		name := upperName(node.S)
-		return name == "_K" || name == upperName(binder)
+		name := utf8.AsciiUpper(node.S)
+		return name == "_K" || name == utf8.AsciiUpper(binder)
 	case NodeIndex:
-		return logical && node.L != nil && node.L.T == NodeVar && upperName(node.L.S) == upperName(binder) &&
+		return logical && node.L != nil && node.L.T == NodeVar && utf8.AsciiUpper(node.L.S) == utf8.AsciiUpper(binder) &&
 			node.R != nil && node.R.T == NodeText
 	case NodeBin:
 		return logical && safeLogicalOps[node.S] &&
@@ -675,7 +577,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				fused := copyNode(first)
 				fused.Pos = second.Pos
 				fused.S = topName
-				fused.Spec = Lookup(topName)
+				fused.Spec = lookup(topName)
 				fused.Items = append(fused.Items, second.Items[1])
 				next = append(next, fused)
 				i += 2
@@ -711,6 +613,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			// SORT... + FILTER
 			if second != nil && (first.S == "SORT" || first.S == "SORT_DESC" || first.S == "SORT_BY") &&
 				second.S == "FILTER" && !optStepReadsKey(second) && optKeysRenumberedBy(third) &&
+				getOptSortInfo(first).valid &&
 				optCannotRaise(getOptSortInfo(first).key, getOptSortInfo(first).binder, logical) &&
 				(logical || optCannotRaise(getOptFilterInfo(second).predicate, getOptFilterInfo(second).binder, false)) {
 				next = append(next, second, first)
@@ -751,6 +654,9 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				optMapHasComputed(first) {
 				sort := getOptSortInfo(second)
 				refs := optFieldRefs(sort.key, sort.binder)
+				if !sort.valid {
+					refs = nil // leaves allInPass false: the sort stays after the MAP
+				}
 				passes := optMapPassthroughs(first)
 				passSet := make(map[string]bool)
 				for _, p := range passes {
@@ -776,9 +682,19 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			if second != nil && first.S == "FILTER" && second.S == "FILTER" {
 				left := getOptFilterInfo(first)
 				right := getOptFilterInfo(second)
+				// Fused, the second predicate sits one level deeper than it did:
+				// under the AND that joins them. A fused pair must spend what the
+				// two stages spent (SPEC 6.4), so a predicate that would reach the
+				// cap that way stays a second FILTER.
+				if left.valid && right.valid && second.stepDepth != 0 &&
+					int(second.stepDepth)+boundedDepth(right.predicate, maxDepth)+1 > maxDepth {
+					next = append(next, first)
+					i++
+					continue
+				}
 				if left.valid && right.valid && optFilterPredicateCannotRaise(right.predicate, right.binder, logical) {
 					rightPred := right.predicate
-					if upperName(left.binder) != upperName(right.binder) {
+					if utf8.AsciiUpper(left.binder) != utf8.AsciiUpper(right.binder) {
 						rightPred = optRenameVar(right.predicate, right.binder, left.binder)
 					}
 					combined := NewNode(NodeBin, left.predicate.Pos)
@@ -853,7 +769,7 @@ func optInmemorySteps(source *Node, steps []*Node) []*Node {
 			if i+1 < len(steps) {
 				nextStep = steps[i+1]
 			}
-			body.KeysUnobserved = optKeysRenumberedBy(nextStep)
+			body.keysUnobserved = optKeysRenumberedBy(nextStep)
 			cp.Items[len(cp.Items)-1] = body
 		}
 		rewritten[i] = cp
@@ -887,12 +803,12 @@ type emitResult struct {
 	raw bool
 }
 
-func compileMathPlan(root *Node) *MathPlan {
+func compileMathPlan(root *Node) *mathPlan {
 	if !isMathOp(root) {
 		return nil
 	}
 
-	plan := &MathPlan{}
+	plan := &mathPlan{}
 	var slotCount int
 	// Slots are 16-bit: a program that needs more (a 33,000-argument MAX) is
 	// not planned and runs the ordinary way, rather than wrapping around and
@@ -913,19 +829,19 @@ func compileMathPlan(root *Node) *MathPlan {
 		if !r.raw {
 			return r
 		}
-		plan.Steps = append(plan.Steps, MathStep{Op: "COERCE", Dst: r.slot, Src1: r.slot, Pos: pos})
+		plan.Steps = append(plan.Steps, mathStep{Op: "COERCE", Dst: r.slot, Src1: r.slot, Pos: pos})
 		return &emitResult{slot: r.slot}
 	}
 
 	var emit func(node *Node, depth int) *emitResult
 	emit = func(node *Node, depth int) *emitResult {
-		if node == nil || depth > MAX_DEPTH {
+		if node == nil || depth > maxDepth {
 			return nil
 		}
 
 		if node.T == NodeVar {
 			slot := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   "LOAD_VAR",
 				Dst:  slot,
 				Name: node.S,
@@ -935,7 +851,7 @@ func compileMathPlan(root *Node) *MathPlan {
 		}
 
 		if node.T == NodeNum {
-			dec := node.Dec
+			dec := node.dec
 			if dec == nil {
 				dec = tryDec(func() *decimal.Dec {
 					return decimal.Parse(node.S, node.Pos, fail)
@@ -945,7 +861,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				}
 			}
 			slot := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:       "LOAD_CONST",
 				Dst:      slot,
 				ConstVal: dec,
@@ -1001,7 +917,7 @@ func compileMathPlan(root *Node) *MathPlan {
 			}
 
 			dst := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   mathops.Operators[op],
 				Dst:  dst,
 				Src1: resL.slot,
@@ -1020,7 +936,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				return nil
 			}
 			dst := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   mathops.Prefix[node.S],
 				Dst:  dst,
 				Src1: resX.slot,
@@ -1041,7 +957,7 @@ func compileMathPlan(root *Node) *MathPlan {
 					return nil
 				}
 				dst := allocSlot()
-				plan.Steps = append(plan.Steps, MathStep{
+				plan.Steps = append(plan.Steps, mathStep{
 					Op:   bSpec.Op,
 					Dst:  dst,
 					Src1: resArg.slot,
@@ -1062,7 +978,7 @@ func compileMathPlan(root *Node) *MathPlan {
 					return nil
 				}
 				dst := allocSlot()
-				step := MathStep{
+				step := mathStep{
 					Op:   bSpec.Op,
 					Dst:  dst,
 					Src1: res0.slot,
@@ -1095,7 +1011,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				for k := 1; k < len(args); k++ {
 					resNext := resArgs[k]
 					dst := allocSlot()
-					plan.Steps = append(plan.Steps, MathStep{
+					plan.Steps = append(plan.Steps, mathStep{
 						Op:   bSpec.Op,
 						Dst:  dst,
 						Src1: currSlot,
@@ -1116,7 +1032,7 @@ func compileMathPlan(root *Node) *MathPlan {
 		}
 
 		slot := allocSlot()
-		plan.Steps = append(plan.Steps, MathStep{
+		plan.Steps = append(plan.Steps, mathStep{
 			Op:       "LOAD_LEAF",
 			Dst:      slot,
 			LeafNode: node,
@@ -1136,15 +1052,16 @@ func compileMathPlan(root *Node) *MathPlan {
 }
 
 func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node {
-	if node == nil || depth > MAX_DEPTH {
+	if node == nil || depth > maxDepth {
 		return node
 	}
-	if node.T == NodeCall && IsPipelineOp(node.S) && len(node.Items) > 0 {
+	if node.T == NodeCall && isPipelineOp(node.S) && len(node.Items) > 0 {
 		source, steps := UnwindPipeline(node)
 		optimizedSource := optTree(source, physical, depth+1, fold, false)
 		optimizedSteps := make([]*Node, len(steps))
 		for sIdx, step := range steps {
 			cp := copyNode(step)
+			cp.stepDepth = int32(depth + len(steps) - 1 - sIdx)
 			cp.Items = make([]*Node, len(step.Items))
 			cp.Items[0] = step.Items[0]
 			for i := 1; i < len(step.Items); i++ {
@@ -1182,7 +1099,7 @@ func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node
 		plan := compileMathPlan(folded)
 		if plan != nil {
 			cpPlan := copyNode(folded)
-			cpPlan.MathPlan = plan
+			cpPlan.mathPlan = plan
 			return cpPlan
 		}
 	}
@@ -1190,7 +1107,7 @@ func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node
 }
 
 func optExceedsDepth(node *Node, depth int) bool {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		return true
 	}
 	next := depth + 1
@@ -1208,6 +1125,31 @@ func optExceedsDepth(node *Node, depth int) bool {
 	return false
 }
 
+// boundedDepth is how deep an expression goes, its root counted as 1, and never
+// more than limit+1 (the walk stops there), so it is bounded whatever its size.
+func boundedDepth(root *Node, limit int) int {
+	deepest := 0
+	level := []*Node{root}
+	for len(level) > 0 && deepest <= limit {
+		deepest++
+		var next []*Node
+		for _, n := range level {
+			if n == nil {
+				continue
+			}
+			if n.L != nil {
+				next = append(next, n.L)
+			}
+			if n.R != nil {
+				next = append(next, n.R)
+			}
+			next = append(next, n.Items...)
+		}
+		level = next
+	}
+	return deepest
+}
+
 func optRoot(ast *Node, physical bool) *Node {
 	if ast != nil && optExceedsDepth(ast, 1) {
 		return ast
@@ -1220,12 +1162,8 @@ func OptimizeAstLogical(ast *Node) *Node {
 	return optRoot(ast, false)
 }
 
-// OptimizeAstInMemory runs physical in-memory optimizations (compiles math plan and marks keysUnobserved).
+// OptimizeAstInMemory applies the logical optimizations and the in-memory physical
+// ones (math plans, unobserved keys): the tree Program.Run evaluates.
 func OptimizeAstInMemory(ast *Node) *Node {
 	return optRoot(ast, true)
-}
-
-// OptimizeAST applies logical and in-memory physical optimizations.
-func OptimizeAST(ast *Node) *Node {
-	return OptimizeAstInMemory(ast)
 }

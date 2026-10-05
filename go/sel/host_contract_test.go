@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// T12 (Go lane): flow-sensitive dependencies() (SPEC 8), the manifest coverage check at
-// load (GO-C41), and the argument reader's refusal of an argument the call does not have
+// Flow-sensitive dependencies() (SPEC 8), the manifest coverage check at
+// load, and the argument reader's refusal of an argument the call does not have
 // (SPEC 8.1). The shared contract is also probed on every host by tools/api.* and pinned
 // in tools/api-pins.txt.
 
@@ -70,7 +70,7 @@ func TestDependenciesKeepTheDepthCap(t *testing.T) {
 	}
 }
 
-// GO-C41: a manifest name no module defined is refused on first use, not found later
+// A manifest name no module defined is refused on first use, not found later
 // as an unknown-function error at parse time.
 func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	registryMu.Lock()
@@ -93,7 +93,7 @@ func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	var got interface{}
 	func() {
 		defer func() { got = recover() }()
-		Lookup("MAX")
+		lookup("MAX")
 	}()
 	msg, ok := got.(string)
 	if !ok || !strings.Contains(msg, "ABS") || !strings.Contains(msg, "no module defines it") {
@@ -102,7 +102,7 @@ func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	// It keeps refusing: a swallowed panic must not turn into silent success.
 	func() {
 		defer func() { got = recover() }()
-		Lookup("MAX")
+		lookup("MAX")
 	}()
 	if got == nil {
 		t.Fatal("the coverage refusal did not persist")
@@ -116,7 +116,7 @@ func TestEveryArgumentReaderRefusesAMissingArgument(t *testing.T) {
 		"Text":     func(a *Args) { a.Text(3) },
 		"Bytes":    func(a *Args) { a.Bytes(3) },
 		"Bool":     func(a *Args) { a.Bool(3) },
-		"Dec":      func(a *Args) { a.Dec(3) },
+		"Dec":      func(a *Args) { a.dec(3) },
 		"Int":      func(a *Args) { a.Int(3) },
 		"NonNeg":   func(a *Args) { a.NonNegInt(3) },
 		"Node":     func(a *Args) { a.Node(3) },
@@ -126,7 +126,6 @@ func TestEveryArgumentReaderRefusesAMissingArgument(t *testing.T) {
 		"Negative": func(a *Args) { a.Val(-1) },
 	}
 	for name, read := range readers {
-		read := read
 		RegisterFunction("T12_RD_"+strings.ToUpper(name), 0, 1, func(a *Args) *Value {
 			read(a)
 			return NewNone()

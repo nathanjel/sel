@@ -47,25 +47,25 @@ func isSpace(c rune) bool {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
 }
 
-type TokenType string
+type tokenType string
 
 const (
-	TokenNum   TokenType = "num"
-	TokenText  TokenType = "text"
-	TokenIdent TokenType = "ident"
-	TokenOp    TokenType = "op"
-	TokenEOF   TokenType = "eof"
+	tokenNum   tokenType = "num"
+	tokenText  tokenType = "text"
+	tokenIdent tokenType = "ident"
+	tokenOp    tokenType = "op"
+	tokenEOF   tokenType = "eof"
 )
 
-type Token struct {
-	Type  TokenType
+type token struct {
+	Type  tokenType
 	Value string
 	Pos   Pos
 }
 
 const maxTokenPrealloc = 1 << 17
 
-type Lexer struct {
+type lexer struct {
 	chars      []rune
 	n          int
 	lineStarts []int
@@ -129,7 +129,7 @@ func sourceRunes(source string) []rune {
 	return runes
 }
 
-func NewLexer(source string) *Lexer {
+func newLexer(source string) *lexer {
 	chars := sourceRunes(source)
 	lineStarts := []int{0}
 	for i, ch := range chars {
@@ -137,7 +137,7 @@ func NewLexer(source string) *Lexer {
 			lineStarts = append(lineStarts, i+1)
 		}
 	}
-	return &Lexer{
+	return &lexer{
 		chars:      chars,
 		n:          len(chars),
 		lineStarts: lineStarts,
@@ -147,8 +147,8 @@ func NewLexer(source string) *Lexer {
 
 // posAt resolves a code point offset to line and column. Tokens are asked for in
 // nearly increasing order, so the line of the previous answer (and the next few)
-// are tried before the binary search (GO-P6).
-func (l *Lexer) posAt(offset int) Pos {
+// are tried before the binary search.
+func (l *lexer) posAt(offset int) Pos {
 	ls := l.lineStarts
 	cur := l.lineCursor
 	if cur >= len(ls) || ls[cur] > offset {
@@ -177,16 +177,16 @@ func (l *Lexer) posAt(offset int) Pos {
 	return Pos{Line: lo + 1, Col: offset - ls[lo] + 1, Offset: offset}
 }
 
-func (l *Lexer) Tokenize() []Token {
+func (l *lexer) Tokenize() []token {
 	// About one token in three characters for ordinary rules; growth past the cap
 	// is by append (a source that is mostly text does not get 56 bytes a character).
 	est := l.n/3 + 32
 	if est > maxTokenPrealloc {
 		est = maxTokenPrealloc
 	}
-	out := make([]Token, 0, est)
+	out := make([]token, 0, est)
 	l.lexRange(0, l.n, &out)
-	out = append(out, Token{Type: TokenEOF, Value: "", Pos: l.posAt(l.n)})
+	out = append(out, token{Type: tokenEOF, Value: "", Pos: l.posAt(l.n)})
 	return out
 }
 
@@ -195,7 +195,7 @@ func (l *Lexer) Tokenize() []Token {
 // pushes what it still has to emit (its parts, each interior range, the
 // closers) and the loop pops them in source order. Nothing here can therefore
 // reach the goroutine stack limit, however deep the braces go.
-func (l *Lexer) lexRange(frm, to int, out *[]Token) {
+func (l *lexer) lexRange(frm, to int, out *[]token) {
 	stack := []lexTask{{kind: taskRange, i: frm, to: to}}
 	for len(stack) > 0 {
 		task := stack[len(stack)-1]
@@ -215,9 +215,9 @@ func (l *Lexer) lexRange(frm, to int, out *[]Token) {
 				fail("E_SYNTAX", fmt.Sprintf("unclosed %c in interpolation", task.bal.open[len(task.bal.open)-1]),
 					l.posAt(task.part.to))
 			}
-			*out = append(*out, Token{Type: TokenOp, Value: ")", Pos: l.posAt(task.part.to)})
+			*out = append(*out, token{Type: tokenOp, Value: ")", Pos: l.posAt(task.part.to)})
 		case taskEnd:
-			*out = append(*out, Token{Type: TokenOp, Value: ")", Pos: task.pos})
+			*out = append(*out, token{Type: tokenOp, Value: ")", Pos: task.pos})
 		}
 	}
 }
@@ -227,7 +227,7 @@ func (l *Lexer) lexRange(frm, to int, out *[]Token) {
 //
 // bal is the balance of the interpolation body being lexed, nil at the top level
 // where the parser does the balancing.
-func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balance) []lexTask {
+func (l *lexer) lexTokens(frm, to int, out *[]token, stack []lexTask, bal *balance) []lexTask {
 	i := frm
 	for i < to {
 		c := l.chars[i]
@@ -258,7 +258,7 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 					j++
 				}
 			}
-			*out = append(*out, Token{Type: TokenNum, Value: string(l.chars[i:j]), Pos: pos})
+			*out = append(*out, token{Type: tokenNum, Value: string(l.chars[i:j]), Pos: pos})
 			i = j
 			continue
 		}
@@ -278,7 +278,7 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 				}
 				word[k-i] = ch
 			}
-			*out = append(*out, Token{Type: TokenIdent, Value: string(word), Pos: pos})
+			*out = append(*out, token{Type: tokenIdent, Value: string(word), Pos: pos})
 			i = j
 			continue
 		}
@@ -286,13 +286,13 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 		if c == '"' {
 			parts, next := l.scanQuoted(i, to)
 			if len(parts) == 1 {
-				*out = append(*out, Token{Type: TokenText, Value: parts[0].text, Pos: pos})
+				*out = append(*out, token{Type: tokenText, Value: parts[0].text, Pos: pos})
 				i = next
 				continue
 			}
 			// `( "seg" & expr & "seg" )`: the opener now, the rest as tasks, the
 			// remainder of this range underneath them.
-			*out = append(*out, Token{Type: TokenOp, Value: "(", Pos: pos})
+			*out = append(*out, token{Type: tokenOp, Value: "(", Pos: pos})
 			stack = append(stack, lexTask{kind: taskRange, i: next, to: to, bal: bal})
 			stack = append(stack, lexTask{kind: taskEnd, pos: pos})
 			for k := len(parts) - 1; k >= 0; k-- {
@@ -318,7 +318,7 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 					bal.open = bal.open[:n-1]
 				}
 			}
-			*out = append(*out, Token{Type: TokenOp, Value: op, Pos: pos})
+			*out = append(*out, token{Type: tokenOp, Value: op, Pos: pos})
 			i += len(op)
 			continue
 		}
@@ -330,25 +330,25 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 
 // One part of an interpolated literal: the `&` before it, then either its text
 // or `( interior )`, the interior being a range of its own.
-func (l *Lexer) emitPart(task lexTask, out *[]Token, stack []lexTask) []lexTask {
+func (l *lexer) emitPart(task lexTask, out *[]token, stack []lexTask) []lexTask {
 	part, pos := task.part, task.pos
 	if task.index > 0 {
-		*out = append(*out, Token{Type: TokenOp, Value: "&", Pos: pos})
+		*out = append(*out, token{Type: tokenOp, Value: "&", Pos: pos})
 	}
 	if !part.isExpr {
-		*out = append(*out, Token{Type: TokenText, Value: part.text, Pos: pos})
+		*out = append(*out, token{Type: tokenText, Value: part.text, Pos: pos})
 		return stack
 	}
 	mark := len(*out)
 	bal := &balance{}
-	*out = append(*out, Token{Type: TokenOp, Value: "(", Pos: l.posAt(part.frm)})
+	*out = append(*out, token{Type: tokenOp, Value: "(", Pos: l.posAt(part.frm)})
 	stack = append(stack, lexTask{kind: taskClose, mark: mark, part: part, bal: bal})
 	return append(stack, lexTask{kind: taskRange, i: part.frm, to: part.to, bal: bal})
 }
 
 // Every operator is ASCII, so it is compared byte against code point, with no
-// []rune(op) conversion per probe (GO-P6).
-func (l *Lexer) matchOperator(i, to int) (string, bool) {
+// []rune(op) conversion per probe.
+func (l *lexer) matchOperator(i, to int) (string, bool) {
 	for _, op := range operators {
 		if i+len(op) > to {
 			continue
@@ -367,7 +367,7 @@ func (l *Lexer) matchOperator(i, to int) (string, bool) {
 	return "", false
 }
 
-func (l *Lexer) lexRaw(start, to int, out *[]Token) int {
+func (l *lexer) lexRaw(start, to int, out *[]token) int {
 	pos := l.posAt(start)
 	i := start + 1
 	var buf []rune
@@ -379,7 +379,7 @@ func (l *Lexer) lexRaw(start, to int, out *[]Token) int {
 				i += 2
 				continue
 			}
-			*out = append(*out, Token{Type: TokenText, Value: string(buf), Pos: pos})
+			*out = append(*out, token{Type: tokenText, Value: string(buf), Pos: pos})
 			return i + 1
 		}
 		buf = append(buf, c)
@@ -399,7 +399,7 @@ type textPart struct {
 // Reads a quoted literal into its parts and the index just past its closing
 // quote, emitting nothing. Every `{...}` is skipped by matchBrace, so the
 // interior is not read here, only located.
-func (l *Lexer) scanQuoted(start, to int) ([]textPart, int) {
+func (l *lexer) scanQuoted(start, to int) ([]textPart, int) {
 	pos := l.posAt(start)
 	var parts []textPart
 	var buf []rune
@@ -436,7 +436,7 @@ func (l *Lexer) scanQuoted(start, to int) ([]textPart, int) {
 	return nil, to
 }
 
-func (l *Lexer) readEscape(i, to int) (string, int) {
+func (l *lexer) readEscape(i, to int) (string, int) {
 	pos := l.posAt(i)
 	if i+1 >= to {
 		fail("E_UNTERMINATED", "text literal ends in a backslash", pos)
@@ -493,7 +493,7 @@ type openConstruct struct {
 // interiors being lexed, and without the memo each of those locate-passes
 // re-read everything below it. If anything is unterminated the innermost open
 // construct is the one reported, which is where the recursion used to fail.
-func (l *Lexer) matchBrace(i, to int) int {
+func (l *lexer) matchBrace(i, to int) int {
 	if e := l.braceEnds[i]; e != 0 {
 		return e
 	}
@@ -552,7 +552,7 @@ func (l *Lexer) matchBrace(i, to int) int {
 	}
 }
 
-func (l *Lexer) skipRaw(j, to int) int {
+func (l *lexer) skipRaw(j, to int) int {
 	pos := l.posAt(j)
 	j++
 	for j < to {
@@ -569,6 +569,6 @@ func (l *Lexer) skipRaw(j, to int) int {
 	return to
 }
 
-func Tokenize(source string) []Token {
-	return NewLexer(source).Tokenize()
+func tokenize(source string) []token {
+	return newLexer(source).Tokenize()
 }

@@ -2,7 +2,7 @@ package sel
 
 import "testing"
 
-// Item 1: what one evaluation of a math plan allocates, warm, on operands of at
+// What one evaluation of a math plan allocates, warm, on operands of at
 // most 60 digits (math/big takes no pooled Karatsuba stack at these sizes, so the
 // counts are deterministic, -race included). Lower these when the code gets
 // cheaper; never raise them.
@@ -19,12 +19,12 @@ func planAllocations(t *testing.T, expr string) float64 {
 		t.Fatal(err)
 	}
 	node := MustCompile(expr).PhysicalAST()
-	if node.MathPlan == nil {
+	if node.mathPlan == nil {
 		t.Fatalf("%s: no plan", expr)
 	}
-	ctx := NewContext(root)
-	EvalNode(node, ctx) // warm: registers and caches
-	return testing.AllocsPerRun(50, func() { EvalNode(node, ctx) })
+	ctx := newContext(root)
+	evalNode(node, ctx) // warm: registers and caches
+	return testing.AllocsPerRun(50, func() { evalNode(node, ctx) })
 }
 
 func TestMathPlanAllocationBudgets(t *testing.T) {
@@ -68,9 +68,9 @@ func exprAllocations(t *testing.T, expr string) float64 {
 		t.Fatal(err)
 	}
 	node := MustCompile(expr).PhysicalAST()
-	ctx := NewContext(root)
-	EvalNode(node, ctx) // warm
-	return testing.AllocsPerRun(50, func() { EvalNode(node, ctx) })
+	ctx := newContext(root)
+	evalNode(node, ctx) // warm
+	return testing.AllocsPerRun(50, func() { evalNode(node, ctx) })
 }
 
 // Mandelbrot's escape test while z is still small: the bit lengths cannot

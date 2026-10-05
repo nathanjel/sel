@@ -8,7 +8,7 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-// GO-P16: the dialect chain is memoised; the memo must follow every registration
+// The dialect chain is memoised; the memo must follow every registration
 // change and never be corrupted by a caller that modifies what Chain returns.
 func TestChainMemoFollowsRegistrationAndIsNotSharedWithCallers(t *testing.T) {
 	Reset()
@@ -48,7 +48,7 @@ func TestChainMemoFollowsRegistrationAndIsNotSharedWithCallers(t *testing.T) {
 	}
 }
 
-// GO-P16: Fill's capacity hint changes nothing observable.
+// Fill's capacity hint changes nothing observable.
 func TestFillKeepsItsOutputBytes(t *testing.T) {
 	src := `(AMT + 1 > 3 AND NAME $== "it's 1" AND LEN(NAME) < 6) AND (AMT + 2 > 3 AND NAME $== "it's 2" AND LEN(NAME) < 7)`
 	got := translateRender(t, "mariadb", src)
@@ -62,7 +62,7 @@ func TestFillKeepsItsOutputBytes(t *testing.T) {
 	}
 }
 
-// GO-P18: ExecuteHybrid reads the caller's variables without copying the ones the
+// ExecuteHybrid reads the caller's variables without copying the ones the
 // continuation cannot write, never mutates the caller's context, and still copies
 // what the continuation assigns.
 func TestExecuteHybridDoesNotCopyWhatItOnlyReads(t *testing.T) {
@@ -93,7 +93,7 @@ func TestExecuteHybridDoesNotCopyWhatItOnlyReads(t *testing.T) {
 	_ = reflect.TypeOf
 }
 
-// GO-P17: an IN list translates in time linear in its length. Measured in
+// An IN list translates in time linear in its length. Measured in
 // allocations, which do not depend on machine load: 4x the elements must cost far
 // less than the 16x a quadratic fold would.
 func TestInListTranslationGrowsLinearly(t *testing.T) {

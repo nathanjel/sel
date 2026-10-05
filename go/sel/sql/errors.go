@@ -35,11 +35,31 @@ func (e *SqlError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 
-// Refuse raises a SqlError by panic. Recovered at top-level translation boundaries.
-func Refuse(code string, message string, pos Pos) {
+// refuse raises a SqlError by panic. Recovered at top-level translation boundaries.
+func refuse(code string, message string, pos Pos) {
 	panic(&SqlError{
 		Code:    code,
 		Message: message,
 		Pos:     pos,
 	})
+}
+
+// catch runs f and returns what it raised: a refusal (*SqlError, the only form
+// one is ever panicked in) or a SEL error (*sel.SelError). Any other panic -- a Go
+// runtime error is a bug -- continues. It is the one recover of this package.
+func catch(f func()) (refusal *SqlError, selErr *sel.SelError) {
+	defer func() {
+		if r := recover(); r != nil {
+			switch e := r.(type) {
+			case *SqlError:
+				refusal = e
+			case *sel.SelError:
+				selErr = e
+			default:
+				panic(r)
+			}
+		}
+	}()
+	f()
+	return nil, nil
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Go performance workloads (go/sel/perf_bench_test.go, go/internal/decimal bench):
+# Go performance workloads (go/sel/*_bench_test.go, go/internal/decimal/*_bench_test.go):
 # median of COUNT runs with allocations. Usage: tools/perf/go/bench.sh [pattern] [count]
 #   tools/perf/go/bench.sh 'P2Sort' 5
 # Heavy workloads run with -benchtime=1x via SEL_BENCHTIME=1x.

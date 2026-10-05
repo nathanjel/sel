@@ -5,13 +5,13 @@ import (
 	"testing"
 )
 
-// GO-P7: `??` / `???` over a plain path resolves it without raising. The
+// `??` / `???` over a plain path resolves it without raising. The
 // reference for each expression is the same path behind IF(TRUE, …), which is not
 // a plain path and so takes the raising-and-recovering route.
 func TestCoalesceOverAPlainPathMatchesTheRecoverRoute(t *testing.T) {
 	ctx := func() *Value {
 		inner, _ := Eval(`RECORD("b", 5, "n", NULL, "e", "", "s", "txt", "l", LIST(1, 2), "deep", RECORD("x", RECORD("y", 7)))`, NewNone())
-		c := ctxWith("A", inner, "T", NewText("hello"), "N", NewNull(), "E", NewText(""), "L", NewListOwned([]*Value{NewInt(1), rec("k", 9)}))
+		c := ctxWith("A", inner, "T", NewText("hello"), "N", NewNull(), "E", NewText(""), "L", newListOwned([]*Value{NewInt(1), rec("k", 9)}))
 		return c
 	}
 	paths := []string{
@@ -51,13 +51,13 @@ func TestCoalesceKeepsTheDepthCapForAPlainPath(t *testing.T) {
 	run := func(src string, start int, fast bool) string {
 		coalescePathFast = fast
 		defer func() { coalescePathFast = true }()
-		c := NewContext(root)
-		c.Depth = start
-		return outcome(func() *Value { return EvalNode(MustCompile(src).AST(), c) })
+		c := newContext(root)
+		c.depth = start
+		return outcome(func() *Value { return evalNode(MustCompile(src).AST(), c) })
 	}
 	for _, src := range []string{`A["x"] ?? 1`, `A["zz"] ?? 1`, `A["x"]["y"] ?? 1`, `A ?? 1`, `A["x"] ??? 1`} {
 		seenDepth := false
-		for start := MAX_DEPTH - 6; start <= MAX_DEPTH; start++ {
+		for start := maxDepth - 6; start <= maxDepth; start++ {
 			got, want := run(src, start, true), run(src, start, false)
 			if got != want {
 				t.Errorf("%s at start depth %d: walk %s, raising route %s", src, start, got, want)

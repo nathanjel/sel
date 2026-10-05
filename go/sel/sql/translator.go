@@ -7,61 +7,61 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 	"github.com/nathanjel/sel/go/sel"
 )
 
-type SourceShape int
+type sourceShape int
 
 const (
-	SourceShapeStatic SourceShape = iota
-	SourceShapeColumns
-	SourceShapeRelation
+	sourceShapeStatic sourceShape = iota
+	sourceShapeColumns
+	sourceShapeRelation
 )
 
-type SourceFilter struct {
+type sourceFilter struct {
 	Binder string
-	Node   *SNode
+	Node   *sNode
 }
 
-type Source struct {
-	Shape      SourceShape
-	Elements   []Pair[string, Binder]
-	Relation   *RelationSpec
-	Filters    []SourceFilter
+type source struct {
+	Shape      sourceShape
+	Elements   []pair[string, binder]
+	Relation   *relationSpec
+	Filters    []sourceFilter
 	ScalarRule bool
 }
 
-type Frame []Pair[string, Binder]
+type frame []pair[string, binder]
 
 type Options struct {
 	Strict bool
 }
 
-type Begun struct {
-	Norm *SNode
-	Plan *RelationalPlan
+type begun struct {
+	Norm *sNode
+	Plan *relationalPlan
 }
 
-type Slot struct {
+type slot struct {
 	Str  *string
 	Frag *Fragment
 }
 
-func StringSlot(s string) Slot {
-	return Slot{Str: &s}
+func stringSlot(s string) slot {
+	return slot{Str: &s}
 }
 
-func FragmentSlot(f *Fragment) Slot {
-	return Slot{Frag: f}
+func fragmentSlot(f *Fragment) slot {
+	return slot{Frag: f}
 }
 
-type SlotMap []Pair[string, []Slot]
+type slotMap []pair[string, []slot]
 
-type Translator struct {
+type translator struct {
 	dialect         string
 	emit            *Emit
 	bindings        *Bindings
@@ -69,29 +69,29 @@ type Translator struct {
 	params          []*sel.Value
 	paramKinds      []SqlKind
 	caveats         []string
-	frames          []Frame
+	frames          []frame
 	constNames      map[string]bool
 	constRoot       *sel.Value
 	depth           int
 	nodes           int64
-	statementPlan   *RelationalPlan
+	statementPlan   *relationalPlan
 	inWhere         bool
 	subqueryCounter int
 }
 
-func NewTranslator(dialect string, bindings *Bindings, options Options) *Translator {
+func newTranslator(dialect string, bindings *Bindings, options Options) *translator {
 	if bindings == nil {
 		bindings = NewBindings(nil)
 	}
-	return &Translator{
+	return &translator{
 		dialect:  dialect,
-		emit:     NewEmit(dialect),
+		emit:     newEmit(dialect),
 		bindings: bindings,
 		strict:   options.Strict,
 	}
 }
 
-func sameRelation(a, b RelationSpec) bool {
+func sameRelation(a, b relationSpec) bool {
 	return a.From.Table == b.From.Table &&
 		a.From.Raw == b.From.Raw &&
 		a.From.IsRaw == b.From.IsRaw &&
@@ -113,15 +113,15 @@ func listKey(k string) *int {
 	return &n
 }
 
-func childOf(n *SNode, key string) *SNode {
-	if n.T == SNodeList {
+func childOf(n *sNode, key string) *sNode {
+	if n.T == sNodeList {
 		i := listKey(key)
 		if i == nil || *i > len(n.Kids) {
 			return nil
 		}
 		return n.Kids[*i-1]
 	}
-	if n.T == SNodeCList {
+	if n.T == sNodeCList {
 		for i, k := range n.Keys {
 			if k == key {
 				return n.Kids[i]
@@ -137,14 +137,14 @@ func joinSorted(xs []string) string {
 	return strings.Join(s, ", ")
 }
 
-func frameSet(frame *Frame, name string, b Binder) {
+func frameSet(frame *frame, name string, b binder) {
 	for i := range *frame {
 		if (*frame)[i].Key == name {
 			(*frame)[i].Val = b
 			return
 		}
 	}
-	*frame = append(*frame, Pair[string, Binder]{Key: name, Val: b})
+	*frame = append(*frame, pair[string, binder]{Key: name, Val: b})
 }
 
 func declaredKind(b *Binding, v *sel.Value) SqlKind {
@@ -157,31 +157,10 @@ func declaredKind(b *Binding, v *sel.Value) SqlKind {
 	if v.IsNone() {
 		return KindList
 	}
-	if b.ValueType != nil && *b.ValueType == KindNum {
+	if b.valueType != nil && *b.valueType == KindNum {
 		return KindNum
 	}
 	return KindText
-}
-
-func constScope(bindings *Bindings) (map[string]bool, *sel.Value) {
-	names := make(map[string]bool)
-	root := sel.NewNone()
-	if bindings == nil {
-		return names, root
-	}
-	for _, name := range bindings.Names() {
-		b := bindings.Get(name, Pos{})
-		if b.Kind != BindingKindValue {
-			continue
-		}
-		v := b.Val
-		if v == nil || v.IsNone() || v.Size() > 0 {
-			continue
-		}
-		names[name] = true
-		root.Set(name, v)
-	}
-	return names, root
 }
 
 func litNode(t sel.NodeType, s string, b bool, pos Pos) *sel.Node {
@@ -193,8 +172,8 @@ func litNode(t sel.NodeType, s string, b bool, pos Pos) *sel.Node {
 	}
 }
 
-func (t *Translator) Begin(ast *sel.Node) Begun {
-	RequireTarget(t.dialect, ast.Pos)
+func (t *translator) Begin(ast *sel.Node) begun {
+	requireTarget(t.dialect, ast.Pos)
 	t.bindings.CheckAliases(ast.Pos)
 
 	t.params = nil
@@ -205,16 +184,16 @@ func (t *Translator) Begin(ast *sel.Node) Begun {
 	t.nodes = 0
 	t.subqueryCounter = 0
 
-	constNames, constRoot := constScope(t.bindings)
+	constNames, constRoot := scope(t.bindings)
 	t.constNames = constNames
 	t.constRoot = constRoot
 
-	normalised := Normalise(ast, t.constNames, t.constRoot)
+	normalised := normalise(ast, t.constNames, t.constRoot)
 	plan := t.AnalyzePipeline(normalised)
-	return Begun{Norm: normalised, Plan: plan}
+	return begun{Norm: normalised, Plan: plan}
 }
 
-func (t *Translator) Translate(ast *sel.Node) *Fragment {
+func (t *translator) Translate(ast *sel.Node) *Fragment {
 	b := t.Begin(ast)
 	if b.Plan != nil {
 		return t.CompileStatement(b.Plan)
@@ -226,35 +205,35 @@ func (t *Translator) Translate(ast *sel.Node) *Fragment {
 	return out
 }
 
-func (t *Translator) TranslateStatement(ast *sel.Node) *Fragment {
+func (t *translator) TranslateStatement(ast *sel.Node) *Fragment {
 	b := t.Begin(ast)
 	if b.Plan == nil {
-		Refuse("E_SQL_SHAPE", "expected a relational query or pipeline", sel.Pos{})
+		refuse("E_SQL_SHAPE", "expected a relational query or pipeline", sel.Pos{})
 	}
 	return t.CompileStatement(b.Plan)
 }
 
-func (t *Translator) addCaveat(name string) {
+func (t *translator) addCaveat(name string) {
 	if !containsString(t.caveats, name) {
 		t.caveats = append(t.caveats, name)
 	}
 }
 
-func (t *Translator) node(n *SNode) *Fragment {
+func (t *translator) node(n *sNode) *Fragment {
 	// One per node dispatched, again on every re-entry (an inlined helper read
 	// twice, an unrolled element, a binder read), and before any work that costs
 	// what the expansion does: a refusal costs at most the budget
 	// (docs/internals/sql-translation.md 7.4, MAX_SQL_NODES).
 	t.nodes++
 	if t.nodes > limits.MAX_SQL_NODES {
-		Refuse("E_SQL_SIZE",
+		refuse("E_SQL_SIZE",
 			fmt.Sprintf("this rule expands to more than %d nodes once its helpers are inlined and its lists unrolled; SEL evaluates it in a fraction of that, but the SQL would be the size of what it expands to", limits.MAX_SQL_NODES),
 			n.Pos)
 	}
 	t.depth++
 	if t.depth > limits.MAX_DEPTH {
 		t.depth--
-		Refuse("E_SQL_DEPTH",
+		refuse("E_SQL_DEPTH",
 			fmt.Sprintf("this expression nests deeper than SEL will evaluate (%d), so there is nothing to translate; the evaluator answers E_DEPTH for it", limits.MAX_DEPTH),
 			n.Pos)
 	}
@@ -262,57 +241,54 @@ func (t *Translator) node(n *SNode) *Fragment {
 		t.depth--
 	}()
 
-	compound := n.T == SNodeBin || n.T == SNodeUn || n.T == SNodeCall
-	if !compound || !IsConstant(n, t.constNames) {
+	compound := n.T == sNodeBin || n.T == sNodeUn || n.T == sNodeCall
+	if !compound || !isConstant(n, t.constNames) {
 		return t.dispatch(n)
 	}
 
 	f := t.dispatch(n)
-	Validate(n, t.constRoot)
+	validate(n, t.constRoot)
 	return f
 }
 
-func (t *Translator) dispatch(n *SNode) *Fragment {
+func (t *translator) dispatch(n *sNode) *Fragment {
 	switch n.T {
-	case SNodeNum:
-		var dec *decimal.Dec
-		if n.Origin != nil {
-			dec = n.Origin.Dec
-		}
-		return t.literal(sel.NewNumExact(n.Str, dec), KindNum)
-	case SNodeText:
+	case sNodeNum:
+		// A number is its text; the parameter parses it when it is read as one.
+		return t.literal(sel.NewText(n.Str), KindNum)
+	case sNodeText:
 		t.requireNoNul(n.Str, n.Pos)
-		return t.literal(sel.NewTextOwned(n.Str), KindText)
-	case SNodeBool:
+		return t.literal(sel.NewText(n.Str), KindText)
+	case sNodeBool:
 		return t.literal(sel.NewBool(n.BoolVal), KindBool)
-	case SNodeVar:
+	case sNodeVar:
 		return t.variable(n)
-	case SNodeIndex:
+	case sNodeIndex:
 		return t.index(n)
-	case SNodeUn:
+	case sNodeUn:
 		return t.unary(n)
-	case SNodeBin:
+	case sNodeBin:
 		return t.binary(n)
-	case SNodeList, SNodeCList:
-		Refuse("E_SQL_SHAPE", "a list is not a SQL value; a list can only be the thing an aggregate iterates", n.Pos)
-	case SNodeCall:
+	case sNodeList, sNodeCList:
+		refuse("E_SQL_SHAPE", "a list is not a SQL value; a list can only be the thing an aggregate iterates", n.Pos)
+	case sNodeCall:
 		return t.call(n)
 	}
-	Refuse("E_SQL_SHAPE", fmt.Sprintf("cannot translate a %s node", n.T), n.Pos)
+	refuse("E_SQL_SHAPE", fmt.Sprintf("cannot translate a %s node", n.T), n.Pos)
 	return nil
 }
 
 // requireNoNul refuses a text value with a NUL in it, in every render mode. A
 // C-string client API truncates an inline statement at the NUL, and a driver
 // that sends parameters may do the same; SEL text may hold U+0000, SQL text
-// cannot portably (GO-C43).
-func (t *Translator) requireNoNul(s string, pos Pos) {
+// cannot portably.
+func (t *translator) requireNoNul(s string, pos Pos) {
 	if strings.ContainsRune(s, 0) {
-		Refuse("E_SQL_UNSUPPORTED", "a text value containing a NUL cannot be sent to a SQL server portably", pos)
+		refuse("E_SQL_UNSUPPORTED", "a text value containing a NUL cannot be sent to a SQL server portably", pos)
 	}
 }
 
-func (t *Translator) literal(v *sel.Value, kind SqlKind) *Fragment {
+func (t *translator) literal(v *sel.Value, kind SqlKind) *Fragment {
 	t.params = append(t.params, v)
 	pk := kind
 	if kind == KindUnknown || kind == KindList {
@@ -331,7 +307,7 @@ func (t *Translator) literal(v *sel.Value, kind SqlKind) *Fragment {
 	return f
 }
 
-func (t *Translator) binder(name string) *Binder {
+func (t *translator) binder(name string) *binder {
 	for i := len(t.frames) - 1; i >= 0; i-- {
 		for _, kv := range t.frames[i] {
 			if kv.Key == name {
@@ -343,26 +319,26 @@ func (t *Translator) binder(name string) *Binder {
 	return nil
 }
 
-func (t *Translator) variable(n *SNode) *Fragment {
-	if n.VarScope != VarScopeFree {
+func (t *translator) variable(n *sNode) *Fragment {
+	if n.VarScope != varScopeFree {
 		if bound := t.binder(n.Str); bound != nil {
 			return t.fromBinder(bound, n)
 		}
 	}
 
 	b := t.bindings.Get(n.Str, n.Pos)
-	switch b.Kind {
-	case BindingKindColumn:
-		return t.columnRef(b.Column)
-	case BindingKindValue:
-		v := b.Val
+	switch b.kind {
+	case bindingKindColumn:
+		return t.columnRef(b.column)
+	case bindingKindValue:
+		v := b.val
 		if v.Size() > 0 {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s is bound to a list, and a list is not a SQL value; it can only be the thing an aggregate iterates", n.Str),
 				n.Pos)
 		}
 		if v.IsNone() {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s is bound to an empty value, which is not a SQL value; only an aggregate can be given an empty binding", n.Str),
 				n.Pos)
 		}
@@ -370,31 +346,29 @@ func (t *Translator) variable(n *SNode) *Fragment {
 			t.requireNoNul(v.Scalar(), n.Pos)
 		}
 		return t.literal(v, declaredKind(b, v))
-	case BindingKindColumns, BindingKindRelation:
+	case bindingKindColumns, bindingKindRelation:
 		kindStr := "relation"
-		if b.Kind == BindingKindColumns {
+		if b.kind == bindingKindColumns {
 			kindStr = "columns"
 		}
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s is bound as a %s, which names a set of values rather than one; use it as the first argument of an aggregate, not as a value on its own", n.Str, kindStr),
 			n.Pos)
 	}
-	Refuse("E_SQL_BINDING", "unusable binding for "+n.Str, n.Pos)
+	refuse("E_SQL_BINDING", "unusable binding for "+n.Str, n.Pos)
 	return nil
 }
 
-func (t *Translator) columnRef(c ColumnSpec) *Fragment {
-	sqlStr := c.Table
-	if c.IsRaw {
-		sqlStr = c.Raw
-	} else {
+func (t *translator) columnRef(c columnSpec) *Fragment {
+	sqlStr := c.Raw
+	if !c.IsRaw {
 		sqlStr = t.emit.Column(c.Table, c.Column)
 	}
 	f := &Fragment{
 		Parts:             []Part{{Sql: sqlStr}},
 		Kind:              c.Type,
 		Dialect:           t.dialect,
-		Exact:             c.Exact,
+		ExactCollation:    c.Exact,
 		Sargable:          c.Sargable,
 		Guard:             c.Guard,
 		SeparatePrefilter: c.Prefilter == "separate",
@@ -403,29 +377,29 @@ func (t *Translator) columnRef(c ColumnSpec) *Fragment {
 	return f
 }
 
-func (t *Translator) constantIndex(idx *SNode) string {
-	if idx.T == SNodeNum || idx.T == SNodeText {
+func (t *translator) constantIndex(idx *sNode) string {
+	if idx.T == sNodeNum || idx.T == sNodeText {
 		return idx.Str
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		"an index must be a constant here: the column it names has to be known before the query runs",
 		idx.Pos)
 	return ""
 }
 
-func (t *Translator) index(n *SNode) *Fragment {
+func (t *translator) index(n *sNode) *Fragment {
 	obj := n.L()
-	if t.statementPlan != nil && obj.T == SNodeIndex {
+	if t.statementPlan != nil && obj.T == sNodeIndex {
 		if row := t.rowPath(obj, n); row != nil {
 			return t.rowField(row, "the row", t.constantIndex(n.R()), n)
 		}
 		t.node(n.L())
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			"only a bound name can be indexed here; SQL has no way to index into the result of an expression",
 			n.Pos)
 	}
-	if obj.T != SNodeVar {
-		Refuse("E_SQL_SHAPE",
+	if obj.T != sNodeVar {
+		refuse("E_SQL_SHAPE",
 			"only a bound name can be indexed here; SQL has no way to index into the result of an expression",
 			n.Pos)
 	}
@@ -435,41 +409,41 @@ func (t *Translator) index(n *SNode) *Fragment {
 	b := t.bindings.Get(obj.Str, obj.Pos)
 	key := t.constantIndex(n.R())
 
-	switch b.Kind {
-	case BindingKindRelation:
-		Refuse("E_SQL_SHAPE",
+	switch b.kind {
+	case bindingKindRelation:
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s is a relation, which is a list of rows; indexing it names no value SEL can produce, so use an aggregate and index the row its binder gives you", obj.Str),
 			n.Pos)
-	case BindingKindColumns:
+	case bindingKindColumns:
 		i := listKey(key)
-		count := len(b.Columns)
+		count := len(b.columns)
 		if i == nil || *i > count {
-			Refuse("E_SQL_BINDING",
+			refuse("E_SQL_BINDING",
 				fmt.Sprintf("%s[%s] is outside that binding's %d column(s)", obj.Str, key, count),
 				n.Pos)
 		}
-		return t.columnRef(b.Columns[*i-1])
-	case BindingKindValue:
-		child := b.Val.Get(key)
+		return t.columnRef(b.columns[*i-1])
+	case bindingKindValue:
+		child := b.val.Get(key)
 		if child == nil {
-			Refuse("E_SQL_BINDING",
+			refuse("E_SQL_BINDING",
 				fmt.Sprintf("%s[%q] is not a key of that value", obj.Str, key),
 				n.Pos)
 		}
 		if child.Size() > 0 {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s[%q] is a list, not a SQL value", obj.Str, key),
 				n.Pos)
 		}
 		return t.literal(child, declaredKind(b, child))
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s is bound as a column, which has no parts to index", obj.Str),
 		n.Pos)
 	return nil
 }
 
-func (t *Translator) groupKey(src Source, gb RelationalGroup, projected bool) *Fragment {
+func (t *translator) groupKey(src source, gb relationalGroup, projected bool) *Fragment {
 	key := t.withRow(src, gb.Binder, func() *Fragment {
 		return t.node(gb.Node)
 	})
@@ -483,38 +457,38 @@ func (t *Translator) groupKey(src Source, gb RelationalGroup, projected bool) *F
 	return identity
 }
 
-func (t *Translator) identityGroupKey(n *SNode, f *Fragment) *Fragment {
+func (t *translator) identityGroupKey(n *sNode, f *Fragment) *Fragment {
 	if f.Canonical && f.Kind == KindNum {
 		return f
 	}
 	if f.Kind == KindUnknown {
-		Refuse("E_SQL_SHAPE", "group keys require proven scalar identity", n.Pos)
+		refuse("E_SQL_SHAPE", "group keys require proven scalar identity", n.Pos)
 	}
 	if f.Kind == KindNum {
-		if n.T != SNodeVar && n.T != SNodeIndex && n.T != SNodeNum {
-			Refuse("E_SQL_SHAPE", "computed numeric group keys do not preserve SEL identity", n.Pos)
+		if n.T != sNodeVar && n.T != sNodeIndex && n.T != sNodeNum {
+			refuse("E_SQL_SHAPE", "computed numeric group keys do not preserve SEL identity", n.Pos)
 		}
 		numeric := NewFragment(f.Parts, KindNum, t.dialect, f.Params, f.ParamKinds, f.Caveats)
 		w := t.emit.TextOperand(numeric)
 		out := NewFragment(w.Parts, KindText, t.dialect, w.Params, w.ParamKinds, w.Caveats)
-		out.Exact = true
+		out.ExactCollation = true
 		return out
 	}
 	return t.collatedKey(f)
 }
 
-func (t *Translator) orderKey(f *Fragment, pos Pos) *Fragment {
+func (t *translator) orderKey(f *Fragment, pos Pos) *Fragment {
 	if f.Kind == KindNum {
 		return f
 	}
 	if f.Canonical {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("CANON is text on %s, which SQL sorts by its bytes, and SEL sorts it as the number it is; sort it in memory", t.dialect),
 			pos)
 	}
 	if f.Kind == KindText || f.Kind == KindUnknown {
 		if t.strict {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				"a text key sorts by its bytes in SQL, where SEL sorts number-shaped text as numbers (text-order); strict mode refuses that",
 				pos)
 		}
@@ -523,25 +497,25 @@ func (t *Translator) orderKey(f *Fragment, pos Pos) *Fragment {
 	return t.collatedKey(f)
 }
 
-func (t *Translator) collatedKey(f *Fragment) *Fragment {
-	if f.Kind != KindText || f.Exact {
+func (t *translator) collatedKey(f *Fragment) *Fragment {
+	if f.Kind != KindText || f.ExactCollation {
 		return f
 	}
 	wrapped := t.emit.TextOperand(f)
 	out := NewFragment(wrapped.Parts, KindText, t.dialect, wrapped.Params, wrapped.ParamKinds, wrapped.Caveats)
-	out.Exact = true
+	out.ExactCollation = true
 	return out
 }
 
-func (t *Translator) rowPath(node *SNode, outer *SNode) *RowModel {
-	if node.T == SNodeVar {
+func (t *translator) rowPath(node *sNode, outer *sNode) *rowModel {
+	if node.T == sNodeVar {
 		b := t.binder(node.Str)
-		if b != nil && b.Shape == BinderShapeRow {
+		if b != nil && b.Shape == binderShapeRow {
 			return b.Model
 		}
 		return nil
 	}
-	if node.T != SNodeIndex {
+	if node.T != sNodeIndex {
 		return nil
 	}
 	inner := t.rowPath(node.L(), node)
@@ -551,41 +525,41 @@ func (t *Translator) rowPath(node *SNode, outer *SNode) *RowModel {
 	return t.rowNested(inner, t.constantIndex(node.R()), node, outer)
 }
 
-func (t *Translator) rowNested(row *RowModel, key string, n *SNode, outer *SNode) *RowModel {
+func (t *translator) rowNested(row *rowModel, key string, n *sNode, outer *sNode) *rowModel {
 	if nested := nestedOf(row, key); nested != nil {
 		return nested
 	}
 	if listKey(key) != nil {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("[%s] asks for a row by position, and a relation has no first row without an ORDER BY that nothing here can supply", key),
 			n.Pos)
 	}
 	if _, ok := rowFieldSpec(row, key); ok {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("[%q] is a field, which has no parts to index", key),
 			outer.Pos)
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("only a bound name can be indexed here; SQL has no way to index into the result of an expression (%s names no record this row carries)", key),
 		n.Pos)
 	return nil
 }
 
-func (t *Translator) rowField(row *RowModel, label string, key string, n *SNode) *Fragment {
+func (t *translator) rowField(row *rowModel, label string, key string, n *sNode) *Fragment {
 	if listKey(key) != nil {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s[%s] asks for a row by position, and a relation has no first row without an ORDER BY that nothing here can supply", label, key),
 			n.Pos)
 	}
 	if nestedOf(row, key) != nil {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s[%q] is a record, which is a map in SEL and not one value; name the field you mean", label, key),
 			n.Pos)
 	}
 	f, ok := rowFieldSpec(row, key)
 	if !ok {
 		if !row.Side && row.Dropped != nil && row.Dropped[utf8.AsciiUpper(key)] {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("field %q is ambiguous across joined relations", key),
 				n.Pos)
 		}
@@ -607,17 +581,17 @@ func (t *Translator) rowField(row *RowModel, label string, key string, n *SNode)
 		if len(known) > 0 {
 			tail = "; it has " + joinSorted(known)
 		}
-		Refuse("E_SQL_BINDING",
+		refuse("E_SQL_BINDING",
 			fmt.Sprintf("%s[%q] is not a field of that %s%s", label, key, relStr, tail),
 			n.Pos)
 	}
 	if f.Optional {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s[%q] is a field of the right side of a LINK_LEFT, which a row with no match does not have; read it through the right binder", label, key),
 			n.Pos)
 	}
 	if f.Spec.Unavailable != "" {
-		Refuse("E_SQL_SHAPE", f.Spec.Unavailable, n.Pos)
+		refuse("E_SQL_SHAPE", f.Spec.Unavailable, n.Pos)
 	}
 	if f.Spec.IsRaw || !f.Qualify {
 		return t.columnRef(f.Spec)
@@ -628,7 +602,7 @@ func (t *Translator) rowField(row *RowModel, label string, key string, n *SNode)
 }
 
 // atScope renders what a binder holds in the scope it was written in.
-func (t *Translator) atScope(b *Binder, render func() *Fragment) *Fragment {
+func (t *translator) atScope(b *binder, render func() *Fragment) *Fragment {
 	if !b.Scoped || b.Scope > len(t.frames) {
 		return render()
 	}
@@ -638,13 +612,13 @@ func (t *Translator) atScope(b *Binder, render func() *Fragment) *Fragment {
 	return render()
 }
 
-func (t *Translator) fromBinder(b *Binder, n *SNode) *Fragment {
+func (t *translator) fromBinder(b *binder, n *sNode) *Fragment {
 	switch b.Shape {
-	case BinderShapeNode:
+	case binderShapeNode:
 		return t.atScope(b, func() *Fragment { return t.node(b.Node) })
-	case BinderShapeKey:
-		var frame Frame
-		frameSet(&frame, b.GroupBinder, BinderRow(b.Relation))
+	case binderShapeKey:
+		var frame frame
+		frameSet(&frame, b.GroupBinder, binderRow(b.Relation))
 		t.frames = append(t.frames, frame)
 		var key *Fragment
 		func() {
@@ -653,7 +627,7 @@ func (t *Translator) fromBinder(b *Binder, n *SNode) *Fragment {
 			}()
 			key = t.node(b.Node)
 		}()
-		wrapped := key.Kind == KindNum || (key.Kind == KindText && !key.Exact)
+		wrapped := key.Kind == KindNum || (key.Kind == KindText && !key.ExactCollation)
 		collated := t.identityGroupKey(b.Node, key)
 		if key.Kind == KindNum {
 			parts := []Part{{Sql: "MIN("}}
@@ -668,39 +642,39 @@ func (t *Translator) fromBinder(b *Binder, n *SNode) *Fragment {
 			parts = append(parts, collated.Parts...)
 			parts = append(parts, Part{Sql: ")"})
 			out := NewFragment(parts, KindText, t.dialect, collated.Params, collated.ParamKinds, collated.Caveats)
-			out.Exact = true
+			out.ExactCollation = true
 			out.Canonical = key.Canonical
 			return out
 		}
 		return collated
-	case BinderShapeColumn:
+	case binderShapeColumn:
 		return t.columnRef(b.Column)
-	case BinderShapeGroup:
-		Refuse("E_SQL_SHAPE",
+	case binderShapeGroup:
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s is the list of a bucket's members, which is not a value SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)", n.Str),
 			n.Pos)
-	case BinderShapeProjected:
-		Refuse("E_SQL_SHAPE",
+	case binderShapeProjected:
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s is the record the projection built, which is a map in SEL and not one value; name the field you mean", n.Str),
 			n.Pos)
-	case BinderShapeRow:
+	case binderShapeRow:
 		rel := b.Relation
 		if b.Model != nil && !b.Model.Side {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s is a joined row, which is a map in SEL and not one value; name the field you mean", n.Str),
 				n.Pos)
 		}
 		if len(rel.Fields) > 1 {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s is a row of a relation with %d fields, which is a map in SEL and not one value; name the field you mean", n.Str, len(rel.Fields)),
 				n.Pos)
 		}
-		var field *ColumnSpec
+		var field *columnSpec
 		if rel.Scalar != "" {
 			field = rel.Field(utf8.AsciiUpper(rel.Scalar))
 		}
 		if field == nil {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s names a row, and the relation does not say which of its fields a bare reference means; give the binding a \"scalar\", or index the field you want", n.Str),
 				n.Pos)
 		}
@@ -713,21 +687,21 @@ func (t *Translator) fromBinder(b *Binder, n *SNode) *Fragment {
 			return t.columnRef(qualified)
 		}
 		return t.relationColumn(rel, *field)
-	case BinderShapeNone:
-		Refuse("E_SQL_SHAPE", b.Reason, n.Pos)
+	case binderShapeNone:
+		refuse("E_SQL_SHAPE", b.Reason, n.Pos)
 	}
-	Refuse("E_SQL_SHAPE", "unusable binder", n.Pos)
+	refuse("E_SQL_SHAPE", "unusable binder", n.Pos)
 	return nil
 }
 
-func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *Fragment {
-	if b.Shape == BinderShapeGroup {
-		Refuse("E_SQL_SHAPE",
+func (t *translator) indexBinder(b *binder, name string, key string, n *sNode) *Fragment {
+	if b.Shape == binderShapeGroup {
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s[%q] indexes the list of a bucket's members, which SEL refuses (E_NO_KEY); read a member's field inside an aggregate over the group, SUM(%s, _[%q])", name, key, name, key),
 			n.Pos)
 	}
-	if b.Shape == BinderShapeProjected {
-		var proj *RelationalProjection
+	if b.Shape == binderShapeProjected {
+		var proj *relationalProjection
 		for i := range b.Projections {
 			if b.Projections[i].Alias != nil && *b.Projections[i].Alias == key {
 				proj = &b.Projections[i]
@@ -754,25 +728,25 @@ func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *
 			if len(known) > 0 {
 				tail = "; it has " + strings.Join(known, ", ")
 			}
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s[%q] is not a field of the projection%s", name, key, tail),
 				n.Pos)
 		}
-		src := Source{
-			Shape:    SourceShapeRelation,
+		src := source{
+			Shape:    sourceShapeRelation,
 			Relation: b.Relation,
 		}
 		if proj.GroupKey != nil {
-			kb := BinderKey(proj.GroupKey.Binder, proj.GroupKey.Node, b.Relation)
+			kb := binderKey(proj.GroupKey.Binder, proj.GroupKey.Node, b.Relation)
 			return t.fromBinder(&kb, n)
 		}
 		return t.withGroup(src, proj.Binder, func() *Fragment {
 			return t.node(proj.Node)
 		})
 	}
-	if b.Shape == BinderShapeRow {
+	if b.Shape == binderShapeRow {
 		if listKey(key) != nil {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s[%s] asks for a row by position, and a relation has no first row without an ORDER BY that nothing here can supply", name, key),
 				n.Pos)
 		}
@@ -783,7 +757,7 @@ func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *
 		field := utf8.AsciiUpper(key)
 		if f := rel.Field(field); f != nil {
 			if f.Unavailable != "" {
-				Refuse("E_SQL_SHAPE", f.Unavailable, n.Pos)
+				refuse("E_SQL_SHAPE", f.Unavailable, n.Pos)
 			}
 			return t.relationColumn(rel, *f)
 		}
@@ -795,38 +769,38 @@ func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *
 		if len(known) > 0 {
 			tail = "; it has " + joinSorted(known)
 		}
-		Refuse("E_SQL_BINDING",
+		refuse("E_SQL_BINDING",
 			fmt.Sprintf("%s[%q] is not a field of that relation%s", name, key, tail),
 			n.Pos)
 	}
-	if b.Shape == BinderShapeNode {
+	if b.Shape == binderShapeNode {
 		elem := childOf(b.Node, key)
 		if elem == nil {
-			Refuse("E_SQL_BINDING",
+			refuse("E_SQL_BINDING",
 				fmt.Sprintf("%s[%q] is not a key of that element", name, key),
 				n.Pos)
 		}
 		return t.atScope(b, func() *Fragment { return t.node(elem) })
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s names a single column, which has no parts to index", name),
 		n.Pos)
 	return nil
 }
 
-func (t *Translator) relationTableAlias(rel *RelationSpec, def string) string {
+func (t *translator) relationTableAlias(rel *relationSpec, def string) string {
 	if rel == nil {
 		return def
 	}
 	if t.statementPlan != nil {
-		if t.statementPlan.SourceRelation != nil && sameRelation(*rel, t.statementPlan.SourceRelation.Relation) {
+		if t.statementPlan.SourceRelation != nil && sameRelation(*rel, t.statementPlan.SourceRelation.relation) {
 			if t.statementPlan.SourceAlias != "" {
 				return t.statementPlan.SourceAlias
 			}
 			return relationAlias(rel)
 		}
 		for _, join := range t.statementPlan.Joins {
-			if join.SourceRelation != nil && sameRelation(*rel, join.SourceRelation.Relation) {
+			if join.SourceRelation != nil && sameRelation(*rel, join.SourceRelation.relation) {
 				if join.SourceAlias != "" {
 					return join.SourceAlias
 				}
@@ -837,7 +811,7 @@ func (t *Translator) relationTableAlias(rel *RelationSpec, def string) string {
 	return relationAlias(rel)
 }
 
-func (t *Translator) relationColumn(rel *RelationSpec, c ColumnSpec) *Fragment {
+func (t *translator) relationColumn(rel *relationSpec, c columnSpec) *Fragment {
 	if c.IsRaw || t.statementPlan == nil ||
 		(len(t.statementPlan.Joins) == 0 && t.statementPlan.SourceSubquery == nil) {
 		return t.columnRef(c)
@@ -876,13 +850,16 @@ func requireComparableKinds(l, r *Fragment, op string, pos Pos) {
 	if cl == nil || cr == nil || *cl == *cr {
 		return
 	}
-	other := l.Kind
-	if l.Kind == KindBool {
-		other = r.Kind
+	// Both kinds as they are: a BIN and a TEXT reach here too, and were reported
+	// as "a BOOL with a BIN".
+	what := fmt.Sprintf("%s compares a %s with a %s", op, l.Kind, r.Kind)
+	if strings.HasPrefix(op, "$") {
+		// SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an operand
+		// of the byte comparisons at all (E_NOT_BIN); SQL would cast both sides
+		// to characters, which says neither.
+		refuse("E_SQL_SHAPE", what+", which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to say that: both sides cast to the same characters", pos)
 	}
-	Refuse("E_SQL_SHAPE",
-		fmt.Sprintf("%s compares a BOOL with a %s, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters", op, other),
-		pos)
+	refuse("E_SQL_SHAPE", what+", which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters", pos)
 }
 
 func unify(fs []*Fragment, pos Pos) SqlKind {
@@ -899,7 +876,7 @@ func unify(fs []*Fragment, pos Pos) SqlKind {
 			continue
 		}
 		if *kind != f.Kind {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("these branches produce different kinds — %s and %s — and SQL gives the whole expression one type, which cannot match SEL's for both", *kind, f.Kind),
 				pos)
 		}
@@ -907,7 +884,7 @@ func unify(fs []*Fragment, pos Pos) SqlKind {
 	// UNKNOWN does not unify with anything: a branch nobody vouched for makes the
 	// whole conditional something nobody vouched for, so it keeps its guard (or is
 	// refused where no guard can be written) instead of inheriting the kind of the
-	// branch beside it (GO-C15, JS-C27, PHP-C28, CPP-C29, LISP-C24).
+	// branch beside it.
 	if kind == nil || sawUnknown {
 		return KindUnknown
 	}
@@ -950,27 +927,27 @@ func retKind(entry *EntryRecord, args []*Fragment, pos Pos) SqlKind {
 	return KindFromName(ret)
 }
 
-func (t *Translator) requireBool(f *Fragment, pos Pos, where string) *Fragment {
+func (t *translator) requireBool(f *Fragment, pos Pos, where string) *Fragment {
 	if f.Kind == KindBool {
 		return f
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s needs a BOOL here and this is %s; SEL has no truthiness, so neither does its translation", where, f.Kind),
 		pos)
 	return nil
 }
 
-func (t *Translator) requireNum(f *Fragment, pos Pos, where string) *Fragment {
+func (t *translator) requireNum(f *Fragment, pos Pos, where string) *Fragment {
 	if f.Kind == KindNum || f.Kind == KindUnknown {
 		return f
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s adds its body up, so it needs a number here and this is %s", where, f.Kind),
 		pos)
 	return nil
 }
 
-func (t *Translator) requireNotBool(f *Fragment, pos Pos, where string) {
+func (t *translator) requireNotBool(f *Fragment, pos Pos, where string) {
 	if f.Kind != KindBool && f.Kind != KindBin {
 		return
 	}
@@ -978,28 +955,28 @@ func (t *Translator) requireNotBool(f *Fragment, pos Pos, where string) {
 	if f.Kind == KindBool {
 		what = "a BOOL"
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s reads its operands as numbers, and %s is not one; SEL answers E_NOT_NUM here rather than coercing it", where, what),
 		pos)
 }
 
-func (t *Translator) requireNotBoolOperand(f *Fragment, pos Pos, where string) {
+func (t *translator) requireNotBoolOperand(f *Fragment, pos Pos, where string) {
 	if f.Kind != KindBool {
 		return
 	}
-	Refuse("E_SQL_SHAPE",
+	refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s reads its operands as text or bytes, and a BOOL is neither; SEL answers E_NOT_TEXT here rather than spelling it 1 or true", where),
 		pos)
 }
 
-func (t *Translator) requireNumericConstant(n *SNode) {
-	if IsConstant(n, t.constNames) {
-		RequireNumeric(n, t.constRoot)
+func (t *translator) requireNumericConstant(n *sNode) {
+	if isConstant(n, t.constNames) {
+		requireNumeric(n, t.constRoot)
 	}
 }
 
-func (t *Translator) guardNumeric(f *Fragment, n *SNode) *Fragment {
-	if IsConstant(n, t.constNames) {
+func (t *translator) guardNumeric(f *Fragment, n *sNode) *Fragment {
+	if isConstant(n, t.constNames) {
 		return f
 	}
 	wraps := f.Kind != KindNum || f.Guard
@@ -1010,7 +987,7 @@ func (t *Translator) guardNumeric(f *Fragment, n *SNode) *Fragment {
 	return guarded
 }
 
-func (t *Translator) numericCastScale() *int32 {
+func (t *translator) numericCastScale() *int32 {
 	capVal := t.emit.Lex("numericCastScale")
 	capStr, ok := capVal.(string)
 	if !ok || capStr == "" {
@@ -1031,27 +1008,27 @@ func (t *Translator) numericCastScale() *int32 {
 	return &val
 }
 
-func (t *Translator) scaleLimited(pos Pos, what string) {
-	cap := t.numericCastScale()
-	if cap == nil {
+func (t *translator) scaleLimited(pos Pos, what string) {
+	limit := t.numericCastScale()
+	if limit == nil {
 		return
 	}
 	if t.strict {
-		Refuse("E_SQL_UNSUPPORTED",
-			fmt.Sprintf("%s through a DECIMAL that keeps %d fractional digits, and a value with more loses them on %s (scale-limit); strict mode refuses that", what, *cap, t.dialect),
+		refuse("E_SQL_UNSUPPORTED",
+			fmt.Sprintf("%s through a DECIMAL that keeps %d fractional digits, and a value with more loses them on %s (scale-limit); strict mode refuses that", what, *limit, t.dialect),
 			pos)
 	}
 	t.addCaveat("scale-limit")
 }
 
-func (t *Translator) coerceScaleLimits(operands []*SNode) {
-	cap := t.numericCastScale()
-	if cap == nil {
+func (t *translator) coerceScaleLimits(operands []*sNode) {
+	limit := t.numericCastScale()
+	if limit == nil {
 		return
 	}
 	for _, operand := range operands {
-		if IsConstant(operand, t.constNames) {
-			if ConstantScale(operand, t.constRoot) > int(*cap) {
+		if isConstant(operand, t.constNames) {
+			if constantScale(operand, t.constRoot) > int(*limit) {
 				t.scaleLimited(operand.Pos, "this constant is read as a number")
 			}
 		} else {
@@ -1061,21 +1038,19 @@ func (t *Translator) coerceScaleLimits(operands []*SNode) {
 }
 
 var (
-	numericOpsSet      = map[string]bool{"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true}
-	textualOpsSet      = map[string]bool{"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true, "EQL": true}
 	byteComparisonsSet = map[string]bool{"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true, "EQL": true, "IN": true}
 	arithmeticOpsSet   = map[string]bool{"+": true, "-": true, "*": true, "/": true, "%": true}
 )
 
-func (t *Translator) variantFor(op string, args []*Fragment) *string {
-	if numericOpsSet[op] {
+func (t *translator) variantFor(op string, args []*Fragment) *string {
+	if vocab.IsNumericComparison(op) {
 		v := "coerce"
 		if args[0].Kind == KindNum && args[1].Kind == KindNum {
 			v = "num"
 		}
 		return &v
 	}
-	if textualOpsSet[op] {
+	if vocab.IsTextComparison(op) || op == "EQL" {
 		v := "text"
 		return &v
 	}
@@ -1089,11 +1064,11 @@ func (t *Translator) variantFor(op string, args []*Fragment) *string {
 	return nil
 }
 
-func (t *Translator) templateOf(entry *EntryRecord, args []*Fragment, variant *string, what string, pos Pos) string {
+func (t *translator) templateOf(entry *EntryRecord, args []*Fragment, variant *string, what string, pos Pos) string {
 	if len(entry.Variants) > 0 {
 		var arm *string
 		if variant != nil {
-			if v, ok := entry.Variants[*variant]; ok && v != MISSING {
+			if v, ok := entry.Variants[*variant]; ok && v != missingEntry {
 				arm = &v
 			}
 		}
@@ -1102,7 +1077,7 @@ func (t *Translator) templateOf(entry *EntryRecord, args []*Fragment, variant *s
 			if variant != nil {
 				varDesc = *variant + " operands"
 			}
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("%s has no mapping in dialect %s for %s", what, t.dialect, varDesc),
 				pos)
 		}
@@ -1117,46 +1092,46 @@ func (t *Translator) templateOf(entry *EntryRecord, args []*Fragment, variant *s
 		star, hasStar := m["*"]
 		var chosen *string
 		if hasN {
-			if arm != "" && arm != MISSING {
+			if arm != "" && arm != missingEntry {
 				chosen = &arm
 			}
 		} else if hasStar {
-			if star != "" && star != MISSING {
+			if star != "" && star != missingEntry {
 				chosen = &star
 			}
 		}
 		if chosen == nil {
 			var keys []string
 			for k := range m {
-				if m[k] != "" && m[k] != MISSING {
+				if m[k] != "" && m[k] != missingEntry {
 					keys = append(keys, k)
 				}
 			}
 			sort.Strings(keys)
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("%s has no mapping in dialect %s for %s argument(s); it maps %s", what, t.dialect, n, strings.Join(keys, ", ")),
 				pos)
 		}
 		return *chosen
 	}
-	Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("%s has no template in dialect %s", what, t.dialect), pos)
+	refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("%s has no template in dialect %s", what, t.dialect), pos)
 	return ""
 }
 
-func (t *Translator) apply(section string, key string, args []*Fragment, pos Pos, variant *string) *Fragment {
+func (t *translator) apply(section string, key string, args []*Fragment, pos Pos, variant *string) *Fragment {
 	raw := Entry(t.dialect, section, key)
 	what := key
 	if section == "ops" {
 		what = "the " + key + " operator"
 	}
-	if raw == MISSING || raw == nil {
-		Refuse("E_SQL_UNSUPPORTED",
+	if raw == missingEntry || raw == nil {
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s has no mapping in dialect %s", what, t.dialect),
 			pos)
 	}
 	entry, ok := raw.(*EntryRecord)
 	if !ok || entry == nil {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s has no mapping in dialect %s", what, t.dialect),
 			pos)
 	}
@@ -1165,7 +1140,7 @@ func (t *Translator) apply(section string, key string, args []*Fragment, pos Pos
 		if entry.Reason != "" {
 			reason = " — " + entry.Reason
 		}
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s has no mapping in dialect %s%s", what, t.dialect, reason),
 			pos)
 	}
@@ -1175,19 +1150,19 @@ func (t *Translator) apply(section string, key string, args []*Fragment, pos Pos
 	if entry.Arity != nil {
 		n := len(args)
 		if n < entry.Arity[0] || n > entry.Arity[1] {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("%s has no mapping in dialect %s for %d argument(s)", what, t.dialect, n),
 				pos)
 		}
 	}
-	if entry.Since != "" && !VersionAtLeast(Version(t.dialect), entry.Since) {
-		Refuse("E_SQL_DIALECT",
+	if entry.Since != "" && !versionAtLeast(Version(t.dialect), entry.Since) {
+		refuse("E_SQL_DIALECT",
 			fmt.Sprintf("%s needs %s %s or newer, and this map says %s", what, t.dialect, entry.Since, Version(t.dialect)),
 			pos)
 	}
 	if entry.Caveat != "" {
 		if t.strict {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("%s translates only approximately in dialect %s (%s), and strict mode refuses those", what, t.dialect, entry.Caveat),
 				pos)
 		}
@@ -1206,7 +1181,7 @@ func (t *Translator) apply(section string, key string, args []*Fragment, pos Pos
 // SQLite stops at depth 1000, MariaDB and MySQL overrun their stack at about 900
 // terms, PostgreSQL runs out of memory at 5000 (docs/internals/sql-translation.md
 // 7.1).
-func (t *Translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragment {
+func (t *translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragment {
 	if len(parts) > 256 {
 		m := (len(parts) + 1) / 2
 		pair := []*Fragment{t.foldPairwise(op, parts[:m], pos), t.foldPairwise(op, parts[m:], pos)}
@@ -1221,27 +1196,27 @@ func (t *Translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragme
 }
 
 // arithmeticOperand: an operand that is a constant TEXT holding a number, in an
-// arithmetic position, is that number (PHP-C33): SEL computes with it exactly, and
+// arithmetic position, is that number: SEL computes with it exactly, and
 // MariaDB and MySQL would read the quoted string as a DOUBLE. It is translated as the
 // numeric literal it stands for. The text was translated first (its SQL kind is only
 // known then), so the slots it bound are taken back, or `params` mode would report a
 // value bound that no placeholder uses.
-func (t *Translator) arithmeticOperand(n *SNode) *Fragment {
+func (t *translator) arithmeticOperand(n *sNode) *Fragment {
 	mark := len(t.params)
 	f := t.node(n)
-	if f.Kind != KindText || !IsConstant(n, t.constNames) {
+	if f.Kind != KindText || !isConstant(n, t.constNames) {
 		return f
 	}
-	text, ok := NumericTextConstant(n, t.constRoot)
+	text, ok := numericTextConstant(n, t.constRoot)
 	if !ok {
 		return f
 	}
 	t.params = t.params[:mark]
 	t.paramKinds = t.paramKinds[:mark]
-	return t.node(Leaf(litNode(sel.NodeNum, text, false, n.Pos)))
+	return t.node(leaf(litNode(sel.NodeNum, text, false, n.Pos)))
 }
 
-func (t *Translator) unary(n *SNode) *Fragment {
+func (t *translator) unary(n *sNode) *Fragment {
 	var x *Fragment
 	if n.Str == "NOT" {
 		x = t.node(n.L())
@@ -1257,7 +1232,7 @@ func (t *Translator) unary(n *SNode) *Fragment {
 	return t.apply("ops", n.Str, []*Fragment{x}, n.Pos, nil)
 }
 
-func (t *Translator) binary(n *SNode) *Fragment {
+func (t *translator) binary(n *sNode) *Fragment {
 	op := n.Str
 	if op == "IN" {
 		return t.inOperator(n)
@@ -1276,7 +1251,7 @@ func (t *Translator) binary(n *SNode) *Fragment {
 		l = t.requireBool(l, n.L().Pos, op)
 		r = t.requireBool(r, n.R().Pos, op)
 	}
-	if arithmeticOpsSet[op] || numericOpsSet[op] {
+	if arithmeticOpsSet[op] || vocab.IsNumericComparison(op) {
 		t.requireNotBool(l, n.L().Pos, op)
 		t.requireNotBool(r, n.R().Pos, op)
 		t.requireNumericConstant(n.L())
@@ -1292,15 +1267,15 @@ func (t *Translator) binary(n *SNode) *Fragment {
 	before := []*Fragment{l, r}
 	variant := t.variantFor(op, before)
 	if variant != nil && *variant == "coerce" {
-		t.coerceScaleLimits([]*SNode{n.L(), n.R()})
+		t.coerceScaleLimits([]*sNode{n.L(), n.R()})
 	}
 
 	if byteComparisonsSet[op] {
 		requireComparableKinds(l, r, op, n.Pos)
-		lExact := l.Exact
-		rExact := r.Exact
-		lLit := n.L() != nil && n.L().T == SNodeText
-		rLit := n.R() != nil && n.R().T == SNodeText
+		lExact := l.ExactCollation
+		rExact := r.ExactCollation
+		lLit := n.L() != nil && n.L().T == sNodeText
+		rLit := n.R() != nil && n.R().T == sNodeText
 		spfVal := t.emit.Lex("sargablePrefilter")
 		sargablePrefilter := false
 		if s, ok := spfVal.(string); ok && s == "true" {
@@ -1346,8 +1321,8 @@ func (t *Translator) binary(n *SNode) *Fragment {
 	return res
 }
 
-func mergeSlots(a SlotMap, b SlotMap) SlotMap {
-	out := append(SlotMap(nil), a...)
+func mergeSlots(a slotMap, b slotMap) slotMap {
+	out := append(slotMap(nil), a...)
 	for _, kvB := range b {
 		for _, kvA := range out {
 			if kvA.Key == kvB.Key {
@@ -1359,37 +1334,37 @@ func mergeSlots(a SlotMap, b SlotMap) SlotMap {
 	return out
 }
 
-func (t *Translator) skeleton(name string, pos Pos) string {
+func (t *translator) skeleton(name string, pos Pos) string {
 	raw := Entry(t.dialect, "skel", name)
-	if raw == MISSING || raw == nil {
-		Refuse("E_SQL_UNSUPPORTED",
+	if raw == missingEntry || raw == nil {
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("dialect %s has no %s skeleton", t.dialect, name),
 			pos)
 	}
 	entry, ok := raw.(*EntryRecord)
 	if !ok || entry == nil {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("dialect %s has no %s skeleton", t.dialect, name),
 			pos)
 	}
 	if entry.Kind == EntryKindRefusal {
 		if entry.Reason == "" {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("dialect %s has no %s skeleton", t.dialect, name),
 				pos)
 		}
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("dialect %s cannot express %s — %s", t.dialect, name, entry.Reason),
 			pos)
 	}
 	if entry.Kind == EntryKindBuilder {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("the %s skeleton for %s is a builder, and a skeleton is a template", name, t.dialect),
 			pos)
 	}
 	if entry.Caveat != "" {
 		if t.strict {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("the %s skeleton for %s is not exactly equivalent (%s), and strict mode refuses those", name, t.dialect, entry.Caveat),
 				pos)
 		}
@@ -1398,13 +1373,13 @@ func (t *Translator) skeleton(name string, pos Pos) string {
 	if s, ok := entry.Tpl.(string); ok {
 		return s
 	}
-	Refuse("E_SQL_UNSUPPORTED",
+	refuse("E_SQL_UNSUPPORTED",
 		fmt.Sprintf("dialect %s has no %s skeleton", t.dialect, name),
 		pos)
 	return ""
 }
 
-func (t *Translator) fillNamed(tpl string, slots SlotMap, pos Pos) []Part {
+func (t *translator) fillNamed(tpl string, slots slotMap, pos Pos) []Part {
 	var parts []Part
 	push := func(s string) {
 		if s == "" {
@@ -1431,7 +1406,7 @@ func (t *Translator) fillNamed(tpl string, slots SlotMap, pos Pos) []Part {
 		name := tpl[i+1 : i+end]
 		i = i + end + 1
 
-		var items []Slot
+		var items []slot
 		found := false
 		for _, kv := range slots {
 			if kv.Key == name {
@@ -1441,7 +1416,7 @@ func (t *Translator) fillNamed(tpl string, slots SlotMap, pos Pos) []Part {
 			}
 		}
 		if !found {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("a skeleton in dialect %s uses {%s}, which is not one of its slots", t.dialect, name),
 				pos)
 		}
@@ -1462,7 +1437,7 @@ func (t *Translator) fillNamed(tpl string, slots SlotMap, pos Pos) []Part {
 	return parts
 }
 
-func (t *Translator) relationSlots(rel RelationSpec) SlotMap {
+func (t *translator) relationSlots(rel relationSpec) slotMap {
 	from := rel.From.Table
 	if rel.From.IsRaw {
 		from = rel.From.Raw
@@ -1481,81 +1456,81 @@ func (t *Translator) relationSlots(rel RelationSpec) SlotMap {
 		// meaning of the AND the template puts after it (sql/MAP.md §5).
 		corr = "(" + rel.Correlate + ")"
 	}
-	return SlotMap{
-		Pair[string, []Slot]{Key: "from", Val: []Slot{StringSlot(from)}},
-		Pair[string, []Slot]{Key: "corr", Val: []Slot{StringSlot(corr)}},
+	return slotMap{
+		pair[string, []slot]{Key: "from", Val: []slot{stringSlot(from)}},
+		pair[string, []slot]{Key: "corr", Val: []slot{stringSlot(corr)}},
 	}
 }
 
-func (t *Translator) valueNode(v *sel.Value, b *Binding, pos Pos) *SNode {
+func (t *translator) valueNode(v *sel.Value, b *Binding, pos Pos) *sNode {
 	if v.Size() > 0 {
-		var entries []CListEntry
+		var entries []cListEntry
 		for _, e := range v.Entries() {
-			entries = append(entries, CListEntry{
+			entries = append(entries, cListEntry{
 				Key: e.Key,
 				Val: t.valueNode(e.Val, b, pos),
 			})
 		}
-		return CList(pos, entries)
+		return cList(pos, entries)
 	}
 	if v.IsBool() {
-		return Leaf(litNode(sel.NodeBool, "", v.AsBool(Pos{}), pos))
+		return leaf(litNode(sel.NodeBool, "", v.AsBool(Pos{}), pos))
 	}
 	if v.IsBin() {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			"a BIN element of a value binding has no literal node to become; bind it as a column, or convert it before translating",
 			pos)
 	}
 	if v.IsNone() {
 		// A NULL element: AsText would raise E_NULL, a SelError that TryTranslate does not
 		// catch. It is a binding problem, and a refusal.
-		Refuse("E_SQL_BINDING", "a value binding holds a NULL element, which has no SQL literal", pos)
+		refuse("E_SQL_BINDING", "a value binding holds a NULL element, which has no SQL literal", pos)
 	}
-	num := b.ValueType != nil && *b.ValueType == KindNum
+	num := b.valueType != nil && *b.valueType == KindNum
 	nodeType := sel.NodeText
 	if num {
 		nodeType = sel.NodeNum
 	}
-	return Leaf(litNode(nodeType, v.AsText(pos), false, pos))
+	return leaf(litNode(nodeType, v.AsText(pos), false, pos))
 }
 
-func (t *Translator) valueElements(b *Binding, pos Pos) []Pair[string, Binder] {
-	v := b.Val
+func (t *translator) valueElements(b *Binding, pos Pos) []pair[string, binder] {
+	v := b.val
 	if v.Size() == 0 {
 		if v.IsNone() {
 			return nil
 		}
-		return []Pair[string, Binder]{{Key: "1", Val: BinderNode(t.valueNode(v, b, pos))}}
+		return []pair[string, binder]{{Key: "1", Val: binderNode(t.valueNode(v, b, pos))}}
 	}
-	var out []Pair[string, Binder]
+	var out []pair[string, binder]
 	for _, e := range v.Entries() {
-		out = append(out, Pair[string, Binder]{
+		out = append(out, pair[string, binder]{
 			Key: e.Key,
-			Val: BinderNode(t.valueNode(e.Val, b, pos)),
+			Val: binderNode(t.valueNode(e.Val, b, pos)),
 		})
 	}
 	return out
 }
 
-func (t *Translator) inOperator(n *SNode) *Fragment {
+func (t *translator) inOperator(n *sNode) *Fragment {
 	rhs := n.R()
-	rhsIsFreeVar := rhs.T == SNodeVar && (rhs.VarScope == VarScopeFree || t.binder(rhs.Str) == nil)
+	rhsIsFreeVar := rhs.T == sNodeVar && (rhs.VarScope == varScopeFree || t.binder(rhs.Str) == nil)
 
 	if rhsIsFreeVar && t.bindings.Has(rhs.Str) {
 		b := t.bindings.Get(rhs.Str, rhs.Pos)
-		if b.Kind == BindingKindRelation {
-			rel := b.Relation
-			var scalar *ColumnSpec
+		if b.kind == bindingKindRelation {
+			rel := b.relation
+			var scalar *columnSpec
 			if rel.Scalar != "" {
 				scalar = rel.Field(utf8.AsciiUpper(rel.Scalar))
 			}
 			if scalar == nil {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("IN over %s needs the binding to name a \"scalar\" field: that is the column the subquery projects", rhs.Str),
 					rhs.Pos)
 			}
 			if len(rel.Fields) != 1 {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("IN over %s is refused: the relation declares %d fields, so SEL reads its rows as maps and a scalar can never equal one. Bind the projected column as a relation with that one field.", rhs.Str, len(rel.Fields)),
 					rhs.Pos)
 			}
@@ -1566,16 +1541,16 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 			// or BIN needle against a TEXT column matches the rows whose text is
 			// '1' or 'true', or spells the same bytes.
 			if needleFrag.Kind == KindBool || needleFrag.Kind == KindBin {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("IN over %s compares a %s with its rows, which SEL answers FALSE for every text; SQL would compare spellings", rhs.Str, needleFrag.Kind),
 					n.L().Pos)
 			}
 			requireComparableKinds(needleFrag, column, "IN", n.Pos)
 			slots := mergeSlots(
 				t.relationSlots(rel),
-				SlotMap{
-					Pair[string, []Slot]{Key: "needle", Val: []Slot{FragmentSlot(t.emit.TextOperand(needleFrag))}},
-					Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(t.emit.TextOperand(column))}},
+				slotMap{
+					pair[string, []slot]{Key: "needle", Val: []slot{fragmentSlot(t.emit.TextOperand(needleFrag))}},
+					pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(t.emit.TextOperand(column))}},
 				},
 			)
 			parts := t.fillNamed(skel, slots, n.Pos)
@@ -1583,16 +1558,16 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 		}
 	}
 
-	var elements []*SNode
+	var elements []*sNode
 	hasElements := false
-	if rhs.T == SNodeList || rhs.T == SNodeCList {
+	if rhs.T == sNodeList || rhs.T == sNodeCList {
 		elements = rhs.Kids
 		hasElements = true
 	} else if rhsIsFreeVar && t.bindings.Has(rhs.Str) {
 		b := t.bindings.Get(rhs.Str, rhs.Pos)
-		if b.Kind == BindingKindValue && b.Val.Size() > 0 {
+		if b.kind == bindingKindValue && b.val.Size() > 0 {
 			elems := t.valueElements(b, rhs.Pos)
-			elements = make([]*SNode, len(elems))
+			elements = make([]*sNode, len(elems))
 			for i, e := range elems {
 				elements[i] = e.Val.Node
 			}
@@ -1617,14 +1592,14 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 	textVar := "text"
 	for _, e := range elements {
 		raw := t.node(n.L())
-		isExact := raw.Exact
+		isExact := raw.ExactCollation
 		needle := raw
 		if !isExact {
 			needle = t.emit.TextOperand(raw)
 		}
 		f := t.node(e)
 		if f.Kind == KindList {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				"IN over a list of lists is structural in SEL and has no SQL counterpart",
 				e.Pos)
 		}
@@ -1642,52 +1617,52 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 	return t.foldPairwise("OR", tests, n.Pos)
 }
 
-func (t *Translator) conditional(n *SNode) *Fragment {
+func (t *translator) conditional(n *sNode) *Fragment {
 	name := n.Str
-	args := append([]*SNode(nil), n.Kids...)
+	args := append([]*sNode(nil), n.Kids...)
 	if name == "IF" && len(args) == 2 {
-		args = append(args, Leaf(litNode(sel.NodeText, "", false, n.Pos)))
+		args = append(args, leaf(litNode(sel.NodeText, "", false, n.Pos)))
 	}
 	branchTpl := t.skeleton("caseBranch", n.Pos)
 	caseTpl := t.skeleton("case", n.Pos)
 
 	last := len(args) - 1
 	var results []*Fragment
-	var joined []Slot
+	var joined []slot
 
 	for i := 0; i < last; i += 2 {
 		cond := t.requireBool(t.node(args[i]), args[i].Pos, name)
 		then := t.node(args[i+1])
 		results = append(results, then)
-		slots := SlotMap{
-			Pair[string, []Slot]{Key: "cond", Val: []Slot{FragmentSlot(cond)}},
-			Pair[string, []Slot]{Key: "then", Val: []Slot{FragmentSlot(then)}},
+		slots := slotMap{
+			pair[string, []slot]{Key: "cond", Val: []slot{fragmentSlot(cond)}},
+			pair[string, []slot]{Key: "then", Val: []slot{fragmentSlot(then)}},
 		}
 		branch := NewFragment(t.fillNamed(branchTpl, slots, n.Pos), KindUnknown, t.dialect, nil, nil, nil)
 		if len(joined) > 0 {
-			joined = append(joined, StringSlot(" "))
+			joined = append(joined, stringSlot(" "))
 		}
-		joined = append(joined, FragmentSlot(branch))
+		joined = append(joined, fragmentSlot(branch))
 	}
 	els := t.node(args[last])
 	results = append(results, els)
 
-	slots := SlotMap{
-		Pair[string, []Slot]{Key: "branches", Val: joined},
-		Pair[string, []Slot]{Key: "else", Val: []Slot{FragmentSlot(els)}},
+	slots := slotMap{
+		pair[string, []slot]{Key: "branches", Val: joined},
+		pair[string, []slot]{Key: "else", Val: []slot{fragmentSlot(els)}},
 	}
 	return NewFragment(t.fillNamed(caseTpl, slots, n.Pos), unify(results, n.Pos), t.dialect, nil, nil, nil)
 }
 
-func (t *Translator) caseWhen(cond, then, els *Fragment, pos Pos) *Fragment {
-	branchSlots := SlotMap{
-		Pair[string, []Slot]{Key: "cond", Val: []Slot{FragmentSlot(cond)}},
-		Pair[string, []Slot]{Key: "then", Val: []Slot{FragmentSlot(then)}},
+func (t *translator) caseWhen(cond, then, els *Fragment, pos Pos) *Fragment {
+	branchSlots := slotMap{
+		pair[string, []slot]{Key: "cond", Val: []slot{fragmentSlot(cond)}},
+		pair[string, []slot]{Key: "then", Val: []slot{fragmentSlot(then)}},
 	}
 	branch := NewFragment(t.fillNamed(t.skeleton("caseBranch", pos), branchSlots, pos), KindUnknown, t.dialect, nil, nil, nil)
-	slots := SlotMap{
-		Pair[string, []Slot]{Key: "branches", Val: []Slot{FragmentSlot(branch)}},
-		Pair[string, []Slot]{Key: "else", Val: []Slot{FragmentSlot(els)}},
+	slots := slotMap{
+		pair[string, []slot]{Key: "branches", Val: []slot{fragmentSlot(branch)}},
+		pair[string, []slot]{Key: "else", Val: []slot{fragmentSlot(els)}},
 	}
 	resKind := KindUnknown
 	if then.Kind == els.Kind {
@@ -1701,97 +1676,88 @@ var (
 	boolArgumentOkSet = map[string]bool{"ISNUM": true}
 )
 
-func (t *Translator) requireArgumentKind(name string, f *Fragment, pos Pos) {
+func (t *translator) requireArgumentKind(name string, f *Fragment, pos Pos) {
 	if f.Kind == KindBool && !boolArgumentOkSet[name] {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s does not take a BOOL argument; SEL raises here rather than reading a boolean as text or as 1", name),
 			pos)
 	}
 	if f.Kind == KindBin && !binArgumentOkSet[name] {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s reads its argument as text, and this is BIN; SEL raises here rather than reinterpreting bytes as characters", name),
 			pos)
 	}
 }
 
 func regexAt(name string) *int {
-	if name == "RMATCH" || name == "RFIND" || name == "RREPLACE" || name == "RGROUPS" {
-		zero := 0
+	if _, ok := vocab.RegexFlagsAt(name); ok {
+		zero := 0 // the pattern
 		return &zero
 	}
 	return nil
 }
 
-func (t *Translator) rewriteRegex(n *SNode) *SNode {
+func (t *translator) rewriteRegex(n *sNode) *sNode {
 	at := regexAt(n.Str)
 	if at == nil {
 		return n
 	}
-	args := append([]*SNode(nil), n.Kids...)
+	args := append([]*sNode(nil), n.Kids...)
 	patAt := *at
-	var pat *SNode
+	var pat *sNode
 	if patAt < len(args) {
 		pat = args[patAt]
 	}
-	if pat == nil || pat.T != SNodeText {
+	if pat == nil || pat.T != sNodeText {
 		pPos := n.Pos
 		if pat != nil {
 			pPos = pat.Pos
 		}
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s needs a literal pattern here: SEL rewrites \\d, \\w and \\s into explicit ASCII classes before matching, and a pattern that is not known until the query runs cannot be rewritten", n.Str),
 			pPos)
 	}
 
 	var source string
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if se, ok := r.(*sel.SelError); ok {
-					Refuse("E_SQL_UNSUPPORTED",
-						fmt.Sprintf("%s's pattern is not in SEL's portable subset, so there is nothing to translate: %s", n.Str, se.Message),
-						pat.Pos)
-				}
-				panic(r)
-			}
-		}()
-		source = sel.ValidatePattern(pat.Str, pat.Pos)
-	}()
+	if refusal, se := catch(func() { source = sel.ValidatePattern(pat.Str, pat.Pos) }); se != nil {
+		refuse("E_SQL_UNSUPPORTED",
+			fmt.Sprintf("%s's pattern is not in SEL's portable subset, so there is nothing to translate: %s", n.Str, se.Message),
+			pat.Pos)
+	} else if refusal != nil {
+		panic(refusal)
+	}
 
 	inlineFlags := "(?s)"
-	flagAt := 2
-	if n.Str == "RREPLACE" {
-		flagAt = 3
-	}
+	flagAt, _ := vocab.RegexFlagsAt(n.Str)
 	if flagAt >= len(args) {
-		args[patAt] = Leaf(litNode(sel.NodeText, inlineFlags+source, false, pat.Pos))
-		return Rewritten(n.Origin, args)
+		args[patAt] = leaf(litNode(sel.NodeText, inlineFlags+source, false, pat.Pos))
+		return rewritten(n.Origin, args)
 	}
 	flags := args[flagAt]
-	if flags.T != SNodeText {
-		Refuse("E_SQL_UNSUPPORTED",
+	if flags.T != sNodeText {
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s needs literal flags here: their content selects the mapping, so they have to be known before the query runs", n.Str),
 			flags.Pos)
 	}
 	text := flags.Str
 	if text != "" && text != "i" && text != "I" {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s accepts only the i flag here, and SEL accepts only i at all; %q is not it", n.Str, text),
 			flags.Pos)
 	}
 	if text != "" {
 		for i := 0; i < len(source); i++ {
 			if source[i] > 0x7f {
-				Refuse("E_SQL_UNSUPPORTED",
+				refuse("E_SQL_UNSUPPORTED",
 					"the i flag needs an ASCII-only pattern, which SEL requires for the same reason and refuses here too",
 					flags.Pos)
 			}
 		}
 		inlineFlags = "(?si)"
 	}
-	args[patAt] = Leaf(litNode(sel.NodeText, inlineFlags+source, false, pat.Pos))
+	args[patAt] = leaf(litNode(sel.NodeText, inlineFlags+source, false, pat.Pos))
 	args = append(args[:flagAt], args[flagAt+1:]...)
-	return Rewritten(n.Origin, args)
+	return rewritten(n.Origin, args)
 }
 
 func isNumericArgument(name string, i int) bool {
@@ -1816,25 +1782,21 @@ func isNumericArgument(name string, i int) bool {
 
 var aggregatesSet = map[string]bool{"ALL": true, "ANY": true, "MAP": true, "FILTER": true, "SUM": true, "JOIN": true}
 
-func (t *Translator) call(n *SNode) *Fragment {
+func (t *translator) call(n *sNode) *Fragment {
 	name := n.Str
 
-	if t.statementPlan != nil && len(n.Kids) > 0 && n.Kids[0].T == SNodeVar {
+	if t.statementPlan != nil && len(n.Kids) > 0 && n.Kids[0].T == sNodeVar {
 		group := t.binder(n.Kids[0].Str)
-		if group != nil && group.Shape == BinderShapeGroup {
+		if group != nil && group.Shape == binderShapeGroup {
 			if name == "COUNT" && len(n.Kids) == 1 {
 				return NewFragment([]Part{{Sql: "COUNT(*)"}}, KindNum, t.dialect, nil, nil, nil)
 			}
 			if name == "SUM" && len(n.Kids) >= 2 {
-				hasCustomBinder := len(n.Kids) == 3 && IsBinderName(n.Kids[1])
-				bodyNode := n.Kids[1]
-				binderName := "_"
-				if hasCustomBinder {
-					bodyNode = n.Kids[2]
-					binderName = n.Kids[1].Str
-				}
-				src := Source{
-					Shape:    SourceShapeRelation,
+				// SUM(group, binder, body): a binder slot that is not a bare name
+				// is E_EXPECT_SYMBOL in SEL, so it is refused, not summed as the body.
+				binderName, bodyNode := aggShape(n)
+				src := source{
+					Shape:    sourceShapeRelation,
 					Relation: group.Relation,
 				}
 				inner := t.withRow(src, binderName, func() *Fragment {
@@ -1846,7 +1808,7 @@ func (t *Translator) call(n *SNode) *Fragment {
 					return t.allOrNothingSum(inner, bodyNode.Pos)
 				}
 				// The body's parts are spliced, slots and all: joining their SQL
-				// text dropped every literal in it (GO-C3).
+				// text dropped every literal in it.
 				parts := []Part{{Sql: "COALESCE(SUM("}}
 				parts = append(parts, inner.Parts...)
 				parts = append(parts, Part{Sql: "), 0)"})
@@ -1866,10 +1828,10 @@ func (t *Translator) call(n *SNode) *Fragment {
 		return t.has(n)
 	}
 	if name == "INDEXES" {
-		Refuse("E_SQL_SHAPE", "INDEXES yields a list of keys, and a SQL expression is a scalar", n.Pos)
+		refuse("E_SQL_SHAPE", "INDEXES yields a list of keys, and a SQL expression is a scalar", n.Pos)
 	}
 	if name == "ABORT" {
-		Refuse("E_SQL_UNSUPPORTED", "ABORT raises an error, which is a control-flow effect and not a value a SQL expression can be", n.Pos)
+		refuse("E_SQL_UNSUPPORTED", "ABORT raises an error, which is a control-flow effect and not a value a SQL expression can be", n.Pos)
 	}
 	if name == "IF" || name == "COND" {
 		return t.conditional(n)
@@ -1882,7 +1844,7 @@ func (t *Translator) call(n *SNode) *Fragment {
 	var args []*Fragment
 	for i, arg := range rewritten.Kids {
 		// MIN and MAX compare their arguments as numbers: a numeric text constant is
-		// the number, as in arithmetic (PHP-C33).
+		// the number, as in arithmetic.
 		var f *Fragment
 		if name == "MIN" || name == "MAX" {
 			f = t.arithmeticOperand(arg)
@@ -1890,7 +1852,7 @@ func (t *Translator) call(n *SNode) *Fragment {
 			f = t.node(arg)
 		}
 		if f.Kind == KindList {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("argument to %s is a list, and a SQL expression is a scalar", name),
 				arg.Pos)
 		}
@@ -1911,8 +1873,8 @@ func (t *Translator) call(n *SNode) *Fragment {
 // requireBinderName refuses, where it stands, a binding function whose binder
 // position holds something that is not a name. SEL reaches the same program at
 // run time as E_EXPECT_SYMBOL, so it compiles and arrives here; the answer is a
-// refusal at that expression, whatever the statement form around it (GO-C2).
-func (t *Translator) requireBinderName(n *SNode) {
+// refusal at that expression, whatever the statement form around it.
+func (t *translator) requireBinderName(n *sNode) {
 	if n.Origin == nil || n.Spec == nil || !n.Spec.Binds {
 		return
 	}
@@ -1921,43 +1883,43 @@ func (t *Translator) requireBinderName(n *SNode) {
 		return
 	}
 	for i, sc := range form.Scopes {
-		if sc == manifest.ScopeBinder && i < len(n.Kids) && !IsBinderName(n.Kids[i]) {
-			Refuse("E_SQL_SHAPE",
+		if sc == manifest.ScopeBinder && i < len(n.Kids) && !isBinderName(n.Kids[i]) {
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("the binder of %s must be a bare name", n.Str), n.Kids[i].Pos)
 		}
 	}
 }
 
-func (t *Translator) hostCall(n *SNode) *Fragment {
+func (t *translator) hostCall(n *sNode) *Fragment {
 	name := n.Str
 	raw := Entry(t.dialect, "funcs", name)
-	if raw == MISSING || raw == nil {
-		Refuse("E_SQL_UNSUPPORTED",
+	if raw == missingEntry || raw == nil {
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s is a host function with no SQL spelling in dialect %s; register one with the map, or evaluate it here", name, t.dialect),
 			n.Pos)
 	}
 	entry, ok := raw.(*EntryRecord)
 	if !ok || entry == nil || (entry.Kind == EntryKindRefusal && entry.Reason == "") {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s is a host function with no SQL spelling in dialect %s; register one with the map, or evaluate it here", name, t.dialect),
 			n.Pos)
 	}
 	if entry.Kind == EntryKindRefusal {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s has no mapping in dialect %s — %s", name, t.dialect, entry.Reason),
 			n.Pos)
 	}
-	recorded := HostSpellingArity(t.dialect, name)
+	recorded := hostSpellingArity(t.dialect, name)
 	minA, maxA, hasCurrent := sel.HostArity(name)
 	if recorded != nil && hasCurrent {
 		if recorded[0] != minA || recorded[1] != maxA {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				fmt.Sprintf("%s was registered again with the arity [%d, %d] after its SQL spelling was defined for [%d, %d]; define the spelling again", name, minA, maxA, recorded[0], recorded[1]),
 				n.Pos)
 		}
 	}
 	if t.strict {
-		Refuse("E_SQL_UNSUPPORTED",
+		refuse("E_SQL_UNSUPPORTED",
 			fmt.Sprintf("%s is spelled by the application, which SEL cannot check (host-function), and strict mode refuses that", name),
 			n.Pos)
 	}
@@ -1975,13 +1937,13 @@ func (t *Translator) hostCall(n *SNode) *Fragment {
 		}
 		f := t.node(arg)
 		if f.Kind == KindList {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("argument to %s is a list, and its spelling does not declare a LIST there", name),
 				arg.Pos)
 		}
 		got := f.Kind.String()
 		if (kind == "NUM" || kind == "TEXT") && (f.Kind == KindBool || f.Kind == KindBin) {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s declares this argument %s, and this is a %s", name, kind, got),
 				arg.Pos)
 		}
@@ -1990,7 +1952,7 @@ func (t *Translator) hostCall(n *SNode) *Fragment {
 			if f.Kind == KindUnknown {
 				valDesc = "not one this layer can prove"
 			}
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s declares this argument %s, and this is %s", name, kind, valDesc),
 				arg.Pos)
 		}
@@ -2005,20 +1967,20 @@ func (t *Translator) hostCall(n *SNode) *Fragment {
 	return t.apply("funcs", name, args, n.Pos, nil)
 }
 
-func (t *Translator) hostListArgument(name string, arg *SNode) *Fragment {
+func (t *translator) hostListArgument(name string, arg *sNode) *Fragment {
 	src := t.classify(arg)
-	if src.Shape == SourceShapeRelation {
-		Refuse("E_SQL_SHAPE",
+	if src.Shape == sourceShapeRelation {
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("argument to %s is a relation, rows the query has not read yet; a LIST argument is a list known when translating", name),
 			arg.Pos)
 	}
 	if len(src.Filters) > 0 {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("argument to %s is a filtered list, whose elements are decided when it is evaluated; a template cannot express that", name),
 			arg.Pos)
 	}
 	if len(src.Elements) == 0 {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("argument to %s is an empty list, which has nothing for the template to hold", name),
 			arg.Pos)
 	}
@@ -2026,7 +1988,7 @@ func (t *Translator) hostListArgument(name string, arg *SNode) *Fragment {
 	for i, elem := range src.Elements {
 		f := t.fromBinder(&elem.Val, arg)
 		if f.Kind == KindList {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				fmt.Sprintf("argument to %s has a list as an element, which has no scalar rendering", name),
 				arg.Pos)
 		}
@@ -2038,11 +2000,11 @@ func (t *Translator) hostListArgument(name string, arg *SNode) *Fragment {
 	return NewFragment(parts, KindUnknown, t.dialect, nil, nil, nil)
 }
 
-func aggShape(n *SNode) (string, *SNode) {
+func aggShape(n *sNode) (string, *sNode) {
 	args := n.Kids
 	if len(args) == 3 {
-		if !IsBinderName(args[1]) {
-			Refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", n.Str), args[1].Pos)
+		if !isBinderName(args[1]) {
+			refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", n.Str), args[1].Pos)
 		}
 		return args[1].Str, args[2]
 	}
@@ -2051,113 +2013,113 @@ func aggShape(n *SNode) (string, *SNode) {
 
 var yieldsListSet = map[string]bool{"BTL": true, "INDEXES": true, "RGROUPS": true, "SPLIT": true}
 
-func (t *Translator) classify(src *SNode) Source {
-	var out Source
-	if src.T == SNodeCall {
+func (t *translator) classify(src *sNode) source {
+	var out source
+	if src.T == sNodeCall {
 		name := src.Str
 		if name == "FILTER" {
 			binderName, body := aggShape(src)
 			inner := t.classify(src.Kids[0])
-			inner.Filters = append(inner.Filters, SourceFilter{Binder: binderName, Node: body})
+			inner.Filters = append(inner.Filters, sourceFilter{Binder: binderName, Node: body})
 			return inner
 		}
 		if name == "MAP" {
-			Refuse("E_SQL_UNSUPPORTED",
+			refuse("E_SQL_UNSUPPORTED",
 				"MAP as the thing an aggregate iterates is not translated: unlike FILTER, which only decides whether an element takes part, MAP changes what the element is, so the two binders mean different things and binding both to one element is not enough. See docs/internals/sql-translation.md 7.5",
 				src.Pos)
 		}
 	}
-	if src.T == SNodeList {
+	if src.T == sNodeList {
 		for i, kid := range src.Kids {
-			out.Elements = append(out.Elements, Pair[string, Binder]{
+			out.Elements = append(out.Elements, pair[string, binder]{
 				Key: strconv.Itoa(i + 1),
-				Val: BinderNodeAt(kid, len(t.frames)),
+				Val: binderNodeAt(kid, len(t.frames)),
 			})
 		}
 		return out
 	}
-	if src.T == SNodeCList {
+	if src.T == sNodeCList {
 		for i, kid := range src.Kids {
-			out.Elements = append(out.Elements, Pair[string, Binder]{
+			out.Elements = append(out.Elements, pair[string, binder]{
 				Key: src.Keys[i],
-				Val: BinderNodeAt(kid, len(t.frames)),
+				Val: binderNodeAt(kid, len(t.frames)),
 			})
 		}
 		return out
 	}
-	if src.T == SNodeVar {
+	if src.T == sNodeVar {
 		if bound := t.binder(src.Str); bound != nil {
 			switch bound.Shape {
-			case BinderShapeNode:
+			case binderShapeNode:
 				if bound.Scoped && bound.Scope <= len(t.frames) {
 					saved := t.frames
 					t.frames = t.frames[:bound.Scope:bound.Scope]
 					defer func() { t.frames = saved }()
 				}
 				return t.classify(bound.Node)
-			case BinderShapeNone:
-				Refuse("E_SQL_SHAPE", bound.Reason, src.Pos)
-			case BinderShapeGroup:
-				Refuse("E_SQL_SHAPE",
+			case binderShapeNone:
+				refuse("E_SQL_SHAPE", bound.Reason, src.Pos)
+			case binderShapeGroup:
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("%s is the list of a bucket's members, over which only COUNT and SUM are translated", src.Str),
 					src.Pos)
-			case BinderShapeProjected:
-				Refuse("E_SQL_SHAPE",
+			case binderShapeProjected:
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("%s is the record the projection built, a map with one child per field; SQL has no way to iterate or count that", src.Str),
 					src.Pos)
-			case BinderShapeRow:
+			case binderShapeRow:
 				if len(bound.Relation.Fields) > 1 {
-					Refuse("E_SQL_SHAPE",
+					refuse("E_SQL_SHAPE",
 						fmt.Sprintf("%s is a row of a multi-field relation, which is a map with one child per field; SQL has no way to iterate or count that", src.Str),
 						src.Pos)
 				}
-			case BinderShapeColumn, BinderShapeKey:
+			case binderShapeColumn, binderShapeKey:
 				// scalar rule below
 			}
-			out.Elements = append(out.Elements, Pair[string, Binder]{Key: "1", Val: *bound})
+			out.Elements = append(out.Elements, pair[string, binder]{Key: "1", Val: *bound})
 			out.ScalarRule = true
 			return out
 		}
 		b := t.bindings.Get(src.Str, src.Pos)
-		if b.Kind == BindingKindRelation {
-			out.Shape = SourceShapeRelation
-			out.Relation = &b.Relation
+		if b.kind == bindingKindRelation {
+			out.Shape = sourceShapeRelation
+			out.Relation = &b.relation
 			return out
 		}
-		if b.Kind == BindingKindColumns {
-			out.Shape = SourceShapeColumns
-			for i, col := range b.Columns {
-				out.Elements = append(out.Elements, Pair[string, Binder]{
+		if b.kind == bindingKindColumns {
+			out.Shape = sourceShapeColumns
+			for i, col := range b.columns {
+				out.Elements = append(out.Elements, pair[string, binder]{
 					Key: strconv.Itoa(i + 1),
-					Val: BinderColumn(col),
+					Val: binderColumn(col),
 				})
 			}
 			return out
 		}
-		if b.Kind == BindingKindValue {
-			v := b.Val
+		if b.kind == bindingKindValue {
+			v := b.val
 			out.Elements = t.valueElements(b, src.Pos)
 			out.ScalarRule = v.Size() == 0 && !v.IsNone()
 			return out
 		}
 	}
-	if src.T == SNodeCall && (yieldsListSet[src.Str] || src.Str == "LIST" || src.Str == "RECORD" || isPipelineOp(src.Str)) {
-		Refuse("E_SQL_SHAPE",
+	if src.T == sNodeCall && (yieldsListSet[src.Str] || src.Str == "LIST" || src.Str == "RECORD" || isPipelineOp(src.Str)) {
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s yields a list, and the scalar rule does not apply to it; SQL has no way to count or index what it produces", src.Str),
 			src.Pos)
 	}
-	if src.T == SNodeCall {
+	if src.T == sNodeCall {
 		t.node(src)
 	}
-	out.Elements = append(out.Elements, Pair[string, Binder]{Key: "1", Val: BinderNodeAt(src, len(t.frames))})
+	out.Elements = append(out.Elements, pair[string, binder]{Key: "1", Val: binderNodeAt(src, len(t.frames))})
 	out.ScalarRule = true
 	return out
 }
 
-func (t *Translator) withElement(src Source, binderName string, elem Binder, key string, n *SNode, render func() *Fragment) *Fragment {
-	var frame Frame
+func (t *translator) withElement(src source, binderName string, elem binder, key string, n *sNode, render func() *Fragment) *Fragment {
+	var frame frame
 	frameSet(&frame, binderName, elem)
-	frameSet(&frame, "_K", BinderNode(Leaf(litNode(sel.NodeText, key, false, n.Pos))))
+	frameSet(&frame, "_K", binderNode(leaf(litNode(sel.NodeText, key, false, n.Pos))))
 	t.frames = append(t.frames, frame)
 	defer func() {
 		t.frames = t.frames[:len(t.frames)-1]
@@ -2165,24 +2127,24 @@ func (t *Translator) withElement(src Source, binderName string, elem Binder, key
 	return render()
 }
 
-func (t *Translator) withRow(src Source, binderName string, render func() *Fragment) *Fragment {
+func (t *translator) withRow(src source, binderName string, render func() *Fragment) *Fragment {
 	alias := relationAlias(src.Relation)
 	for _, frame := range t.frames {
 		for _, kv := range frame {
-			if kv.Val.Shape == BinderShapeRow && relationAlias(kv.Val.Relation) == alias {
-				Refuse("E_SQL_SHAPE",
+			if kv.Val.Shape == binderShapeRow && relationAlias(kv.Val.Relation) == alias {
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("this relation is already open as %s further out, and a subquery reusing its own alias shadows the outer row rather than comparing against it; the correlation names the alias, so it cannot be renamed here", alias),
 					Pos{})
 			}
 		}
 	}
-	row := BinderRow(src.Relation)
-	if t.statementPlan != nil && t.statementPlan.SourceRelation != nil && sameRelation(*src.Relation, t.statementPlan.SourceRelation.Relation) {
-		row.Model = BuildJoinRows(t.statementPlan).Row
+	row := binderRow(src.Relation)
+	if t.statementPlan != nil && t.statementPlan.SourceRelation != nil && sameRelation(*src.Relation, t.statementPlan.SourceRelation.relation) {
+		row.Model = buildJoinRows(t.statementPlan).Row
 	}
-	var frame Frame
+	var frame frame
 	frameSet(&frame, binderName, row)
-	frameSet(&frame, "_K", BinderNone("a row of a relation has no key: SQL rows are unordered and unkeyed unless the schema says otherwise, and guessing which column is the key is not something this layer does"))
+	frameSet(&frame, "_K", binderNone("a row of a relation has no key: SQL rows are unordered and unkeyed unless the schema says otherwise, and guessing which column is the key is not something this layer does"))
 	t.frames = append(t.frames, frame)
 	defer func() {
 		t.frames = t.frames[:len(t.frames)-1]
@@ -2190,14 +2152,14 @@ func (t *Translator) withRow(src Source, binderName string, render func() *Fragm
 	return render()
 }
 
-func (t *Translator) withGroup(src Source, binderName string, render func() *Fragment) *Fragment {
-	var frame Frame
-	frameSet(&frame, binderName, BinderGroup(src.Relation))
+func (t *translator) withGroup(src source, binderName string, render func() *Fragment) *Fragment {
+	var frame frame
+	frameSet(&frame, binderName, binderGroup(src.Relation))
 	if t.statementPlan != nil && t.statementPlan.GroupBy != nil && len(t.statementPlan.GroupBy) == 1 {
 		gb := t.statementPlan.GroupBy[0]
-		frameSet(&frame, "_K", BinderKey(gb.Binder, gb.Node, src.Relation))
+		frameSet(&frame, "_K", binderKey(gb.Binder, gb.Node, src.Relation))
 	} else {
-		frameSet(&frame, "_K", BinderNone("the key of a bucket over several keys is a list, which SQL has no value for; name one key"))
+		frameSet(&frame, "_K", binderNone("the key of a bucket over several keys is a list, which SQL has no value for; name one key"))
 	}
 	t.frames = append(t.frames, frame)
 	defer func() {
@@ -2206,14 +2168,14 @@ func (t *Translator) withGroup(src Source, binderName string, render func() *Fra
 	return render()
 }
 
-func (t *Translator) withProjected(src Source, binderName string, render func() *Fragment) *Fragment {
-	var projections []RelationalProjection
+func (t *translator) withProjected(src source, binderName string, render func() *Fragment) *Fragment {
+	var projections []relationalProjection
 	if t.statementPlan != nil && t.statementPlan.Projections != nil {
 		projections = t.statementPlan.Projections
 	}
-	var frame Frame
-	frameSet(&frame, binderName, BinderProjected(src.Relation, projections))
-	frameSet(&frame, "_K", BinderNone("after a projection the rows are a list renumbered from \"1\", and SQL has no row position to compare against"))
+	var frame frame
+	frameSet(&frame, binderName, binderProjected(src.Relation, projections))
+	frameSet(&frame, "_K", binderNone("after a projection the rows are a list renumbered from \"1\", and SQL has no row position to compare against"))
 	t.frames = append(t.frames, frame)
 	defer func() {
 		t.frames = t.frames[:len(t.frames)-1]
@@ -2221,8 +2183,8 @@ func (t *Translator) withProjected(src Source, binderName string, render func() 
 	return render()
 }
 
-func (t *Translator) withJoinBinders(plan *RelationalPlan, join RelationalJoin, render func() *Fragment) *Fragment {
-	jr := BuildJoinRows(plan)
+func (t *translator) withJoinBinders(plan *relationalPlan, join relationalJoin, render func() *Fragment) *Fragment {
+	jr := buildJoinRows(plan)
 	// `join` arrives by value, so its address is never one of plan.Joins': the join is
 	// found by what names it (one table alias per occurrence, so this is unique).
 	joinIdx := -1
@@ -2233,10 +2195,10 @@ func (t *Translator) withJoinBinders(plan *RelationalPlan, join RelationalJoin, 
 		}
 	}
 	step := jr.Steps[joinIdx]
-	var frame Frame
-	left := BinderRow(&plan.SourceRelation.Relation)
+	var frame frame
+	left := binderRow(&plan.SourceRelation.relation)
 	left.Model = step.Left
-	right := BinderRow(&join.SourceRelation.Relation)
+	right := binderRow(&join.SourceRelation.relation)
 	right.Model = step.Right
 	frameSet(&frame, "_", left)
 	frameSet(&frame, "_1", left)
@@ -2267,7 +2229,7 @@ func aggFold(name string) string {
 }
 
 func aggSkeleton(name string) string {
-	return strings.ToLower(name)
+	return utf8.AsciiLower(name)
 }
 
 func aggReturns(name string) SqlKind {
@@ -2286,10 +2248,10 @@ func aggReturns(name string) SqlKind {
 // scope plus the FILTER's binder for the element, and nothing of the aggregate
 // it feeds. Every binder is local to the expression it is written for; folding
 // them all into one frame let a predicate read the body's binder, and the body
-// read the predicate's (LISP-C7, PHP-C30).
-func (t *Translator) filterPredicate(f SourceFilter, binderName string) *Fragment {
+// read the predicate's.
+func (t *translator) filterPredicate(f sourceFilter, binderName string) *Fragment {
 	top := t.frames[len(t.frames)-1]
-	var frame Frame
+	var frame frame
 	for _, kv := range top {
 		if kv.Key == binderName {
 			frameSet(&frame, f.Binder, kv.Val)
@@ -2307,14 +2269,14 @@ func (t *Translator) filterPredicate(f SourceFilter, binderName string) *Fragmen
 	return t.node(f.Node)
 }
 
-func (t *Translator) aggBody(name string, binderName string, body *SNode, src Source, n *SNode) *Fragment {
+func (t *translator) aggBody(name string, binderName string, body *sNode, src source, n *sNode) *Fragment {
 	q := t.node(body)
 	if name == "SUM" {
 		t.requireNum(q, body.Pos, name)
 		// A body nobody vouched for is checked like any operand of `+` when the
 		// sum is an unroll. Over a relation the whole sum is guarded instead, all
 		// or nothing (sql-kinds.md §5a), by relationAggregate.
-		if q.Kind == KindUnknown && src.Shape != SourceShapeRelation {
+		if q.Kind == KindUnknown && src.Shape != sourceShapeRelation {
 			q = t.guardNumeric(q, body)
 		}
 	} else {
@@ -2324,7 +2286,7 @@ func (t *Translator) aggBody(name string, binderName string, body *SNode, src So
 	for _, f := range src.Filters {
 		p := t.requireBool(t.filterPredicate(f, binderName), f.Node.Pos, "FILTER")
 		if name == "SUM" {
-			q = t.caseWhen(p, q, t.literal(sel.NewTextOwned("0"), KindNum), n.Pos)
+			q = t.caseWhen(p, q, t.literal(sel.NewText("0"), KindNum), n.Pos)
 		} else if name == "ALL" {
 			one := []*Fragment{p}
 			pair := []*Fragment{t.apply("ops", "NOT", one, n.Pos, nil), q}
@@ -2339,12 +2301,12 @@ func (t *Translator) aggBody(name string, binderName string, body *SNode, src So
 
 // numericTestAndCast is the pair the numeric guard is made of, for a body that
 // has to be tested once for the whole aggregate and cast once per element.
-func (t *Translator) numericTestAndCast(body *Fragment, pos Pos) (*Fragment, *Fragment) {
-	CheckNumericGuard(t.dialect)
+func (t *translator) numericTestAndCast(body *Fragment, pos Pos) (*Fragment, *Fragment) {
+	checkNumericGuard(t.dialect)
 	test := t.apply("funcs", "ISNUM", []*Fragment{body}, pos, nil)
 	tpl, ok := t.emit.Lex("numericCast").(string)
 	if !ok || tpl == "" {
-		Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s has no numeric cast", t.dialect), pos)
+		refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s has no numeric cast", t.dialect), pos)
 	}
 	cast := NewFragment(t.emit.Fill(tpl, []*Fragment{body}, pos, nil), KindNum, t.dialect, body.Params, body.ParamKinds, body.Caveats)
 	// PostgreSQL evaluates the cast for every row before the enclosing CASE
@@ -2368,7 +2330,7 @@ func (t *Translator) numericTestAndCast(body *Fragment, pos Pos) (*Fragment, *Fr
 // SUM skips NULL, and COALESCE turns an empty sum into 0, so guarding each element
 // would make a refused element vanish; one that fails the test, or is NULL, makes
 // the whole value NULL, where SEL raises. Refused where the dialect cannot test.
-func (t *Translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
+func (t *translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
 	test, cast := t.numericTestAndCast(body, pos)
 	parts := []Part{{Sql: "CASE WHEN COUNT(*) = COUNT(CASE WHEN "}}
 	parts = append(parts, test.Parts...)
@@ -2384,18 +2346,18 @@ func (t *Translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
 	return NewFragment(parts, KindNum, t.dialect, params, kinds, test.Caveats)
 }
 
-func (t *Translator) relationAggregate(name string, rel RelationSpec, body *Fragment, n *SNode) *Fragment {
+func (t *translator) relationAggregate(name string, rel relationSpec, body *Fragment, n *sNode) *Fragment {
 	if name == "SUM" && body.Kind == KindUnknown {
 		whole := t.allOrNothingSum(body, n.Pos)
 		skel := t.skeleton("sum", n.Pos)
 		const plain = "COALESCE(SUM({body}), 0)"
 		if !strings.Contains(skel, plain) {
-			Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s spells SUM in a way the all-or-nothing guard cannot be written into", t.dialect), n.Pos)
+			refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s spells SUM in a way the all-or-nothing guard cannot be written into", t.dialect), n.Pos)
 		}
 		skel = strings.Replace(skel, plain, "{body}", 1)
 		slots := mergeSlots(
 			t.relationSlots(rel),
-			SlotMap{Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(whole)}}},
+			slotMap{pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(whole)}}},
 		)
 		return NewFragment(t.fillNamed(skel, slots, n.Pos), aggReturns(name), t.dialect, nil, nil, nil)
 	}
@@ -2403,27 +2365,27 @@ func (t *Translator) relationAggregate(name string, rel RelationSpec, body *Frag
 	if name == "ANY" && body.Prefilter != nil && isSeparate {
 		preSlots := mergeSlots(
 			t.relationSlots(rel),
-			SlotMap{Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(body.Prefilter)}}},
+			slotMap{pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(body.Prefilter)}}},
 		)
 		pre := NewFragment(t.fillNamed(t.skeleton("prefilter", n.Pos), preSlots, n.Pos), aggReturns(name), t.dialect, nil, nil, nil)
 		mainSlots := mergeSlots(
 			t.relationSlots(rel),
-			SlotMap{Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(body)}}},
+			slotMap{pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(body)}}},
 		)
 		main := NewFragment(t.fillNamed(t.skeleton(aggSkeleton(name), n.Pos), mainSlots, n.Pos), aggReturns(name), t.dialect, nil, nil, nil)
 		return t.apply("ops", "AND", []*Fragment{pre, main}, n.Pos, nil)
 	}
 	slots := mergeSlots(
 		t.relationSlots(rel),
-		SlotMap{Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(body)}}},
+		slotMap{pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(body)}}},
 	)
 	return NewFragment(t.fillNamed(t.skeleton(aggSkeleton(name), n.Pos), slots, n.Pos), aggReturns(name), t.dialect, nil, nil, nil)
 }
 
-func (t *Translator) aggregate(n *SNode) *Fragment {
+func (t *translator) aggregate(n *sNode) *Fragment {
 	name := n.Str
 	if name == "MAP" || name == "FILTER" {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s yields a list, and a SQL expression is a scalar; it can only be the thing another aggregate iterates", name),
 			n.Pos)
 	}
@@ -2434,7 +2396,7 @@ func (t *Translator) aggregate(n *SNode) *Fragment {
 	binderName, bodyNode := aggShape(n)
 	src := t.classify(n.Kids[0])
 
-	if src.Shape == SourceShapeRelation {
+	if src.Shape == sourceShapeRelation {
 		rendered := t.withRow(src, binderName, func() *Fragment {
 			return t.aggBody(name, binderName, bodyNode, src, n)
 		})
@@ -2457,7 +2419,7 @@ func (t *Translator) aggregate(n *SNode) *Fragment {
 		if name == "ANY" {
 			return t.literal(sel.NewBool(false), KindBool)
 		}
-		return t.literal(sel.NewTextOwned("0"), KindNum)
+		return t.literal(sel.NewText("0"), KindNum)
 	}
 	if len(parts) == 1 {
 		return parts[0]
@@ -2465,16 +2427,16 @@ func (t *Translator) aggregate(n *SNode) *Fragment {
 	return t.foldPairwise(aggFold(name), parts, n.Pos)
 }
 
-func (t *Translator) count(n *SNode) *Fragment {
+func (t *translator) count(n *sNode) *Fragment {
 	src := t.classify(n.Kids[0])
 
-	if src.Shape != SourceShapeRelation && src.ScalarRule && len(src.Filters) == 0 {
-		return t.literal(sel.NewTextOwned("0"), KindNum)
+	if src.Shape != sourceShapeRelation && src.ScalarRule && len(src.Filters) == 0 {
+		return t.literal(sel.NewText("0"), KindNum)
 	}
 
 	if len(src.Filters) > 0 {
-		body := Leaf(litNode(sel.NodeNum, "1", false, n.Pos))
-		if src.Shape == SourceShapeRelation {
+		body := leaf(litNode(sel.NodeNum, "1", false, n.Pos))
+		if src.Shape == sourceShapeRelation {
 			rendered := t.withRow(src, "_", func() *Fragment {
 				return t.aggBody("SUM", "_", body, src, n)
 			})
@@ -2489,7 +2451,7 @@ func (t *Translator) count(n *SNode) *Fragment {
 			}))
 		}
 		if len(parts) == 0 {
-			return t.literal(sel.NewTextOwned("0"), KindNum)
+			return t.literal(sel.NewText("0"), KindNum)
 		}
 		if len(parts) == 1 {
 			return parts[0]
@@ -2497,7 +2459,7 @@ func (t *Translator) count(n *SNode) *Fragment {
 		return t.foldPairwise("+", parts, n.Pos)
 	}
 
-	if src.Shape == SourceShapeRelation {
+	if src.Shape == sourceShapeRelation {
 		return NewFragment(
 			t.fillNamed(t.skeleton("count", n.Pos), t.relationSlots(*src.Relation), n.Pos),
 			KindNum,
@@ -2505,25 +2467,25 @@ func (t *Translator) count(n *SNode) *Fragment {
 			nil, nil, nil,
 		)
 	}
-	return t.literal(sel.NewTextOwned(strconv.Itoa(len(src.Elements))), KindNum)
+	return t.literal(sel.NewText(strconv.Itoa(len(src.Elements))), KindNum)
 }
 
-func (t *Translator) has(n *SNode) *Fragment {
+func (t *translator) has(n *sNode) *Fragment {
 	keyNode := n.Kids[1]
-	if keyNode.T != SNodeText && keyNode.T != SNodeNum {
-		Refuse("E_SQL_SHAPE",
+	if keyNode.T != sNodeText && keyNode.T != sNodeNum {
+		refuse("E_SQL_SHAPE",
 			"HAS needs a constant key here: which column it asks about has to be known before the query runs",
 			keyNode.Pos)
 	}
 	key := keyNode.Str
 	src := t.classify(n.Kids[0])
 	if len(src.Filters) > 0 {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			"HAS over a FILTER would have to know at translation time which elements the filter kept",
 			n.Pos)
 	}
-	if src.Shape == SourceShapeRelation {
-		Refuse("E_SQL_SHAPE",
+	if src.Shape == sourceShapeRelation {
+		refuse("E_SQL_SHAPE",
 			"HAS over a relation asks whether it has a key, and a relation is a list of rows whose keys are positions; the answer needs the row count, which no expression here knows",
 			n.Pos)
 	}
@@ -2541,30 +2503,30 @@ func (t *Translator) has(n *SNode) *Fragment {
 
 // requireJoinText: JOIN takes text, under `&`'s rules (spec §5.2/§7.5); a BOOL or
 // a BIN, as an element or as the separator, is E_NOT_TEXT in SEL and refused here
-// rather than concatenated as whatever a server spells it (PY-C19, PHP-C31).
-func (t *Translator) requireJoinText(f *Fragment, pos Pos, what string) {
+// rather than concatenated as whatever a server spells it.
+func (t *translator) requireJoinText(f *Fragment, pos Pos, what string) {
 	if f.Kind == KindBool || f.Kind == KindBin {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("JOIN takes text and this %s is a %s; SEL answers E_NOT_TEXT rather than spelling it", what, f.Kind), pos)
 	}
 }
 
-func (t *Translator) joinAggregate(n *SNode) *Fragment {
+func (t *translator) joinAggregate(n *sNode) *Fragment {
 	src := t.classify(n.Kids[0])
 	if len(src.Filters) > 0 {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			"JOIN over a FILTER would have to know which elements the filter kept; FILTER is absorbed by ALL, ANY, SUM and COUNT, and JOIN is not one of them",
 			n.Kids[0].Pos)
 	}
 
-	if src.Shape == SourceShapeRelation {
+	if src.Shape == sourceShapeRelation {
 		rel := *src.Relation
-		var scalar *ColumnSpec
+		var scalar *columnSpec
 		if rel.Scalar != "" {
 			scalar = rel.Field(utf8.AsciiUpper(rel.Scalar))
 		}
 		if scalar == nil {
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				"JOIN over a relation needs the binding to name a \"scalar\" field",
 				n.Pos)
 		}
@@ -2575,9 +2537,9 @@ func (t *Translator) joinAggregate(n *SNode) *Fragment {
 		skel := t.skeleton("join", n.Pos)
 		slots := mergeSlots(
 			t.relationSlots(rel),
-			SlotMap{
-				Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(body)}},
-				Pair[string, []Slot]{Key: "sep", Val: []Slot{FragmentSlot(sep)}},
+			slotMap{
+				pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(body)}},
+				pair[string, []slot]{Key: "sep", Val: []slot{fragmentSlot(sep)}},
 			},
 		)
 		return NewFragment(t.fillNamed(skel, slots, n.Pos), KindText, t.dialect, nil, nil, nil)
@@ -2600,7 +2562,7 @@ func (t *Translator) joinAggregate(n *SNode) *Fragment {
 		parts = append(parts, piece)
 	}
 	if len(parts) == 0 {
-		return t.literal(sel.NewTextOwned(""), KindText)
+		return t.literal(sel.NewText(""), KindText)
 	}
 	if len(parts) == 1 {
 		return parts[0]

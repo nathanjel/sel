@@ -7,7 +7,7 @@ import (
 
 // Num is a number read in place: a sign, a magnitude and a scale, without a Dec
 // header around them. A math plan keeps its intermediate ADD, SUB and MUL
-// results as Nums whose magnitudes are registers it owns and reuses (item 1);
+// results as Nums whose magnitudes are registers it owns and reuses (sel/plan_regs.go);
 // everything else holds Decs, which are never changed once built. A Num's Mag is
 // written only by whoever owns it.
 type Num struct {

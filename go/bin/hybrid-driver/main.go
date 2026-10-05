@@ -1,4 +1,4 @@
-// The Go side of the hybrid-parity lane (T11): a line-oriented JSON driver.
+// The Go side of the hybrid-parity lane: a line-oriented JSON driver.
 //
 // Go has no SQLite driver in its standard library, so tools/check-hybrid-parity-go.py
 // owns the database: it asks this process to PLAN a program, executes the prefix
@@ -39,6 +39,14 @@ type request struct {
 var bindings *sql.Bindings
 
 func main() {
+	// The application functions of sql/oracle/hybrid.json's `application`
+	// section: POKE writes its argument in place, HOSTF has no SQL spelling.
+	sel.RegisterFunction("POKE", 1, 1, func(args *sel.Args) *sel.Value {
+		v := args.Val(0)
+		v.Set("k", sel.NewText("9"))
+		return v
+	})
+	sel.RegisterFunction("HOSTF", 1, 1, func(args *sel.Args) *sel.Value { return args.Val(0) })
 	in := bufio.NewReaderSize(os.Stdin, 1<<24)
 	out := bufio.NewWriter(os.Stdout)
 	defer out.Flush()

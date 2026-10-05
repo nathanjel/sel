@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 )
 
@@ -73,7 +74,7 @@ func convertJSONValue(val interface{}) *sel.Value {
 		for i, el := range v {
 			items[i] = convertJSONValue(el)
 		}
-		return sel.NewListOwned(items)
+		return sel.NewList(items)
 	case map[string]interface{}:
 		keys := make([]string, 0, len(v))
 		for k := range v {
@@ -92,10 +93,7 @@ func convertJSONValue(val interface{}) *sel.Value {
 }
 
 func loadContext(datasetPath string) *sel.Value {
-	data, err := os.ReadFile(datasetPath)
-	if err != nil {
-		panic(fmt.Sprintf("cannot read dataset: %v", err))
-	}
+	data := []byte(harness.ReadFile(datasetPath))
 	var raw map[string][]map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		panic(fmt.Sprintf("cannot parse dataset: %v", err))
@@ -137,7 +135,7 @@ func loadContext(datasetPath string) *sel.Value {
 					customerList[rIdx] = sel.NewShapedRecord(shape, rowVals)
 				}
 			}
-			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewListOwned(customerList)})
+			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewList(customerList)})
 		} else {
 			rowList := make([]*sel.Value, len(rows))
 			if len(rows) > 0 {
@@ -157,7 +155,7 @@ func loadContext(datasetPath string) *sel.Value {
 					rowList[rIdx] = sel.NewShapedRecord(shape, rowVals)
 				}
 			}
-			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewListOwned(rowList)})
+			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewList(rowList)})
 		}
 	}
 	return sel.NewRecordFromEntries(rootEntries)
@@ -171,7 +169,7 @@ func benchmarkValue(v *sel.Value) interface{} {
 		if v.IsList() {
 			return []interface{}{}
 		}
-		if v.Kind == sel.KindText || v.Kind == sel.KindBin || v.Kind == sel.KindBool {
+		if v.Kind() == sel.KindText || v.Kind() == sel.KindBin || v.Kind() == sel.KindBool {
 			return v.AsText(sel.Pos{})
 		}
 		return nil
@@ -187,7 +185,7 @@ func benchmarkValue(v *sel.Value) interface{} {
 	for _, entry := range v.Entries() {
 		out[entry.Key] = benchmarkValue(entry.Val)
 	}
-	if v.Kind == sel.KindText || v.Kind == sel.KindBin || v.Kind == sel.KindBool {
+	if v.Kind() == sel.KindText || v.Kind() == sel.KindBin || v.Kind() == sel.KindBool {
 		out["_"] = v.AsText(sel.Pos{})
 	}
 	return out
@@ -278,11 +276,7 @@ func main() {
 	datasetPath, _ := filepath.Abs(*datasetFlag)
 	context := loadContext(datasetPath)
 
-	refData, err := os.ReadFile(*refFlag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read reference %s: %v\n", *refFlag, err)
-		os.Exit(1)
-	}
+	refData := []byte(harness.ReadFile(*refFlag))
 	var reference []ScenarioReference
 	if err := json.Unmarshal(refData, &reference); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse reference: %v\n", err)
@@ -377,7 +371,7 @@ func main() {
 
 		statsMap := map[string]Stats{
 			"program_run_ms":    computeStats(runMsList),
-			"materialize_ms":   computeStats(matMsList),
+			"materialize_ms":    computeStats(matMsList),
 			"prepared_total_ms": computeStats(totMsList),
 		}
 

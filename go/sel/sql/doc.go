@@ -11,7 +11,10 @@
 //
 // Where a rule's variables live is described by bindings: [ColumnBinding],
 // [RawBinding], [ColumnsBinding], [RelationBinding], [RelationQueryBinding] and
-// [ValueBinding], gathered with [NewBindings].
+// [ValueBinding], gathered with [NewBindings]. [Column], [RawColumn], [Relation],
+// [RelationQuery] and [DefineDialectWith] are the same with their options named
+// in a struct ([ColumnOptions], [RelationOptions], [DialectOptions]) instead of
+// passed positionally.
 //
 // Translate, TryTranslate, TranslateStatement and ExecuteHybrid return their
 // failure as an error. The configuration calls — the binding constructors,

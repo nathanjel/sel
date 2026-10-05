@@ -187,7 +187,7 @@ func describe(v *sel.Value) string {
 	if v == nil {
 		return "none"
 	}
-	switch v.Kind {
+	switch v.Kind() {
 	case sel.KindText:
 		if v.Size() > 0 {
 			return fmt.Sprintf("tree %s", v.Dump())
@@ -247,7 +247,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 
 	switch form {
 	case "text":
-		if val.Kind != sel.KindText || val.Size() > 0 {
+		if val.Kind() != sel.KindText || val.Size() > 0 {
 			return fmt.Sprintf("wanted text, got %s", describe(val))
 		}
 		unquoted, uErr := unescape(rest, at)
@@ -260,7 +260,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "num":
-		if val.Kind != sel.KindText || val.Size() > 0 {
+		if val.Kind() != sel.KindText || val.Size() > 0 {
 			return fmt.Sprintf("wanted a number, got %s", describe(val))
 		}
 		if val.Scalar() != rest {
@@ -269,7 +269,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "bin":
-		if val.Kind != sel.KindBin || val.Size() > 0 {
+		if val.Kind() != sel.KindBin || val.Size() > 0 {
 			return fmt.Sprintf("wanted binary, got %s", describe(val))
 		}
 		if val.Dump()[1:] != rest {
@@ -278,7 +278,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "bool":
-		if val.Kind != sel.KindBool || val.Size() > 0 {
+		if val.Kind() != sel.KindBool || val.Size() > 0 {
 			return fmt.Sprintf("wanted a boolean, got %s", describe(val))
 		}
 		got := "FALSE"
@@ -291,7 +291,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "none":
-		if val.Kind == sel.KindNone && val.Size() == 0 {
+		if val.Kind() == sel.KindNone && val.Size() == 0 {
 			return ""
 		}
 		return fmt.Sprintf("got %s", describe(val))
@@ -346,6 +346,7 @@ func runCase(c *TestCase) runResult {
 
 func main() {
 	var files []string
+	given := map[string]string{} // absolute path -> the path as it was given
 	if len(os.Args) > 1 {
 		for _, arg := range os.Args[1:] {
 			abs, err := filepath.Abs(arg)
@@ -354,6 +355,7 @@ func main() {
 				os.Exit(1)
 			}
 			files = append(files, abs)
+			given[abs] = arg
 		}
 	} else {
 		root := "conformance"
@@ -385,7 +387,15 @@ func main() {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			suiteErrors = append(suiteErrors, fmt.Sprintf("%s: read error: %v", path, err))
+			if pe, ok := err.(*os.PathError); ok {
+				err = pe.Err
+			}
+			shown := path
+			if g, ok := given[path]; ok {
+				shown = g
+			}
+			fmt.Fprintf(os.Stderr, "cannot read %s: %v\n", shown, err)
+			suiteErrors = append(suiteErrors, fmt.Sprintf("cannot read %s: %v", shown, err))
 			continue
 		}
 		cases, err := parseSelt(string(data), path)
@@ -426,6 +436,11 @@ func main() {
 	}
 
 	fmt.Printf("\n%d passed, %d failed, %d suite errors\n", nPass, len(failures), len(suiteErrors))
+	if nPass+len(failures) == 0 {
+		// An empty file or a wrong path is not a passing suite.
+		fmt.Fprintln(os.Stderr, "conformance: no case ran")
+		os.Exit(1)
+	}
 	if len(failures) > 0 || len(suiteErrors) > 0 {
 		os.Exit(1)
 	}

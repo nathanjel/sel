@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// GO-P21: Guard / TrimScale / IsInteger / Cmp without powers of ten, strings or
+// Guard / TrimScale / IsInteger / Cmp without powers of ten, strings or
 // scaled copies. Each replaced routine has its old behaviour kept here as the
 // reference, and the tests compare the two on random and boundary inputs.
 
@@ -172,7 +172,7 @@ func sameDec(a, b *Dec) bool {
 func TestTrimScaleMatchesTheStringRoutine(t *testing.T) {
 	rnd := rand.New(rand.NewSource(2121))
 	for i := 0; i < 4000; i++ {
-		// a magnitude above 64 bits (the word-sized path is GO-P9's) with a random
+		// a magnitude above 64 bits (past the word-sized path) with a random
 		// number of trailing zeros, sometimes more than the scale
 		body := new(big.Int).Rand(rnd, new(big.Int).Lsh(big.NewInt(1), uint(65+rnd.Intn(300))))
 		if body.Sign() == 0 {
@@ -287,7 +287,7 @@ func TestCmpMatchesTheAlignedComparison(t *testing.T) {
 	}
 }
 
-// refFormat is the big.Int-string formatting Format had before GO-P27's fast path.
+// refFormat is the big.Int-string formatting Format had before its word-sized fast path.
 func refFormat(d *Dec) string {
 	sign := ""
 	if d.Neg {

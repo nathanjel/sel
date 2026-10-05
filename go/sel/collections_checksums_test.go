@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Semantic checksums for the round-2 workloads (GO-P11 … GO-P20), recorded at the
-// baseline before any round-2 change. A speedup that changes an answer fails here.
+// Semantic checksums for the workloads of collections_bench_test.go, recorded
+// before the optimisations they measure. A speedup that changes an answer fails here.
 var perf2Checksums = map[string]string{
 	"p11 get":        "t\"1225396064\"",
 	"p11 has":        "t\"1754\"",
@@ -39,7 +39,7 @@ var perf2Checksums = map[string]string{
 	"p20 pad":        "t\"😀😀😀😀é|éabab|abc|xyx\"",
 }
 
-func TestPerf2WorkloadChecksums(t *testing.T) {
+func TestCollectionWorkloadChecksums(t *testing.T) {
 	ctxK := func() *Value { return ctxWith("L", intList(3000, 7)) }
 	ctxJ := func() *Value { return ctxWith("L", joinRows(2000, 10, 5), "R", joinRows(300, 10, 6)) }
 	strs := func() *Value {
@@ -78,10 +78,10 @@ func TestPerf2WorkloadChecksums(t *testing.T) {
 					items[i] = NewText("x" + items[i].Scalar())
 				}
 			}
-			return ctxWith("L", NewListOwned(items))
+			return ctxWith("L", newListOwned(items))
 		}},
 		{"p19 regex_mix", `JOIN(MAP(L, RFIND('(\d+)-(\d+)', _) & RREPLACE('-', "+", _)), ",")`, func() *Value {
-			return ctxWith("L", NewListOwned([]*Value{NewText("12-34"), NewText("é 5-6"), NewText("none"), NewText("")}))
+			return ctxWith("L", newListOwned([]*Value{NewText("12-34"), NewText("é 5-6"), NewText("none"), NewText("")}))
 		}},
 		{"p20 trim", `LEN(TRIM(T)) & "," & LEN(LTRIM(T)) & "," & LEN(RTRIM(T)) & "," & LEN(TRIM(S))`, strs},
 		{"p20 trim_empty", `LEN(TRIM(E)) & LEN(TRIM(" ")) & LEN(TRIM("\t\r\n"))`, strs},

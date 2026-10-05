@@ -1,5 +1,5 @@
-// Exact decimal arithmetic. See spec/SPEC.md §4.
-
+// Package decimal is SEL's exact decimal arithmetic (spec/SPEC.md §4): a
+// sign, a big.Int magnitude and a scale, with the digit caps of §6.4.
 package decimal
 
 import (
@@ -36,7 +36,6 @@ var (
 	oneBig    = big.NewInt(1)
 	twoBig    = big.NewInt(2)
 	tenBig    = big.NewInt(10)
-	Zero      = Make(false, zeroBig, 0)
 	pow10List [19]*big.Int
 	pow10U64  [19]uint64
 )
@@ -52,7 +51,7 @@ func init() {
 
 // makeOwned is Make for digits the caller has just computed and will not touch
 // again (a Dec is immutable, so nothing else does either): it keeps the big.Int
-// instead of copying it, which was two allocations on every operation (GO-P9).
+// instead of copying it, which was two allocations on every operation.
 func makeOwned(neg bool, digits *big.Int, scale int32) *Dec {
 	return &Dec{Neg: neg && digits.Sign() != 0, Digits: digits, Scale: scale}
 }
@@ -108,7 +107,7 @@ func Pow10(k int) *big.Int {
 }
 
 // log10Of2Q32 is floor(log10(2)·2^32): the bit length of a magnitude brackets its
-// digit count without touching a power of ten (GO-P21).
+// digit count without touching a power of ten.
 const log10Of2Q32 = 1292913986
 
 // digitBounds returns lo ≤ digits(n) ≤ hi for a positive n of the given bit length.
@@ -195,7 +194,7 @@ func Parse(text string, pos Pos, fail FailFunc) *Dec {
 	if len(intPart) == 0 {
 		return nil
 	}
-	// GO-P9: up to 18 significant digits fit a uint64 and need no string surgery
+	// Up to 18 significant digits fit a uint64 and need no string surgery
 	// (the concatenation, the TrimLeft and big.Int.SetString each cost an
 	// allocation or a scan). Anything longer takes the general route below.
 	if len(intPart)+len(fracPart) <= 40 {
@@ -235,7 +234,7 @@ func Parse(text string, pos Pos, fail FailFunc) *Dec {
 const parseLeaf = 1024
 
 // parseDigits reads a string of decimal digits as a big.Int. SetString is
-// quadratic, which made a million-digit numeral cost seconds (GO-P10); this
+// quadratic, which made a million-digit numeral cost seconds; this
 // splits at the largest parseLeaf·2^j below the length, parses the two halves and
 // combines them as hi·10^k + lo, so the multiplications (Karatsuba) dominate and
 // the powers of ten come from the Pow10 cache, few and regular.
@@ -259,7 +258,7 @@ func parseDigits(s string) *big.Int {
 const maxFastScale = 40
 
 func Format(d *Dec) string {
-	// GO-P27: a word-sized magnitude with a modest scale is rendered in one stack
+	// A word-sized magnitude with a modest scale is rendered in one stack
 	// buffer, with no big.Int decimal conversion (nat.itoa) and no intermediate
 	// strings. Numeric literals and every number-to-text conversion take this path.
 	if d.Scale <= maxFastScale && d.Digits.IsUint64() {
@@ -323,7 +322,7 @@ func TrimScale(d *Dec) *Dec {
 		return d
 	}
 	if d.Digits.IsUint64() {
-		// GO-P9: strip trailing zeros of a word-sized magnitude arithmetically,
+		// Strip trailing zeros of a word-sized magnitude arithmetically,
 		// with no decimal string to build, trim and parse back.
 		m := d.Digits.Uint64()
 		zeros := int32(0)
@@ -336,7 +335,7 @@ func TrimScale(d *Dec) *Dec {
 		}
 		return makeOwned(d.Neg, new(big.Int).SetUint64(m), d.Scale-zeros)
 	}
-	// GO-P21: a magnitude of any other size is stripped without a decimal string.
+	// A magnitude of any other size is stripped without a decimal string.
 	// A trailing zero needs the magnitude even, which one bit answers; only an even
 	// one pays a linear pass for the remainder mod 10, and only one that really ends
 	// in zeros pays for the divisions below.
@@ -423,7 +422,7 @@ func IsInteger(d *Dec) bool {
 	if d.Scale == 0 || d.Digits.Sign() == 0 {
 		return true
 	}
-	// GO-P21: an integer needs 10^scale to divide the magnitude. An odd magnitude
+	// An integer needs 10^scale to divide the magnitude. An odd magnitude
 	// cannot be, and neither can one with no more digits than the scale (it is
 	// nonzero and smaller than 10^scale); both are decided without a division.
 	if d.Digits.Bit(0) != 0 {
@@ -467,9 +466,9 @@ func aligned(a, b *Dec) (*big.Int, *big.Int, int32) {
 	return scaledA, b.Digits, b.Scale
 }
 
-// Add, Sub and Mul return a Dec of their own; the arithmetic, and its sign,
+// Add returns a+b as a Dec of its own (as Sub and Mul do); the arithmetic, and its sign,
 // scale and E_RANGE rules, is AddInto's, SubInto's and MulInto's (reg.go), which
-// a math plan also uses to keep intermediates in registers (item 1).
+// a math plan also uses to keep intermediates in registers.
 func Add(a, b *Dec, pos Pos, fail FailFunc) *Dec {
 	return AddNew(nil, NumOf(a), NumOf(b), pos, fail)
 }
@@ -501,7 +500,7 @@ func Cmp(a, b *Dec) int {
 	return c
 }
 
-// cmpScaled orders the magnitudes of two values with different scales (GO-P21). It
+// cmpScaled orders the magnitudes of two values with different scales. It
 // builds no scaled copy when it can avoid it: a zero decides by itself; two
 // word-sized magnitudes with a gap of at most 18 are compared as 128-bit products;
 // and two magnitudes whose integer-part sizes are apart by more than the bit-length

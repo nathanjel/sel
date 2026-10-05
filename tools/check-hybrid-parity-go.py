@@ -2,7 +2,7 @@
 """The hybrid-parity corpus (sql/oracle/hybrid.json) through the GO host.
 
 Go has no SQLite driver in its standard library, so this script owns the
-database and go/build/hybridparity owns everything else: for each program and
+database and go/build/hybrid-driver owns everything else: for each program and
 context it asks Go for run()'s answer, asks it to PLAN, executes the plan's
 prefix statement itself on a real SQLite (sqlite3), and hands the rows back for
 execute_hybrid's continuation. The comparison is tools/check-hybrid-parity.py's:
@@ -28,9 +28,11 @@ verbose = '--verbose' in sys.argv
 # the host's driver registers. Opt-in until every driver registers them.
 APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))
-binary = ROOT / 'go' / 'build' / 'hybridparity'
+# go/build/hybrid-driver (go/build/hybridparity before it was renamed).
+binary = next((b for b in (ROOT / 'go' / 'build' / 'hybrid-driver', ROOT / 'go' / 'build' / 'hybridparity')
+               if b.exists()), ROOT / 'go' / 'build' / 'hybrid-driver')
 if not binary.exists():
-    print('go/build/hybridparity is missing: run make -C go', file=sys.stderr)
+    print('go/build/hybrid-driver is missing: run make -C go', file=sys.stderr)
     sys.exit(2)
 
 proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)

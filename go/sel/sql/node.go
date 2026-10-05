@@ -4,65 +4,65 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-type SNodeType string
+type sNodeType string
 
 const (
-	SNodeNum    SNodeType = "num"
-	SNodeText   SNodeType = "text"
-	SNodeBool   SNodeType = "bool"
-	SNodeNull   SNodeType = "null"
-	SNodeVar    SNodeType = "var"
-	SNodeIndex  SNodeType = "index"
-	SNodeSeq    SNodeType = "seq"
-	SNodeList   SNodeType = "list"
-	SNodeUn     SNodeType = "un"
-	SNodeBin    SNodeType = "bin"
-	SNodeAssign SNodeType = "assign"
-	SNodeCall   SNodeType = "call"
-	SNodeCList  SNodeType = "clist"
+	sNodeNum    sNodeType = "num"
+	sNodeText   sNodeType = "text"
+	sNodeBool   sNodeType = "bool"
+	sNodeNull   sNodeType = "null"
+	sNodeVar    sNodeType = "var"
+	sNodeIndex  sNodeType = "index"
+	sNodeSeq    sNodeType = "seq"
+	sNodeList   sNodeType = "list"
+	sNodeUn     sNodeType = "un"
+	sNodeBin    sNodeType = "bin"
+	sNodeAssign sNodeType = "assign"
+	sNodeCall   sNodeType = "call"
+	sNodeCList  sNodeType = "clist"
 )
 
-type CListEntry struct {
+type cListEntry struct {
 	Key string
-	Val *SNode
+	Val *sNode
 }
 
-// VarScope says how a variable read found its name. Stage 1 knows the lexical
+// varScope says how a variable read found its name. Stage 1 knows the lexical
 // scope, and the translator must not have to guess it again: an inlined helper's
 // reads are the caller's outer names, whatever binder they end up under.
-type VarScope uint8
+type varScope uint8
 
 const (
-	VarScopeUnknown VarScope = iota // built outside stage 1: resolve as before
-	VarScopeFree                    // no binder in scope names it: a binding
-	VarScopeBound                   // an enclosing binder names it
+	varScopeUnknown varScope = iota // built outside stage 1: resolve as before
+	varScopeFree                    // no binder in scope names it: a binding
+	varScopeBound                   // an enclosing binder names it
 )
 
-type SNode struct {
-	VarScope       VarScope
+type sNode struct {
+	VarScope       varScope
 	size           int64 // memo of Size; 0 = not yet computed
 	valid, numeric bool  // Validate / RequireNumeric already passed for this big subtree
 	constMemo      uint8 // memo of IsConstant for a large shared subtree: 1 yes, 2 no
 	toNodeDone     bool  // ToNode already ran for this (immutable) subtree
 	toNodeVal      *sel.Node
-	T              SNodeType
+	T              sNodeType
 	Pos            Pos
 	Origin         *sel.Node
 	Str            string
 	BoolVal        bool
 	Grouped        bool
 	Spec           *sel.Spec
-	Kids           []*SNode
+	Kids           []*sNode
 	Keys           []string
-	Entries        []CListEntry
+	Entries        []cListEntry
 }
 
-func Leaf(n *sel.Node) *SNode {
+func leaf(n *sel.Node) *sNode {
 	if n == nil {
 		return nil
 	}
-	return &SNode{
-		T:       SNodeType(n.T),
+	return &sNode{
+		T:       sNodeType(n.T),
 		Pos:     n.Pos,
 		Origin:  n,
 		Str:     n.S,
@@ -72,9 +72,9 @@ func Leaf(n *sel.Node) *SNode {
 	}
 }
 
-func Rewritten(shape *sel.Node, kids []*SNode) *SNode {
-	return &SNode{
-		T:       SNodeType(shape.T),
+func rewritten(shape *sel.Node, kids []*sNode) *sNode {
+	return &sNode{
+		T:       sNodeType(shape.T),
 		Pos:     shape.Pos,
 		Origin:  shape,
 		Str:     shape.S,
@@ -85,22 +85,22 @@ func Rewritten(shape *sel.Node, kids []*SNode) *SNode {
 	}
 }
 
-func NewCList(pos Pos) *SNode {
-	return &SNode{
-		T:   SNodeCList,
+func newCList(pos Pos) *sNode {
+	return &sNode{
+		T:   sNodeCList,
 		Pos: pos,
 	}
 }
 
-func (s *SNode) Append(key string, val *SNode) {
+func (s *sNode) Append(key string, val *sNode) {
 	s.Keys = append(s.Keys, key)
 	s.Kids = append(s.Kids, val)
-	s.Entries = append(s.Entries, CListEntry{Key: key, Val: val})
+	s.Entries = append(s.Entries, cListEntry{Key: key, Val: val})
 }
 
-func CList(pos Pos, entries []CListEntry) *SNode {
-	out := &SNode{
-		T:       SNodeCList,
+func cList(pos Pos, entries []cListEntry) *sNode {
+	out := &sNode{
+		T:       sNodeCList,
 		Pos:     pos,
 		Entries: entries,
 	}
@@ -111,51 +111,35 @@ func CList(pos Pos, entries []CListEntry) *SNode {
 	return out
 }
 
-func (s *SNode) L() *SNode {
+func (s *sNode) L() *sNode {
 	if len(s.Kids) > 0 {
 		return s.Kids[0]
 	}
 	return nil
 }
 
-func (s *SNode) R() *SNode {
+func (s *sNode) R() *sNode {
 	if len(s.Kids) > 1 {
 		return s.Kids[1]
 	}
 	return nil
 }
 
-func (s *SNode) Obj() *SNode {
+func (s *sNode) Obj() *sNode {
 	return s.L()
 }
 
-func (s *SNode) Idx() *SNode {
+func (s *sNode) Idx() *sNode {
 	return s.R()
 }
 
-func (s *SNode) Target() *SNode {
-	return s.L()
-}
-
-func (s *SNode) Val() *SNode {
-	return s.R()
-}
-
-func (s *SNode) Args() []*SNode {
-	return s.Kids
-}
-
-func (s *SNode) Items() []*SNode {
-	return s.Kids
-}
-
-func (s *SNode) ToNode() *sel.Node {
-	if s == nil || s.T == SNodeCList {
+func (s *sNode) ToNode() *sel.Node {
+	if s == nil || s.T == sNodeCList {
 		return nil
 	}
 	// An SNode is not changed once built, so its evaluable form is built once: the
 	// translator asks for it at every constant node of a chain, each time for the
-	// whole subtree below, which made a chain of n cost n copies of n nodes (GO-P28).
+	// whole subtree below, which made a chain of n cost n copies of n nodes.
 	if s.toNodeDone {
 		return s.toNodeVal
 	}
@@ -164,7 +148,7 @@ func (s *SNode) ToNode() *sel.Node {
 	return out
 }
 
-func (s *SNode) buildNode() *sel.Node {
+func (s *sNode) buildNode() *sel.Node {
 	if len(s.Kids) == 0 {
 		return s.Origin
 	}
@@ -177,18 +161,15 @@ func (s *SNode) buildNode() *sel.Node {
 		Grouped: s.Grouped,
 		Spec:    s.Spec,
 	}
-	if s.Origin != nil {
-		copyNode.Dec = s.Origin.Dec
-	}
 
 	switch s.T {
-	case SNodeUn:
+	case sNodeUn:
 		child := s.Kids[0].ToNode()
 		if child == nil {
 			return nil
 		}
 		copyNode.L = child
-	case SNodeBin, SNodeIndex, SNodeAssign:
+	case sNodeBin, sNodeIndex, sNodeAssign:
 		l := s.Kids[0].ToNode()
 		r := s.Kids[1].ToNode()
 		if l == nil || r == nil {
@@ -217,7 +198,7 @@ const sizeSaturation = int64(1) << 40
 // once per occurrence, which is what the translator's walk will see (and charge,
 // MAX_SQL_NODES). Computed once per node, over the shared structure, so it costs
 // what the source costs and not what its expansion does.
-func (s *SNode) Size() int64 {
+func (s *sNode) Size() int64 {
 	if s == nil {
 		return 0
 	}

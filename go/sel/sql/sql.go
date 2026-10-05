@@ -7,23 +7,22 @@ import (
 )
 
 // Translate translates a compiled program into a SQL expression or statement for the given dialect.
-func Translate(program *sel.Program, dialect string, bindings *Bindings, options Options) (frag *Fragment, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SqlError); ok {
-				err = se
-				frag = nil
-				return
-			}
-			panic(r)
+func Translate(program *sel.Program, dialect string, bindings *Bindings, options Options) (*Fragment, error) {
+	var frag *Fragment
+	refusal, selErr := catch(func() {
+		catalog := bindings
+		if catalog == nil {
+			catalog = NewBindings(nil)
 		}
-	}()
-	catalog := bindings
-	if catalog == nil {
-		catalog = NewBindings(nil)
+		frag = newTranslator(dialect, catalog, options).Translate(program.AST())
+	})
+	if selErr != nil {
+		panic(selErr) // as before: only a refusal is this call's error
 	}
-	t := NewTranslator(dialect, catalog, options)
-	return t.Translate(program.AST()), nil
+	if refusal != nil {
+		return nil, refusal
+	}
+	return frag, nil
 }
 
 // TryTranslate is Translate, returning nil if translation is refused.
@@ -36,23 +35,22 @@ func TryTranslate(program *sel.Program, dialect string, bindings *Bindings, opti
 }
 
 // TranslateStatement translates a compiled relational program into a SQL statement (SELECT ...).
-func TranslateStatement(program *sel.Program, dialect string, bindings *Bindings, options Options) (frag *Fragment, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SqlError); ok {
-				err = se
-				frag = nil
-				return
-			}
-			panic(r)
+func TranslateStatement(program *sel.Program, dialect string, bindings *Bindings, options Options) (*Fragment, error) {
+	var frag *Fragment
+	refusal, selErr := catch(func() {
+		catalog := bindings
+		if catalog == nil {
+			catalog = NewBindings(nil)
 		}
-	}()
-	catalog := bindings
-	if catalog == nil {
-		catalog = NewBindings(nil)
+		frag = newTranslator(dialect, catalog, options).TranslateStatement(program.AST())
+	})
+	if selErr != nil {
+		panic(selErr) // as before: only a refusal is this call's error
 	}
-	t := NewTranslator(dialect, catalog, options)
-	return t.TranslateStatement(program.AST()), nil
+	if refusal != nil {
+		return nil, refusal
+	}
+	return frag, nil
 }
 
 // TryTranslateStatement is TranslateStatement, returning nil if translation is refused.
@@ -80,9 +78,4 @@ func MustTranslateStatement(program *sel.Program, dialect string, bindings *Bind
 		panic(err)
 	}
 	return frag
-}
-
-// Dialects returns the sorted list of supported target SQL dialect names.
-func Dialects() []string {
-	return Targets()
 }

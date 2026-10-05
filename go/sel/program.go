@@ -10,8 +10,8 @@ import (
 )
 
 type Program struct {
-	source      string
-	ast         *Node
+	source string
+	ast    *Node
 	// The optimised tree, built on first use. An atomic pointer rather than a
 	// sync.Once: a panic inside the optimizer counts a Once as done and every
 	// later Run would evaluate a nil tree. Here a failed build leaves the
@@ -20,6 +20,8 @@ type Program struct {
 	physicalAst atomic.Pointer[Node]
 }
 
+// NewProgram wraps a syntax tree as a program.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func NewProgram(source string, ast *Node) *Program {
 	return &Program{
 		source: source,
@@ -27,17 +29,11 @@ func NewProgram(source string, ast *Node) *Program {
 	}
 }
 
-func Compile(source string) (prog *Program, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SelError); ok {
-				err = se
-				return
-			}
-			panic(r)
-		}
-	}()
-	ast := Parse(source)
+func Compile(source string) (*Program, error) {
+	var ast *Node
+	if se := catchSel(func() { ast = parse(source) }); se != nil {
+		return nil, se
+	}
 	return NewProgram(source, ast), nil
 }
 
@@ -53,15 +49,19 @@ func (p *Program) Source() string {
 	return p.source
 }
 
+// AST is the program's syntax tree as parsed.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func (p *Program) AST() *Node {
 	return p.ast
 }
 
+// PhysicalAST is the tree Run evaluates: the parsed tree after the in-memory optimizations.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func (p *Program) PhysicalAST() *Node {
 	if t := p.physicalAst.Load(); t != nil {
 		return t
 	}
-	t := OptimizeAST(p.ast)
+	t := OptimizeAstInMemory(p.ast)
 	p.physicalAst.CompareAndSwap(nil, t)
 	return p.physicalAst.Load()
 }
@@ -82,28 +82,27 @@ func (p *Program) RunAsWritten(ctx *Value) (result *Value, err error) {
 // runTree evaluates one tree of this program on a fresh context: the given one, or
 // the physical tree when target is nil (built inside the recovered region, as Run
 // always did, so a panic out of the optimizer is still reported as an error).
-func (p *Program) runTree(target *Node, ctx *Value) (result *Value, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SelError); ok {
-				err = se
-				return
-			}
-			panic(r)
+func (p *Program) runTree(target *Node, ctx *Value) (*Value, error) {
+	var result *Value
+	if se := catchSel(func() {
+		c := newContext(ctx)
+		if target == nil {
+			target = p.PhysicalAST()
 		}
-	}()
-	c := NewContext(ctx)
-	if target == nil {
-		target = p.PhysicalAST()
+		result = evalNode(target, c)
+	}); se != nil {
+		return nil, se
 	}
-	return EvalNode(target, c), nil
+	return result, nil
 }
 
 // Dependencies returns the variables the program reads before it has definitely
 // assigned them (SPEC 8). The walk follows evaluation order and carries the set of
 // names definitely assigned so far; an assignment counts as definite only if it runs
 // whatever the data: never inside the right side of AND/OR/??/??? or in an aggregate
-// body, and inside IF/COND only when every branch makes it.
+// body, and inside IF/COND only when every branch makes it. A program nested
+// deeper than MAX_DEPTH compiles but cannot be walked: Dependencies then panics
+// with a *SelError E_DEPTH, as the value accessors panic (package documentation).
 func (p *Program) Dependencies() []string {
 	reads := make(map[string]bool)
 	bound := make(map[string]bool)
@@ -153,7 +152,7 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 	if node == nil {
 		return def
 	}
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "expression nested too deeply", node.Pos)
 	}
 
@@ -296,7 +295,7 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 // Eval compiles and runs a program once. Planning (the logical rewrites, constant
 // folding and the math plan) costs about a quarter of a run-once total and only pays
 // off when the program runs again or walks a collection, so a one-shot program that
-// has neither an aggregate nor a pipeline stage is evaluated as written (GO-P24). The
+// has neither an aggregate nor a pipeline stage is evaluated as written. The
 // physical tree is a function of the AST alone and is held to the plain tree's answer
 // (SPEC 6.4), so this changes timing and nothing else.
 func Eval(source string, ctx *Value) (*Value, error) {
@@ -322,10 +321,10 @@ func plansPay(root *Node) bool {
 			continue
 		}
 		if n.T == NodeCall {
-			if IsPipelineOp(n.S) {
+			if isPipelineOp(n.S) {
 				return true
 			}
-			if spec := Lookup(n.S); spec != nil && spec.Binds {
+			if spec := lookup(n.S); spec != nil && spec.Binds {
 				return true
 			}
 		}
@@ -343,6 +342,8 @@ func MustEval(source string, ctx *Value) *Value {
 	return v
 }
 
+// FunctionNames lists every function a program can call, the builtins and
+// those registered with RegisterFunction, sorted.
 func FunctionNames() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()

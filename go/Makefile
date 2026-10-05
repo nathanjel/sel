@@ -2,13 +2,13 @@
 #
 #   make          build all binaries into build/, the worked examples included
 #   make examples build only the worked examples (build/example-<category>)
-#   make test     run unit tests and conformance suites
+#   make test     run the unit tests, the conformance and SQL suites, and the examples
 #   make clean    remove build/
 
 GO ?= go
 BUILD ?= build
 
-BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench hybridparity regexverdict
+BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench hybrid-driver regex-verdict
 
 TARGETS := $(addprefix $(BUILD)/,$(BINARIES))
 
@@ -25,7 +25,9 @@ EXAMPLE_DIRS := $(shell for d in ../examples/*/; do \
 EXAMPLES := $(addprefix $(BUILD)/example-,$(EXAMPLE_DIRS))
 EXAMPLE_SOURCES := $(shell find . ../examples -name '*.go' -not -path './build/*') ../examples/go.mod
 
-.PHONY: all examples test clean $(BINARIES)
+SOURCES := $(shell find . -name '*.go' -not -path './build/*')
+
+.PHONY: all examples test clean
 
 all: $(TARGETS) $(EXAMPLES)
 
@@ -35,66 +37,23 @@ $(BUILD)/example-%: $(EXAMPLE_SOURCES)
 	@mkdir -p $(BUILD)
 	cd ../examples && $(GO) build -o $(abspath $(BUILD))/example-$* ./$*/go.go
 
-$(BUILD)/conformance: $(shell find . -name '*.go' -not -path './build/*')
+# Every binary is built the same way from its directory under bin/.
+$(TARGETS): $(BUILD)/%: $(SOURCES)
 	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/conformance
+	$(GO) build -o $@ ./bin/$*
 
-$(BUILD)/batch: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/batch
-
-$(BUILD)/e2e: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/e2e
-
-$(BUILD)/sel: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/sel
-
-$(BUILD)/api: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/api
-
-$(BUILD)/check-decimal: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/check-decimal
-
-$(BUILD)/sqlapi: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/sqlapi
-
-$(BUILD)/sqlreplay: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/sqlreplay
-
-$(BUILD)/sqlt: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/sqlt
-
-$(BUILD)/sqlfuzz: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/sqlfuzz
-
-$(BUILD)/mandelbrot: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/mandelbrot
-
-$(BUILD)/scale-bench: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/scale-bench
-
-$(BUILD)/hybridparity: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/hybridparity
-
-$(BUILD)/regexverdict: $(shell find . -name '*.go' -not -path './build/*')
-	@mkdir -p $(BUILD)
-	$(GO) build -o $@ ./bin/regexverdict
-
+# The examples print exactly their output.txt (as tools/check-examples.sh holds
+# every host to), run from the repository root with its session.txt as stdin,
+# as that script runs them.
 test: all
 	$(GO) test -race ./...
 	./$(BUILD)/conformance ../conformance/*.selt
 	./$(BUILD)/sqlt
+	@for d in $(EXAMPLE_DIRS); do \
+	  in=/dev/null; [ -f ../examples/$$d/session.txt ] && in=examples/$$d/session.txt; \
+	  (cd .. && go/$(BUILD)/example-$$d < $$in | cmp -s - examples/$$d/output.txt) \
+	    || { echo "FAIL example $$d: output differs from examples/$$d/output.txt"; exit 1; }; \
+	done; echo "examples: $(words $(EXAMPLE_DIRS)) print their output.txt"
 
 clean:
 	rm -rf $(BUILD)

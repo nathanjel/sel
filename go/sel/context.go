@@ -2,50 +2,53 @@
 
 package sel
 
+// Context is the evaluation state a builtin defined with Define receives: the
+// variables, and the binder frames a lazy builtin opens with PushFrame and
+// closes with PopFrame. It is opaque otherwise.
 type Context struct {
-	Root                *Value
-	Frames              []map[string]*Value
-	Depth               int
-	JoinPrefilter       *JoinPrefilter
-	JoinPrefilterReport *JoinReport
-	// NoCopy names the one FILTER call whose kept rows may stay aliased to the
-	// source, because its parent is about to read or copy them itself (GO-REG-1). It
+	root                *Value
+	frames              []map[string]*Value
+	depth               int
+	joinPrefilter       *joinPrefilter
+	joinPrefilterReport *joinReport
+	// noCopy names the one FILTER call whose kept rows may stay aliased to the
+	// source, because its parent is about to read or copy them itself. It
 	// is set by the parent just before it evaluates that argument and consumed by the
 	// FILTER at once; like the join prefilter state it is cleared when evaluation
 	// unwinds, so nothing else can find it there.
-	NoCopy *Node
+	noCopy *Node
 	// regs holds the math plans' register files (plan_regs.go), made on first use.
 	regs *regPool
 }
 
-func NewContext(root *Value) *Context {
+func newContext(root *Value) *Context {
 	if root == nil {
 		root = NewNone()
 	}
 	return &Context{
-		Root: root,
+		root: root,
 	}
 }
 
-func (c *Context) Lookup(name string) *Value {
-	n := len(c.Frames)
+func (c *Context) lookup(name string) *Value {
+	n := len(c.frames)
 	if n == 1 {
-		if v, ok := c.Frames[0][name]; ok {
+		if v, ok := c.frames[0][name]; ok {
 			return v
 		}
 	} else if n > 1 {
 		for i := n - 1; i >= 0; i-- {
-			if v, ok := c.Frames[i][name]; ok {
+			if v, ok := c.frames[i][name]; ok {
 				return v
 			}
 		}
 	}
-	return c.Root.Get(name)
+	return c.root.Get(name)
 }
 
-func (c *Context) IsBound(name string) bool {
-	for i := len(c.Frames) - 1; i >= 0; i-- {
-		if _, ok := c.Frames[i][name]; ok {
+func (c *Context) isBound(name string) bool {
+	for i := len(c.frames) - 1; i >= 0; i-- {
+		if _, ok := c.frames[i][name]; ok {
 			return true
 		}
 	}
@@ -53,11 +56,11 @@ func (c *Context) IsBound(name string) bool {
 }
 
 func (c *Context) PushFrame(mapping map[string]*Value) {
-	c.Frames = append(c.Frames, mapping)
+	c.frames = append(c.frames, mapping)
 }
 
 func (c *Context) PopFrame() {
-	if len(c.Frames) > 0 {
-		c.Frames = c.Frames[:len(c.Frames)-1]
+	if len(c.frames) > 0 {
+		c.frames = c.frames[:len(c.frames)-1]
 	}
 }

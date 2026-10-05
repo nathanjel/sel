@@ -459,6 +459,42 @@ RMATCH('a{1,65536}', "a")
 error E_REGEX_SYNTAX
 ===
 
+### name: re.repeat.nested-counts.legal-past-an-engine-program
+--- note
+Counts nest freely within the language limits: every count is at most 65,535 and the pattern's minimum length (4,000,000 code points) is within MAX_TEXT_LEN, so the pattern is legal (SPEC 7.8), however large the program an engine would build for it. A subject too short to hold a match is a plain no-match on every host, not an engine-size refusal.
+--- source
+RMATCH('^(?:(?:(?:ab){1000}){1000}){2}$', "a")
+--- expect
+bool FALSE
+===
+
+### name: re.repeat.nested-counts.three-levels
+--- note
+Counts nest freely within the language limits: every count is at most 65,535 and the pattern's minimum length (4,000,000 code points) is within MAX_TEXT_LEN, so the pattern is legal (SPEC 7.8), however large the program an engine would build for it. A subject too short to hold a match is a plain no-match on every host, not an engine-size refusal.
+--- source
+RMATCH('^(?:(?:(?:ab){100}){100}){200}$', "a")
+--- expect
+bool FALSE
+===
+
+### name: re.repeat.nested-counts.find
+--- note
+The same pattern unanchored, through RFIND: no position can start a match.
+--- source
+RFIND('(?:(?:(?:ab){1000}){1000}){2}', "abab")
+--- expect
+num 0
+===
+
+### name: re.repeat.nested-counts.captures-kept
+--- note
+A capture inside the nested counts keeps its group number; with no match RGROUPS is NONE and RREPLACE leaves the subject alone.
+--- source
+COUNT(RGROUPS('^x((?:(?:ab){1000}){1000}){2}(y)$', "xaby")) & "|" & RREPLACE('((?:(?:ab){1000}){1000}){2}', "$1", "abab")
+--- expect
+text "0|abab"
+===
+
 ### name: re.literal.checked-at-compile-time.1
 --- note
 SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call.

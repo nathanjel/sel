@@ -26,14 +26,33 @@
 //
 // Everything else reports a failure by panicking with a *[SelError], the way an
 // index out of range does: the accessors of a value ([Value.AsText],
-// [Value.AsBool], [Value.AsDecimal], …) when it is not of that kind, and the
+// [Value.AsBool], [Value.Decimal], …) when it is not of that kind, the
 // constructors and [Value.Set] when given what SEL refuses (invalid UTF-8, keys
-// and values that do not pair up). Code that reads results it does not control —
+// and values that do not pair up), and [Program.Dependencies] for a program
+// nested too deeply to walk (E_DEPTH). Code that reads results it does not control —
 // a rule that might answer TRUE where text was expected — recovers that panic.
 // Inside a host function ([RegisterFunction]) panicking is the way to fail: call
 // [Fail], or let an [Args] reader do it, and Run returns the error.
 // RegisterFunction itself panics with a plain string for a name or an arity that
 // is not allowed, a programming error found at start-up.
+//
+// # Numbers
+//
+// A number is text: pass it with NewText("19.99") and read it with AsText. In the
+// decimal form other hosts take ({neg, digits, scale}) it is a [Decimal], built
+// with [NewDecimal] and read with [Value.Decimal]. NewNum and AsDecimal, which
+// took and returned the module's internal decimal type, are deprecated.
+//
+// # The syntax tree
+//
+// [Node], [NodeType] and its constants, [NewNode], [Node.Copy], [NewProgram], [Program.AST],
+// [Program.PhysicalAST], [UnwindPipeline], [BuildPipeline], [OptimizeAstLogical],
+// [OptimizeAstInMemory], [BindingForm], [HostArity], [ValidatePattern] and
+// [ValidatePatternFlags] are exported because the SQL layer
+// (github.com/nathanjel/sel/go/sel/sql) and the module's own tools read the
+// syntax tree, and Go has no narrower visibility between packages. They are not
+// part of the API this module keeps stable: an application compiles rules with
+// [Compile] and does not build or walk trees.
 //
 // # More
 //

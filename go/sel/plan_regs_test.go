@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Item 1 (2026-10-01): a math plan may keep its intermediates in registers it
+// A math plan may keep its intermediates in registers it
 // reuses. What must hold whatever it keeps: a plan's result is its own, a plan
 // can be re-entered (a leaf that runs another program), a failure caught inside
 // a plan leaves nothing behind, and a planned run equals the run as written --

@@ -23,7 +23,7 @@ func codeOf(err error) (string, Pos) {
 	return "", Pos{}
 }
 
-// GO-C7: TAKE and DROP returned a slice of the source list's backing array, so
+// TAKE and DROP returned a slice of the source list's backing array, so
 // replacing an element of the source afterwards changed the "new" list.
 func TestTakeAndDropDoNotShareTheSourceBackingArray(t *testing.T) {
 	src := NewList([]*Value{NewText("1"), NewText("2"), NewText("3")})
@@ -119,7 +119,7 @@ func TestConstructorDepthIsReportedAtTheConstructor(t *testing.T) {
 	}
 }
 
-// GO-C12 through the language: CEIL/FLOOR carry past the integer-digit cap.
+// Through the language: CEIL/FLOOR carry past the integer-digit cap.
 func TestCeilFloorCarryIsE_RANGEAtTheCall(t *testing.T) {
 	for _, src := range []string{
 		`CEIL(REPEAT("9", 1000000) & ".5")`,
