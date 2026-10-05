@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Every manifest must declare the same version.
 #
-# There are nine of them now — seven manifests (rust/Cargo.toml the latest),
-# python/sel/__init__.py's
-# __version__ (not a manifest, but published in the wheel metadata and just as
-# wrong if it drifted), and the top heading of CHANGELOG.md, so that a release
+# There are eleven of them now — seven manifests (rust/Cargo.toml the latest),
+# three version constants compiled into a host (python/sel/__init__.py's
+# __version__, published in the wheel metadata; php/src/Sel.php's Sel::VERSION
+# and go/internal/version's Version, which the `sel` commands print for
+# --version), and the top heading of CHANGELOG.md, so that a release
 # whose notes were never written fails here rather than at the tag. Nothing but
 # this script relates them. composer.json is deliberately absent: Packagist
 # infers the version from the git tag, and the check below fails if a version
@@ -29,7 +30,13 @@ extract() {
     cpp/conanfile.py)  sed -n 's/.*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' cpp/conanfile.py | head -1 ;;
     cpp/vcpkg.json)    sed -n 's/.*"version-semver"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' cpp/vcpkg.json | head -1 ;;
     cpp/CMakeLists.txt) sed -n 's/.*project(sel-lang VERSION \([0-9.]*\).*/\1/p' cpp/CMakeLists.txt | head -1 ;;
-    lisp/sel-lang.asd) sed -n 's/.*:version[[:space:]]*"\([^"]*\)".*/\1/p' lisp/sel-lang.asd | head -1 ;;
+    # Exactly one :version form, outside comments: a second system with a
+    # version of its own could disagree, and `head -1` would never notice.
+    lisp/sel-lang.asd)
+      v="$(sed -e 's/;.*//' lisp/sel-lang.asd | sed -n 's/^[[:space:]]*:version[[:space:]]*"\([^"]*\)".*/\1/p')"
+      if [ "$(printf '%s' "$v" | grep -c .)" -eq 1 ]; then echo "$v"; fi ;;
+    php/src/Sel.php)   sed -n "s/^[[:space:]]*public const VERSION[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" php/src/Sel.php | head -1 ;;
+    go/internal/version/version.go) sed -n 's/^const Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' go/internal/version/version.go | head -1 ;;
     rust/Cargo.toml)   sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust/Cargo.toml | head -1 ;;
     python/sel/__init__.py) sed -n "s/^__version__[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" python/sel/__init__.py | head -1 ;;
     CHANGELOG.md)      sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' CHANGELOG.md | head -1 ;;
@@ -38,7 +45,7 @@ extract() {
 
 FILES="package.json pyproject.toml cpp/conanfile.py cpp/vcpkg.json
        cpp/CMakeLists.txt lisp/sel-lang.asd rust/Cargo.toml python/sel/__init__.py
-       CHANGELOG.md"
+       php/src/Sel.php go/internal/version/version.go CHANGELOG.md"
 
 want="${1:-}"
 tags="${2:-}"
@@ -48,12 +55,12 @@ first=""
 for f in $FILES; do
   got="$(extract "$f")"
   if [ -z "$got" ]; then
-    echo "$f: no version found — the extractor needs updating" >&2
+    echo "$f: no single version found — the extractor needs updating, or the file declares two" >&2
     status=1
     continue
   fi
   [ -z "$first" ] && first="$got"
-  printf '  %-24s %s\n' "$f" "$got"
+  printf '  %-32s %s\n' "$f" "$got"
   if [ -n "$want" ] && [ "$got" != "$want" ]; then
     echo "    ^ expected $want" >&2
     status=1
@@ -80,11 +87,11 @@ if [ -n "$first" ]; then
     echo "composer.json: missing extra.branch-alias.dev-main" >&2
     status=1
   elif [ "$actual_alias" != "$expected_alias" ]; then
-    printf '  %-24s %s\n' "composer.json dev-main" "$actual_alias"
+    printf '  %-32s %s\n' "composer.json dev-main" "$actual_alias"
     echo "    ^ expected $expected_alias for release series $major_minor" >&2
     status=1
   else
-    printf '  %-24s %s\n' "composer.json dev-main" "$actual_alias"
+    printf '  %-32s %s\n' "composer.json dev-main" "$actual_alias"
   fi
 fi
 
@@ -97,21 +104,21 @@ if [ -n "$first" ]; then
   for f in README.md docs/usage/README.md docs/usage/repl.md rust/README.md go/README.md; do
     for pinned in $(grep -o 'sel-lang[@/][0-9][0-9.]*[0-9]' "$f" | sort -u); do
       if [ "${pinned#sel-lang?}" != "$first" ]; then
-        printf '  %-24s %s\n' "$f" "$pinned"
+        printf '  %-32s %s\n' "$f" "$pinned"
         echo "    ^ expected sel-lang${pinned:8:1}$first" >&2
         status=1
       fi
     done
     for pinned in $(grep -o 'nathanjel/sel/go[a-z/]*@v[0-9][0-9.]*[0-9]' "$f" | sort -u); do
       if [ "${pinned##*@v}" != "$first" ]; then
-        printf '  %-24s %s\n' "$f" "$pinned"
+        printf '  %-32s %s\n' "$f" "$pinned"
         echo "    ^ expected @v$first" >&2
         status=1
       fi
     done
     for pinned in $(grep -o 'sel-lang = { version = "[0-9][0-9.]*[0-9]"' "$f" | grep -o '[0-9][0-9.]*[0-9]' | sort -u); do
       if [ "$pinned" != "$first" ]; then
-        printf '  %-24s sel-lang = { version = "%s" }\n' "$f" "$pinned"
+        printf '  %-32s sel-lang = { version = "%s" }\n' "$f" "$pinned"
         echo "    ^ expected $first" >&2
         status=1
       fi
@@ -131,7 +138,7 @@ if [ "$tags" = "--tags" ] && [ -n "$want" ]; then
     echo "tags: v$want and go/v$want are on different commits" >&2
     status=1
   else
-    printf '  %-24s %s\n' "tags v$want, go/v$want" "${main_tag:0:12}"
+    printf '  %-32s %s\n' "tags v$want, go/v$want" "${main_tag:0:12}"
   fi
 fi
 
