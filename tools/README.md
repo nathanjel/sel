@@ -196,6 +196,17 @@ contain any of them — and the suite contains such characters deliberately.
 `str.rstrip('\n')` strips *every* trailing newline rather than exactly one.
 `python/bin/batch.py` uses `.split('\n')` and removes one, and says so.
 
+**The file is bytes, decoded as UTF-8 with no newline translation.** A CR is
+program text wherever it appears, including immediately before the LF that ends
+a line: the newline removed is one `\n`, never a `\r` and never a second `\n`.
+That rules out every line-reading convenience that normalises line ends —
+Python's universal newlines (`open(path)` without `newline=''`), Go's
+`bufio.ScanLines`, Rust's `BufRead::lines()` — all of which strip the CR before
+an LF. `tools/check-corpus-bytes.sh` holds every host's `batch` runner to this
+with the byte fixtures in `tools/fixtures/corpus/`: CR and CRLF inside a literal
+and at a line end, a record with leading and inner blank lines, and a final
+record that ends in a blank line, at its newline, and at end of file.
+
 A program containing a line that itself begins with `### ` splits into two
 records. Every reader does this identically, so it over-counts rather than
 desynchronising, but do not write one.

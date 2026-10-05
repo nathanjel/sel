@@ -60,6 +60,8 @@ vcpkg_installed/
 *.selc
 # ...except the cross-host SQL oracle's corpus, which tools/check-sql-oracle.sh reads.
 !sql/oracle/cross.selc
+# ...and the byte fixtures tools/check-corpus-bytes.sh feeds every batch runner.
+!tools/fixtures/corpus/*.selc
 oracle.txt
 programs.json
 /tmp-*

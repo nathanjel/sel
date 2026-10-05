@@ -222,6 +222,9 @@ case " $IMPLS " in *" rust "*) step "Rust package, as published" sel_slot ./tool
 case " $IMPLS " in *" go "*) step "Go module, as published" sel_slot ./tools/check-go-module.sh ;; esac
 step "host API parity" ./tools/check-api.sh
 step "CLI source bytes" ./tools/check-cli-source.sh
+# Every batch runner reads a corpus as bytes and removes exactly one newline per
+# record: CR and CRLF fixtures, and final records with and without a blank line.
+step "corpus bytes, every batch runner" ./tools/check-corpus-bytes.sh
 step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py --self-check >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28-regex-portability.selt >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28b-regex-ambiguity.selt >/dev/null && python3 tools/gen-regex-ambiguity-cases.py --check"
 step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh

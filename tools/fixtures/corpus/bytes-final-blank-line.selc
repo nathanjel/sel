@@ -1,0 +1,23 @@
+### crlf-inside-a-text-literal
+LEN("a
+b")
+### lone-cr-inside-a-text-literal
+"ab" $== "a
+b"
+### crlf-between-tokens
+1 +
+2
+### cr-before-the-record-newline-is-source
+(1 +
+### blank-line-inside-a-record
+(1
+
+### leading-blank-line
+
+(2
+### crlf-line-ends-then-error
+A = 1;
+(A
+### final-record-ends-in-a-blank-line
+(1
+

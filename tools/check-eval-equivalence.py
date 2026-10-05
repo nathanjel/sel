@@ -26,7 +26,7 @@ TRIM = ' \t\r\n'
 
 def cases(path):
     out, cur, sec = [], None, None
-    for line in open(path, encoding='utf-8').read().split('\n'):
+    for line in open(path, encoding='utf-8', newline='').read().split('\n'):
         if line.startswith('### '):
             cur = {'name': re.search(r'name:\s*(\S+)', line).group(1), 'setup': None, 'source': []}
             out.append(cur)
