@@ -1377,9 +1377,9 @@ impl Translator {
                         ));
                     }
                     if name == "SUM" && n.kids.len() >= 2 {
-                        let has_custom = n.kids.len() == 3 && is_binder_name(n.kids.get(1));
-                        let body_node = if has_custom { &n.kids[2] } else { &n.kids[1] };
-                        let binder_name = if has_custom { &n.kids[1].str } else { "_" };
+                        // A binder slot that is not a bare name is refused, as
+                        // everywhere: SEL raises E_EXPECT_SYMBOL for it.
+                        let (binder_name, body_node) = agg_shape(n)?;
                         let src = Source {
                             shape: SourceShape::Relation,
                             elements: Vec::new(),

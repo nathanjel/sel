@@ -392,47 +392,53 @@ fn get_opt_filter_info(step: &Node) -> OptFilterInfo<'_> {
 struct OptSortInfo<'a> {
     binder: String,
     key: Option<&'a Node>,
+    /// The form is one a rewrite may reason about: its binder slot (if any) is
+    /// a bare name and its direction (if any) a text literal. A computed
+    /// direction runs per call and a non-name binder raises E_EXPECT_SYMBOL,
+    /// so a step with either is never moved.
+    valid: bool,
 }
 
 fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
     let count = args.len();
-    let mut info = OptSortInfo {
-        binder: "_".to_string(),
-        key: None,
-    };
+    let is_name = |i: usize| args.get(i).map_or(false, |a| a.t == NodeType::Var && !a.grouped);
+    let is_text = |i: usize| args.get(i).map_or(false, |a| a.t == NodeType::Text);
+    let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
     let s = step.s.as_str();
-    if s == "SORT" || s == "SORT_DESC" {
-        if count == 1 {
-            return info;
-        }
-        if count == 3 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
-        } else {
-            info.key = args.get(1);
-        }
-    } else if s == "TOP" || s == "TOP_DESC" {
-        if count == 2 {
-            return info;
-        }
-        let sort_count = count - 1;
-        if sort_count == 3 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
-        } else {
-            info.key = args.get(1);
+    // TOP* carry the limit last; what precedes it is the sort's own form.
+    let sort_count = if s.starts_with("TOP") { count.saturating_sub(1) } else { count };
+    if s == "SORT" || s == "SORT_DESC" || s == "TOP" || s == "TOP_DESC" {
+        match sort_count {
+            2 => info.key = args.get(1),
+            3 => {
+                info.valid = is_name(1);
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            _ => {}
         }
     } else if s == "SORT_BY" || s == "TOP_BY" {
-        let mut sort_count = count;
-        if s == "TOP_BY" {
-            sort_count = count.saturating_sub(1);
-        }
-        if sort_count == 2 || (sort_count == 3 && args.get(2).map_or(false, |a| a.t == NodeType::Text)) {
-            info.key = args.get(1);
-        } else if count > 2 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
+        match sort_count {
+            2 => info.key = args.get(1),
+            // A text literal in the third place is a direction and wins over a
+            // bare name in the second; otherwise a bare name is the binder, and
+            // anything else leaves a computed direction.
+            3 if is_text(2) => info.key = args.get(1),
+            3 if is_name(1) => {
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            3 => {
+                info.key = args.get(1);
+                info.valid = false;
+            }
+            4 => {
+                info.valid = is_name(1) && is_text(3);
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            _ => {}
         }
     }
     info
@@ -711,7 +717,8 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                 {
                     let sort_info = get_opt_sort_info(first);
                     let filter_info = get_opt_filter_info(s2);
-                    let sort_safe = sort_info.key.map_or(true, |k| opt_cannot_raise(k, &sort_info.binder, logical));
+                    let sort_safe = sort_info.valid
+                        && sort_info.key.map_or(true, |k| opt_cannot_raise(k, &sort_info.binder, logical));
                     let filter_safe = logical || filter_info.predicate.map_or(true, |p| opt_cannot_raise(p, &filter_info.binder, false));
                     if sort_safe && filter_safe {
                         next.push(s2.clone());
@@ -753,7 +760,7 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                     && opt_map_has_computed(first)
                 {
                     let sort = get_opt_sort_info(s2);
-                    if let Some(key) = sort.key {
+                    if let Some(key) = sort.key.filter(|_| sort.valid) {
                         let refs = opt_field_refs(key, &sort.binder);
                         let passes = opt_map_passthroughs(first);
                         let pass_set: HashSet<String> = passes.into_iter().collect();
