@@ -510,7 +510,22 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
               always (and (eq (node-kind k-node) :text) (cannot-raise-p v-node binder logical)))
         (cannot-raise-p body binder logical))))
 
-(defun logical-step-pair (source i s1 s2 s3 &optional logical)
+(defun bounded-depth (root cap)
+  "The depth of the tree at ROOT (ROOT itself is 1), counted level by level and
+no further than one past CAP."
+  (let ((deepest 0) (level (list root)))
+    (loop while (and level (<= deepest cap))
+          do (incf deepest)
+             (let ((next '()))
+               (dolist (n level)
+                 (when (node-p n)
+                   (dolist (it (node-items n)) (push it next))
+                   (when (node-l n) (push (node-l n) next))
+                   (when (node-r n) (push (node-r n) next))))
+               (setf level next)))
+    deepest))
+
+(defun logical-step-pair (source i s1 s2 s3 &optional logical step-depth)
   "The rewrite for the pair (S1 S2) at position I, as two values: the steps
 that replace the pair and how many of the two were consumed -- or NIL when no
 rule fires. S3 is the step after the pair (NIL at the end of the pipeline),
@@ -606,9 +621,17 @@ everywhere else)."
       ;; FILTER + FILTER -> FILTER(p1 AND p2) -- only when the second predicate
       ;; cannot raise: fused, it runs on a row before the first has seen the rows
       ;; after it.
+      ;; Fused, the second predicate also sits one level deeper than it did --
+      ;; under the AND -- and a fused pair must spend what the two stages spent
+      ;; (SPEC 6.4): a predicate that would reach the cap that way stays a second
+      ;; FILTER. STEP-DEPTH knows the depth of each step as written.
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
             (valid-filter-p s1) (valid-filter-p s2)
-            (multiple-value-bind (binder pred) (filter-body s2) (predicate-cannot-raise-p pred binder logical)))
+            (multiple-value-bind (binder pred) (filter-body s2) (predicate-cannot-raise-p pred binder logical))
+            (let ((d (and step-depth (funcall step-depth s2))))
+              (or (null d)
+                  (<= (+ d (bounded-depth (nth-value 1 (filter-body s2)) +max-depth+) 1)
+                      +max-depth+))))
        (let* ((args1 (node-items s1))
               (args2 (node-items s2))
               (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
@@ -668,7 +691,7 @@ with literal keys, else :UNKNOWN."
                           "TAKE" "DROP" "DISTINCT" "DEDUPE")
           :test #'string=))
 
-(defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t))
+(defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t) step-depth)
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
 as one left-to-right sweep over the pairs of adjacent steps, repeated to a
 fixed point -- the same sweep, in the same rule order, as the other four
@@ -693,7 +716,8 @@ needs."
                 (let* ((shape (rows-shape new-steps))
                        (*shape-fields* shape))
                   (logical-step-pair source i s1 s2 s3
-                                     (and logical (not (eq shape :unknown)))))
+                                     (and logical (not (eq shape :unknown)))
+                                     step-depth))
               (if consumed
                   (progn
                     (dolist (r replacement) (push r new-steps))
@@ -707,9 +731,9 @@ needs."
     ;; and the last of them stays.
     (or curr-steps (and original-last (list original-last)))))
 
-(defun optimize-inmemory-pipeline-steps (source curr-steps)
+(defun optimize-inmemory-pipeline-steps (source curr-steps &optional step-depth)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
-  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps nil))
+  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps nil step-depth))
   ;; A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   ;; anything can see the keys a FILTER's result carries. A following step
   ;; that renumbers without reading `_K` hides them (KEYS-RENUMBERED-BY-P, the
@@ -782,12 +806,18 @@ copy would only be a second object the translator has to recognise."
                                                          (and *fold-constants* (step-arg-folds-p s index))))
                                                    (optimize-tree item physical (1+ depth) nil)))))
                        copy))))
-         (build-pipeline-ast opt-source
-                             (keep-last-step-pos
-                              (if physical
-                                  (optimize-inmemory-pipeline-steps opt-source opt-steps)
-                                  (optimize-logical-pipeline-steps opt-source opt-steps))
-                              (node-pos node))))))
+         ;; Each step's depth as written: the last step is NODE itself, and
+         ;; every earlier one is one level further down (its source argument).
+         (let* ((n (length opt-steps))
+                (depths (loop for st in opt-steps for i from 0
+                              collect (cons st (+ depth (- n 1 i)))))
+                (step-depth (lambda (st) (cdr (assoc st depths :test #'eq)))))
+           (build-pipeline-ast opt-source
+                               (keep-last-step-pos
+                                (if physical
+                                    (optimize-inmemory-pipeline-steps opt-source opt-steps step-depth)
+                                    (optimize-logical-pipeline-steps opt-source opt-steps t step-depth))
+                                (node-pos node)))))))
     (t (let* ((copy (optimize-children node physical depth))
               (folded (if *fold-constants* (fold-node copy) copy)))
          (when (and physical (not in-math) (is-math-op-p folded))
