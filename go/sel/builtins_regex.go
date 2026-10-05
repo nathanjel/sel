@@ -29,9 +29,27 @@ func ValidatePatternFlags(pattern string, ignoreCase bool, pos Pos) string {
 const regexCacheSize = 256
 
 type compiledRegex struct {
-	re         *regexp.Regexp
-	tail       *regexp.Regexp // the same pattern with ^ never matching, for a search resumed past offset 0
-	ignoreCase bool
+	re   *regexp.Regexp
+	tail *regexp.Regexp // the same pattern with ^ never matching, for a search resumed past offset 0
+	// ctr is set, and re and tail are nil, for a legal pattern RE2 cannot hold
+	// (nested counts past its program size): it runs on the counter matcher.
+	ctr *counterRegex
+}
+
+// numGroups is the number of capture groups plus one, for the whole match.
+func (cr *compiledRegex) numGroups() int {
+	if cr.ctr != nil {
+		return cr.ctr.groups + 1
+	}
+	return cr.re.NumSubexp() + 1
+}
+
+// find is FindStringSubmatchIndex over the whole subject.
+func (cr *compiledRegex) find(subj string) []int {
+	if cr.ctr != nil {
+		return cr.ctr.find(subj, 0)
+	}
+	return cr.re.FindStringSubmatchIndex(subj)
 }
 
 // regexKey is the cache key: a struct of a flag and the pattern, so a lookup hashes
@@ -84,18 +102,30 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 	if ignoreCase {
 		prefix += "(?i)"
 	}
+	// compile is nil when RE2 cannot hold the pattern. The tree has passed every
+	// rule of §7.8, and the emitted source is portable syntax RE2 reads, so the
+	// only way regexp.Compile fails is the size of the program.
 	compile := func(startDead bool) (*regexp.Regexp, bool) {
-		src, hasStart := emitRE2(tree, startDead, pattern, patPos)
+		src, hasStart, ok := emitRE2(tree, startDead)
+		if !ok {
+			return nil, false
+		}
 		rx, err := regexp.Compile(prefix + src)
 		if err != nil {
-			fail("E_REGEX_SYNTAX", fmt.Sprintf("this engine cannot compile the pattern (%v) in /%s/", err, clipPattern(pattern)), patPos)
+			return nil, false
 		}
 		return rx, hasStart
 	}
-	rx, hasStart := compile(false)
-	cr := &compiledRegex{re: rx, tail: rx, ignoreCase: ignoreCase}
-	if hasStart {
-		cr.tail, _ = compile(true)
+	var cr *compiledRegex
+	if rx, hasStart := compile(false); rx == nil {
+		cr = &compiledRegex{ctr: newCounterRegex(tree, ignoreCase)}
+	} else {
+		cr = &compiledRegex{re: rx, tail: rx}
+		if hasStart {
+			if cr.tail, _ = compile(true); cr.tail == nil {
+				cr = &compiledRegex{ctr: newCounterRegex(tree, ignoreCase)}
+			}
+		}
 	}
 
 	regexMu.Lock()
@@ -125,15 +155,19 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 func matchSpans(cr *compiledRegex, subj string, visit func(m []int) bool) {
 	pos := 0
 	for pos <= len(subj) {
-		re := cr.re
-		if pos > 0 {
-			re = cr.tail
+		var m []int
+		switch {
+		case cr.ctr != nil:
+			m = cr.ctr.find(subj, pos) // offsets into the whole subject already
+		case pos > 0:
+			m = cr.tail.FindStringSubmatchIndex(subj[pos:])
+		default:
+			m = cr.re.FindStringSubmatchIndex(subj)
 		}
-		m := re.FindStringSubmatchIndex(subj[pos:])
 		if m == nil {
 			return
 		}
-		if pos > 0 {
+		if pos > 0 && cr.ctr == nil {
 			for i := range m {
 				if m[i] >= 0 {
 					m[i] += pos
@@ -215,6 +249,9 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, subj := regexArgs(args, 0, 1, 2)
+			if cr.ctr != nil {
+				return NewBool(cr.ctr.find(subj, 0) != nil)
+			}
 			return NewBool(cr.re.MatchString(subj))
 		},
 	})
@@ -225,7 +262,12 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, subj := regexArgs(args, 0, 1, 2)
-			loc := cr.re.FindStringIndex(subj)
+			var loc []int
+			if cr.ctr != nil {
+				loc = cr.ctr.find(subj, 0)
+			} else {
+				loc = cr.re.FindStringIndex(subj)
+			}
 			if loc == nil {
 				return NewInt(0)
 			}
@@ -240,7 +282,7 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, subj := regexArgs(args, 0, 1, 2)
-			m := cr.re.FindStringSubmatchIndex(subj)
+			m := cr.find(subj)
 			if m == nil {
 				return NewNone()
 			}
@@ -272,10 +314,7 @@ func init() {
 			}
 			cr, _ := compileRegex(pat, flags, flagPos, args.PosOf(0))
 
-			numGroups := 1
-			if cr.re != nil {
-				numGroups = cr.re.NumSubexp() + 1
-			}
+			numGroups := cr.numGroups()
 
 			var out strings.Builder
 			last := 0         // byte offset of the end of the copied prefix

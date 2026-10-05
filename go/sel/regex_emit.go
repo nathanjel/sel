@@ -55,8 +55,8 @@ func writePortable(b *strings.Builder, n *reNode) {
 
 const (
 	re2MaxCount = 1000
-	// A pattern whose emitted source would pass this many bytes is refused: the
-	// program RE2 would build for it is past what it can compile anyway.
+	// A pattern whose emitted source would pass this many bytes is not handed to
+	// RE2: the program it would build is past what it can compile anyway.
 	re2MaxSource = 16 << 20
 	// Matches nothing: the class of no code point.
 	re2Dead = `[^\x00-\x{10FFFF}]`
@@ -65,22 +65,34 @@ const (
 type re2Emitter struct {
 	startDead bool // emit ^ as never matching (a search resumed past the start)
 	size      int
-	pattern   string
-	pos       Pos
 	hasStart  bool
 }
 
+// re2TooLarge is what grow panics with when the source passes re2MaxSource;
+// emitRE2 turns it into ok == false.
+type re2TooLarge struct{}
+
 // emitRE2 returns the RE2 source of the tree, with ^ and $ lowered to \A and \z.
-func emitRE2(n *reNode, startDead bool, pattern string, pos Pos) (src string, hasStart bool) {
-	e := &re2Emitter{startDead: startDead, pattern: pattern, pos: pos}
+// ok is false when the source would pass re2MaxSource: the pattern is legal, but
+// RE2 cannot hold it, and it runs on the counter matcher (regex_counter.go).
+func emitRE2(n *reNode, startDead bool) (src string, hasStart, ok bool) {
+	e := &re2Emitter{startDead: startDead}
+	defer func() {
+		if r := recover(); r != nil {
+			if _, big := r.(re2TooLarge); !big {
+				panic(r)
+			}
+			src, hasStart, ok = "", false, false
+		}
+	}()
 	out, _ := e.node(n, false)
-	return out, e.hasStart
+	return out, e.hasStart, true
 }
 
 func (e *re2Emitter) grow(k int) {
 	e.size += k
 	if e.size > re2MaxSource {
-		fail("E_REGEX_SYNTAX", fmt.Sprintf("the pattern expands to more than this engine can compile (/%s/)", clipPattern(e.pattern)), e.pos)
+		panic(re2TooLarge{})
 	}
 }
 
