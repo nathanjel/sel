@@ -26,15 +26,15 @@ var Prefix = map[string]string{
 }
 
 var Builtins = map[string]BuiltinSpec{
-	"ABS": {Op: "ABS", Arity: "1", Aux: -1},
-	"SIGN": {Op: "SIGN", Arity: "1", Aux: -1},
-	"CEIL": {Op: "CEIL", Arity: "1", Aux: -1},
+	"ABS":   {Op: "ABS", Arity: "1", Aux: -1},
+	"SIGN":  {Op: "SIGN", Arity: "1", Aux: -1},
+	"CEIL":  {Op: "CEIL", Arity: "1", Aux: -1},
 	"FLOOR": {Op: "FLOOR", Arity: "1", Aux: -1},
 	"TRUNC": {Op: "TRUNC", Arity: "1", Aux: -1},
 	"ROUND": {Op: "ROUND", Arity: "2", Aux: 1},
 	"POWER": {Op: "POWER", Arity: "2", Aux: 1},
-	"MIN": {Op: "MIN", Arity: "fold", Aux: -1},
-	"MAX": {Op: "MAX", Arity: "fold", Aux: -1},
+	"MIN":   {Op: "MIN", Arity: "fold", Aux: -1},
+	"MAX":   {Op: "MAX", Arity: "fold", Aux: -1},
 }
 
 var Ops = []string{

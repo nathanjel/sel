@@ -905,6 +905,18 @@ function emitCpp(cases) {
 
 const GO_ENTRY_FIELDS = ['args', 'tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'];
 
+// The Go rendering is written in gofmt's layout, so the bytes do not depend on
+// whether gofmt is on PATH: a multi-line composite literal of key: value lines
+// has its values aligned one space past the longest key (every key here is
+// short and every value fits on its line, so gofmt never breaks the column),
+// an empty one is `{}`, and an empty comment line is a bare `//`.
+function goKeyed(pairs, indent) {
+  if (pairs.length === 0) return '{}';
+  const w = Math.max(...pairs.map(([k]) => [...k].length)) + 1;
+  const pad = (k) => k + ':' + ' '.repeat(w - [...k].length);
+  return '{\n' + pairs.map(([k, v]) => `${indent}\t${pad(k)}${v},`).join('\n') + `\n${indent}}`;
+}
+
 
 function goOptStr(v) {
   if (v === null || v === undefined) return 'nil';
@@ -1008,9 +1020,9 @@ function goEntrySpec(entry, section) {
       if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
       return `${goStr(k)}: ${goStr(t)}`;
     }).join(', ');
-    parts.push(`"variants": map[string]interface{}{${arms}}`);
+    parts.push(['"variants"', `map[string]interface{}{${arms}}`]);
   } else if (typeof entry.tpl === 'string') {
-    parts.push(`"tpl": ${goStr(entry.tpl)}`);
+    parts.push(['"tpl"', goStr(entry.tpl)]);
   } else if (entry.tpl !== null && typeof entry.tpl === 'object' && !Array.isArray(entry.tpl)) {
     if (!hasRet) throw new Unrepresentable('an arity-keyed template with no ret');
     const arms = Object.entries(entry.tpl).map(([k, t]) => {
@@ -1018,37 +1030,37 @@ function goEntrySpec(entry, section) {
       if (typeof t !== 'string') throw new Unrepresentable(`a template arm that is ${shapeOf(t)}`);
       return `${goStr(k)}: ${goStr(t)}`;
     }).join(', ');
-    parts.push(`"tpl": map[string]interface{}{${arms}}`);
+    parts.push(['"tpl"', `map[string]interface{}{${arms}}`]);
   } else {
     throw new Unrepresentable(`a tpl that is ${shapeOf(entry.tpl)}`);
   }
   if (hasRet) {
-    parts.push(`"ret": ${goStr(entry.ret)}`);
+    parts.push(['"ret"', goStr(entry.ret)]);
   }
   if (entry.caveat !== undefined && entry.caveat !== null) {
-    parts.push(`"caveat": ${goName(entry.caveat, 'a caveat')}`);
+    parts.push(['"caveat"', goName(entry.caveat, 'a caveat')]);
   }
   if (entry.since !== undefined && entry.since !== null) {
-    parts.push(`"since": ${goName(entry.since, 'a since')}`);
+    parts.push(['"since"', goName(entry.since, 'a since')]);
   }
   if (entry.arity !== undefined && entry.arity !== null) {
     const a = entry.arity;
     if (!Array.isArray(a) || a.length !== 2 || !a.every((x) => Number.isInteger(x))) {
       throw new Unrepresentable(`an arity that is ${shapeOf(a)} of non-integers`);
     }
-    parts.push(`"arity": [2]int{${a[0]}, ${a[1]}}`);
+    parts.push(['"arity"', `[2]int{${a[0]}, ${a[1]}}`]);
   }
   if (entry.args !== undefined && entry.args !== null) {
     const a = entry.args;
     if (!Array.isArray(a) || !a.every((x) => typeof x === 'string')) {
       throw new Unrepresentable(`args that are ${shapeOf(a)}`);
     }
-    parts.push(`"args": []string{${a.map(goStr).join(', ')}}`);
+    parts.push(['"args"', `[]string{${a.map(goStr).join(', ')}}`]);
   }
   for (const k of Object.keys(entry)) {
     if (!GO_ENTRY_FIELDS.includes(k)) throw new Unrepresentable(`the entry field ${JSON.stringify(k)}`);
   }
-  return `map[string]interface{}{\n` + parts.map(p => `\t\t\t${p},`).join('\n') + `\n\t\t}`;
+  return `map[string]interface{}${goKeyed(parts, '\t')}`;
 }
 
 function goDialectSpec(doc, allow = []) {
@@ -1063,16 +1075,16 @@ function goDialectSpec(doc, allow = []) {
     if (typeof doc.version !== 'string') {
       throw new Unrepresentable('a root dialect with no version');
     }
-    parts.push(`"extends": nil`);
+    parts.push(['"extends"', 'nil']);
   } else {
-    parts.push(`"extends": ${goName(doc.extends, 'an extends')}`);
+    parts.push(['"extends"', goName(doc.extends, 'an extends')]);
   }
   if (doc.version !== undefined && doc.version !== null) {
-    parts.push(`"version": ${goName(doc.version, 'a version')}`);
+    parts.push(['"version"', goName(doc.version, 'a version')]);
   }
   if (doc.target !== undefined && doc.target !== null) {
     if (typeof doc.target !== 'boolean') throw new Unrepresentable(`a target that is ${shapeOf(doc.target)}`);
-    parts.push(`"target": ${doc.target ? 'true' : 'false'}`);
+    parts.push(['"target"', doc.target ? 'true' : 'false']);
   }
   if (doc.lexical !== undefined && doc.lexical !== null) {
     const lex = [];
@@ -1092,9 +1104,9 @@ function goDialectSpec(doc, allow = []) {
         throw new Unrepresentable(`a lexical value that is ${shapeOf(v)}`);
       }
     }
-    parts.push(`"lexical": map[string]interface{}{${lex.join(', ')}}`);
+    parts.push(['"lexical"', `map[string]interface{}{${lex.join(', ')}}`]);
   }
-  return `map[string]interface{}{\n` + parts.map(p => `\t\t\t${p},`).join('\n') + `\n\t\t}`;
+  return `map[string]interface{}${goKeyed(parts, '\t')}`;
 }
 
 function goRegister(ops) {
@@ -1140,8 +1152,7 @@ function emitGo(cases) {
     let binds = '';
     let reg = '';
     try {
-      binds = Object.entries(c.bindingCalls)
-        .map(([n, x]) => `\t\t${goStr(n)}: ${goBinding(x)},`).join('\n');
+      binds = goKeyed(Object.entries(c.bindingCalls).map(([n, x]) => [goStr(n), goBinding(x)]), '\t');
     } catch (e) {
       if (!(e instanceof Unrepresentable)) throw e;
       unrep = e.why;
@@ -1165,35 +1176,35 @@ function emitGo(cases) {
     const fn = `c${i}`;
     if (unrep === null) {
       bodies.push(`func ${fn}Bind() map[string]*sql.Binding {\n`
-                + `\treturn map[string]*sql.Binding{\n${binds}\n\t}\n}`);
+                + `\treturn map[string]*sql.Binding${binds}\n}`);
       if (reg) bodies.push(`func ${fn}Reg() {\n${reg}\n}`);
     }
 
     const tablesStr = c.tableList === null ? 'nil' : `[]string{${(c.tableList ?? []).map(goStr).join(', ')}}`;
 
     const f = [
-      `Name: ${goStr(c.name)}`,
-      `At: ${goStr(c.at)}`,
-      `Dialect: ${goStr(c.dialect ?? '')}`,
-      `Source: ${goStr(c.source ?? '')}`,
-      `Expect: ${goOptStr(c.expect)}`,
-      `Error: ${goOptStr(c.error)}`,
-      `Throws: ${goOptStr(c.throws)}`,
-      `Params: ${goOptStr(c.params)}`,
-      `As: ${goOptStr(c.as)}`,
-      `Mode: ${goOptStr(c.mode)}`,
-      `Strict: ${c.optionsData && c.optionsData.strict ? 'true' : 'false'}`,
-      `Plan: ${goOptStr(c.plan)}`,
-      `HasTables: ${c.tableList !== null ? 'true' : 'false'}`,
-      `Tables: ${tablesStr}`,
-      `Unrepresentable: ${unrep === null ? 'nil' : `strPtr(${goStr(unrep)})`}`,
-      `RegisterFn: ${unrep === null && reg ? `${fn}Reg` : 'nil'}`,
-      `BindingsFn: ${unrep === null ? `${fn}Bind` : 'nil'}`,
+      ['Name', goStr(c.name)],
+      ['At', goStr(c.at)],
+      ['Dialect', goStr(c.dialect ?? '')],
+      ['Source', goStr(c.source ?? '')],
+      ['Expect', goOptStr(c.expect)],
+      ['Error', goOptStr(c.error)],
+      ['Throws', goOptStr(c.throws)],
+      ['Params', goOptStr(c.params)],
+      ['As', goOptStr(c.as)],
+      ['Mode', goOptStr(c.mode)],
+      ['Strict', c.optionsData && c.optionsData.strict ? 'true' : 'false'],
+      ['Plan', goOptStr(c.plan)],
+      ['HasTables', c.tableList !== null ? 'true' : 'false'],
+      ['Tables', tablesStr],
+      ['Unrepresentable', unrep === null ? 'nil' : `strPtr(${goStr(unrep)})`],
+      ['RegisterFn', unrep === null && reg ? `${fn}Reg` : 'nil'],
+      ['BindingsFn', unrep === null ? `${fn}Bind` : 'nil'],
     ];
-    rows.push(`\t{${f.join(',\n\t ')}},`);
+    rows.push(`\t${goKeyed(f, '\t')},`);
   });
 
-  return `package main\n\n// ${BANNER.join('\n// ')}\n\n`
+  return `package main\n\n${BANNER.map((l) => (l ? `// ${l}` : '//')).join('\n')}\n\n`
     + `import (\n`
     + `\t"encoding/hex"\n`
     + `\t"strconv"\n\n`
@@ -1201,7 +1212,7 @@ function emitGo(cases) {
     + `\t"github.com/nathanjel/sel/go/sel/sql"\n`
     + `)\n\n`
     + `type treeItem struct {\n\tkey *string\n\tval *sel.Value\n}\n\n`
-    + `func strPtr(s string) *string { return &s }\n`
+    + `func strPtr(s string) *string { return &s }\n\n`
     + `func sqlKindPtr(k sql.SqlKind) *sql.SqlKind { return &k }\n\n`
     + `func binFromHex(hexStr string) *sel.Value {\n`
     + `\tb, err := hex.DecodeString(hexStr)\n`

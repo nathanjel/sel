@@ -1279,10 +1279,15 @@ ${body.join('\n')}
 `;
 }
 
+// Go comment lines as gofmt leaves them: an empty line is a bare `//`.
+function goComment(lines) {
+  return lines.map((l) => (l ? `// ${l}` : '//')).join('\n');
+}
+
 function emitGo(dialects, rules, raw) {
   const dJson = JSON.stringify(dialects, null, 2);
   const rJson = JSON.stringify(rules, null, 2);
-  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+  return `${goComment(BANNER('gen-sql-map.mjs'))}
 //
 // Every dialect, with its chain already flattened, so a lookup is a map
 // access and nothing else. Runtime registration is what re-introduces the
@@ -1290,21 +1295,21 @@ function emitGo(dialects, rules, raw) {
 
 package sql
 
-const ShippedDialectsJSON = ${JSON.stringify(dJson)};
+const ShippedDialectsJSON = ${JSON.stringify(dJson)}
 
-const ShippedRulesJSON = ${JSON.stringify(rJson)};
+const ShippedRulesJSON = ${JSON.stringify(rJson)}
 `;
 }
 
 function emitReplayGo(dialects, rules, raw) {
   const rawJson = JSON.stringify(raw, null, 2);
-  return `// ${BANNER('gen-sql-map.mjs').join('\n// ')}
+  return `${goComment(BANNER('gen-sql-map.mjs'))}
 //
-// ${REPLAY_NOTE.join('\n// ')}
+${goComment(REPLAY_NOTE)}
 
 package main
 
-const RawDialectsJSON = ${JSON.stringify(rawJson)};
+const RawDialectsJSON = ${JSON.stringify(rawJson)}
 `;
 }
 

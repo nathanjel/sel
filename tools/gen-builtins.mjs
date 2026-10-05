@@ -486,8 +486,9 @@ function renderGo(entries) {
   for (const e of entries) {
     if (!e.parity && !e.allowed) continue;
     const [before, after] = e.message.split('{count}');
+    // gofmt's spacing: no blanks around % inside a comparison.
     const test = e.parity
-      ? `n % 2 ${e.parity === 'odd' ? '== 0' : '!= 0'}`
+      ? `n%2 ${e.parity === 'odd' ? '== 0' : '!= 0'}`
       : `!(${e.allowed.map((c) => `n == ${c}`).join(' || ')})`;
     lines.push(
       `func arity_${e.name}(n int) string {`,
@@ -500,10 +501,12 @@ function renderGo(entries) {
     );
   }
 
+  // gofmt aligns the values of one-line map entries one space past the longest key.
   lines.push('var Builtins = map[string]Entry{');
+  const keyW = Math.max(...entries.map((e) => e.name.length)) + 3;
   for (const e of entries) {
     const rule = e.parity || e.allowed ? `arity_${e.name}` : 'nil';
-    lines.push(`\t"${e.name}": {Name: "${e.name}", Min: ${e.min}, Max: ${e.max === null ? -1 : e.max}, Lazy: ${e.lazy}, Binds: ${e.binds}, ArityError: ${rule}},`);
+    lines.push(`\t${`"${e.name}":`.padEnd(keyW)} {Name: "${e.name}", Min: ${e.min}, Max: ${e.max === null ? -1 : e.max}, Lazy: ${e.lazy}, Binds: ${e.binds}, ArityError: ${rule}},`);
   }
   lines.push('}', '', 'var BindingForms = map[string][]Form{');
   for (const e of entries) {
