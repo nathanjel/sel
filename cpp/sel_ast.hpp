@@ -10,7 +10,7 @@
 // rewriter and the numeric coercion. The other hosts reach theirs as an
 // internal module function or a public Value method, and neither belongs in
 // the public header here, where they would give C++ an API surface the other
-// four do not have.
+// hosts do not have.
 //
 // The three names below that are not the tree itself — Spec, and the forward
 // declarations of Args and Context — are here because Node holds a `const Spec*`
@@ -23,8 +23,11 @@
 
 #include "sel.hpp"
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <memory>
+#include <string_view>
 #include <optional>
 #include <set>
 #include <string>
@@ -71,8 +74,15 @@ struct Node {
   // On a FILTER body: the FILTER may keep its elements uncopied (keep_or_alias).
   // Stamped by the physical optimiser when this body and the next pipeline step's
   // (a MAP or a FILTER) write nothing, so no kept element can change before the
-  // next step has copied what it keeps (CPP-REG-1, the Rust host's borrowed_filter).
+  // next step has copied what it keeps (the Rust host's borrowed_filter).
   bool borrow_rows = false;
+  // On a Var, set by the hybrid planner only: this read is of the catalogue's
+  // binding, not of a same-named helper. `ORDERS = ORDERS .> DROP(2); ORDERS .> ...`
+  // unwinds to the binding ORDERS with the DROP among the steps; the source read
+  // so marked is not a read of the helper ORDERS (which must not be inlined into
+  // it a second time), while another read of ORDERS in a later step still is.
+  // The evaluator ignores it.
+  bool binding_read = false;
   // Bin: the operator resolved once, at parse time, to a BinOp code (0 = not yet
   // resolved; eval_binary then derives it from `s`). Set only where `s` is, and
   // `s` of a Bin node never changes afterwards.
@@ -95,6 +105,66 @@ struct Node {
 
 using NodePtr = std::shared_ptr<const Node>;
 
+// A shallow copy of `node` that a rewrite may change: the fields are its own,
+// the children are shared (the tree is immutable, so sharing them is safe). The
+// one copy the optimiser and the SQL planner both make.
+inline std::shared_ptr<Node> copy_node(const NodePtr& node) {
+  if (!node) return nullptr;
+  return std::make_shared<Node>(*node);
+}
+
+// ASCII case, for SEL names, option words and keywords, and for UPPER/LOWER
+// (ASCII by decision): A-Z and a-z and nothing else, whatever the locale.
+// std::toupper/tolower follow the C locale -- an application that calls
+// setlocale() would change which bytes move -- and a Unicode case mapping would
+// change a key's length ("ß" is "SS"), so nothing in this host uses either.
+// One set, for the evaluator and the SQL layer alike. Bytes of a multi-byte
+// UTF-8 sequence are all >= 0x80 and are never touched.
+constexpr char ascii_up(char c) { return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c; }
+constexpr char ascii_down(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+inline std::string ascii_upper(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) c = ascii_up(c);
+  return out;
+}
+inline std::string ascii_lower(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) c = ascii_down(c);
+  return out;
+}
+
+// Small shared helpers, one copy each for the evaluator and the SQL layer.
+
+// Whether `x` is among `xs` (any range: a vector, a span, a constexpr array).
+template <class Range, class T>
+bool contains(const Range& xs, const T& x) {
+  return std::find(std::begin(xs), std::end(xs), x) != std::end(xs);
+}
+
+// Lower-case hex of every byte, as HEX and a BIN dump spell it.
+inline std::string to_hex(std::string_view bytes) {
+  static constexpr char DIGITS[] = "0123456789abcdef";
+  std::string out;
+  out.reserve(bytes.size() * 2);
+  for (const unsigned char b : bytes) {
+    out += DIGITS[b >> 4];
+    out += DIGITS[b & 0x0f];
+  }
+  return out;
+}
+
+// The position a list key names (spec §3.3): "1".."999999999", no sign, no
+// leading zero. Empty for any other text, which is a record key instead.
+inline std::optional<std::size_t> list_key_number(std::string_view k) {
+  if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
+  std::size_t n = 0;
+  for (const char c : k) {
+    if (c < '0' || c > '9') return std::nullopt;
+    n = n * 10 + static_cast<std::size_t>(c - '0');
+  }
+  return n;
+}
+
 // Internal services shared by the evaluator and the SQL translation unit.
 // They are declared here rather than in sel.hpp so consumers still only need
 // the public Value/Program API.
@@ -102,10 +172,10 @@ const Spec* lookup_builtin(const std::string& name);
 NodePtr optimize_ast_logical(const NodePtr& ast);
 // The planner's spelling: `declared_fields` are the (upper-cased) field names the
 // pipeline's source relation declares, which is what lets a field read count as
-// unable to raise (see tl_opt_declared in sel.cpp).
+// unable to raise (see OptFields in sel.cpp).
 NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields);
+// The rewrite run() evaluates (Program::physical_ast).
 NodePtr optimize_ast_in_memory(const NodePtr& ast);
-NodePtr optimize_ast(const NodePtr& ast);
 
 // The relational pipeline vocabulary, owned by the optimizer and shared with
 // the SQL planner so there is one list of pipeline operators in this host and
@@ -115,17 +185,19 @@ NodePtr optimize_ast(const NodePtr& ast);
 // unwind_pipeline() peels `X .> A(...) .> B(...)` into the source X and the
 // steps [A, B], outermost last; build_pipeline() is its inverse over a possibly
 // different source or step list, copying each step so the input tree is never
-// touched.
+// touched. `last_pos`, when given, is stamped on the outermost step: the
+// optimiser keeps a rewritten pipeline reporting the position written.
 bool is_pipeline_op(std::string_view name);
 std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root);
-NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps);
+NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
+                       const Pos* last_pos = nullptr);
 
 // Validates and rewrites a regex in one pass, returning source that means the
 // same thing to every engine. Throws SelError for a pattern outside the
 // portable subset of spec/SPEC.md §7.8.
 //
 // Every host runs this, so every host compiles the same pattern -- and the
-// SEL→SQL translator is the fifth caller: it puts a pattern through the
+// SEL→SQL translator is another caller: it puts a pattern through the
 // language's own rewriter before emitting it, so a translated `\d` means what
 // SEL means by it rather than what the server's engine happens to. MariaDB 11.8
 // answers 1 for '٣' REGEXP '^\d$' where SEL answers FALSE. A second copy in the
@@ -137,10 +209,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_ca
 // number: E_NOT_NUM for a non-TEXT scalar or a text that is not a numeral,
 // E_RANGE for a well-formed numeral too big to hold.
 //
-// The other four hosts spell this `Value::asDecimal(pos)` and it is public
-// there. Here the result cannot be: the decimal type lives in sel.cpp and does
-// not leave it. So what crosses is the CHECK rather than the number — which is
-// all the one caller outside the evaluator wants. The SEL→SQL translator asks
+// Value::as_decimal(pos) is the public read that returns the number; this is
+// the CHECK alone, which is all the one caller outside the evaluator wants. The SEL→SQL translator asks
 // whether a constant sitting in a numeric operand position is a number at all,
 // and the answer has to be the language's own: a second numeral grammar in the
 // SQL layer would be a second thing to keep in step, and it would drift
@@ -250,6 +320,53 @@ inline std::optional<BindingForm> binding_form(const std::string& name, const st
         out.binds.push_back(args[static_cast<std::size_t>(i)]->s);
       }
     }
+    return out;
+  }
+  return std::nullopt;
+}
+
+// The argument form of a SORT/TOP-family call (SORT, SORT_DESC, SORT_BY, TOP,
+// TOP_DESC, TOP_BY), decided from the manifest's forms as binding_form decides
+// them, and decided ONCE for every reader: the evaluator, the optimiser and the
+// SQL translator all ask here which argument is the binder, the key and the
+// direction. The forms are tried in the manifest's order, which is what makes
+// a text literal in the third slot a direction before a bare name in the
+// second is a binder (`text-direction-wins-over-bare-name`). The key is the
+// form's Inner argument; the direction is the Outer argument after it (a TOP's
+// last argument is its count, never a direction). -1 for a slot the form does
+// not have: no binder means `_` is bound, no key means the element is its own
+// key, no direction means the call's own (SORT_DESC/TOP_DESC) or ASC. Empty
+// when no form takes this count. No allocation: the evaluator asks per call.
+struct SortForm {
+  int binder = -1;
+  int key = -1;
+  int dir = -1;
+};
+
+inline std::optional<SortForm> sort_form(std::string_view name, const std::vector<NodePtr>& args) {
+  using namespace sel_builtin_manifest;
+  const bool top = name.starts_with("TOP");
+  const int last = static_cast<int>(args.size()) - (top ? 1 : 0);
+  bool seen = false;
+  for (int i = 0; i < FORM_COUNT; i++) {
+    const Form& f = FORMS[i];
+    if (name != f.name) {
+      if (seen) break;
+      continue;
+    }
+    seen = true;
+    if (static_cast<std::size_t>(f.count) != args.size()) continue;
+    if (f.when_arg >= 0) {
+      const Node& a = *args[static_cast<std::size_t>(f.when_arg)];
+      const bool ok = f.when_kind == 1 ? (a.t == NT::Var && !a.grouped) : a.t == NT::Text;
+      if (!ok) continue;
+    }
+    SortForm out;
+    for (int k = 0; k < f.count; k++) {
+      if (f.scopes[k] == Scope::Binder) out.binder = k;
+      if (f.scopes[k] == Scope::Inner) out.key = k;
+    }
+    if (out.key >= 0 && out.key + 1 < last) out.dir = out.key + 1;
     return out;
   }
   return std::nullopt;

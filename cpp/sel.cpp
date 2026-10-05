@@ -43,6 +43,7 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <optional>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -51,19 +52,26 @@
 
 namespace sel {
 
-// SEL folds case ASCII-only (spec §2; UPPER/LOWER are ASCII by decision), and
-// std::toupper/tolower follow the C locale -- an embedding application that
-// calls setlocale() would change which bytes move (review 2026-09-25 SEM-05).
-inline char ascii_up(char c) { return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 32) : c; }
-inline char ascii_down(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
+// ASCII case (ascii_up, ascii_upper, ...) is sel_ast.hpp's, shared with the SQL layer.
 namespace {
 
 // ============================================================================
 // --- errors
 // ============================================================================
 
+// SEL whitespace (spec §2.2): space, TAB, CR, LF and nothing else -- for the
+// lexer, IS_BLANK/??? and TRIM alike.
+constexpr bool is_sel_space(char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; }
+
 [[noreturn]] void fail(const char* code, const std::string& message, Pos pos = {}) {
   throw SelError(code, message, pos);
+}
+
+// An argument count the parser's arity rule (spec §6.2, from the manifest) has
+// already refused: only a tree compile() did not build can reach one, which is a
+// bug in whatever built it, not an E_ARITY to report at run time.
+[[noreturn]] void unreachable_arity(const std::string& name) {
+  throw std::logic_error(name + ": an argument count compile() refuses reached the evaluator");
 }
 
 // spec/SPEC.md §6.4's three caps live in sel.hpp now: the SEL->SQL translator is
@@ -203,17 +211,6 @@ bool is_valid_utf8(std::string_view bytes) {
   }
 }
 
-std::string to_hex(std::string_view bytes) {
-  static const char* DIGITS = "0123456789abcdef";
-  std::string out;
-  out.reserve(bytes.size() * 2);
-  for (char ch : bytes) {
-    const unsigned char b = static_cast<unsigned char>(ch);
-    out.push_back(DIGITS[b >> 4]);
-    out.push_back(DIGITS[b & 0x0f]);
-  }
-  return out;
-}
 
 // Bytewise, as spec/SPEC.md §5.3 requires. std::string::compare is bytewise on
 // every implementation, but say so explicitly rather than rely on it.
@@ -231,14 +228,15 @@ int bytes_compare(std::string_view a, std::string_view b) {
 // ============================================================================
 // --- decimal
 //
-// Exact decimal arithmetic on digit strings. See spec/SPEC.md §4. Ported line
-// for line from js/src/decimal.mjs and php/src/Dec.php; the three must stay
-// recognisably the same code, because tools/check-decimal.sh is the only thing
-// standing between a subtle rounding difference and a wrong invoice.
+// Exact decimal arithmetic. See spec/SPEC.md §4. A small magnitude is a 128-bit
+// mantissa; a larger one is binary words (the engine below, transcribed from
+// rust/src/large_dec.rs), with its digit string made only when text is asked
+// for. tools/check-decimal.sh holds the core to Python's decimal module, which
+// is what stands between a subtle rounding difference and a wrong invoice.
 //
-// A decimal is { neg, digits, scale }, meaning (neg ? -1 : 1) * digits / 10^scale.
-// `digits` is the unscaled integer with no leading zeros ("0" for zero). Zero is
-// never negative. Scale is part of the value: 2.50 is "250" at scale 2.
+// A decimal (struct Dec, sel.hpp) means (neg ? -1 : 1) * magnitude / 10^scale,
+// the magnitude having no leading zeros. Zero is never negative. Scale is part
+// of the value: 2.50 is 250 at scale 2.
 // ============================================================================
 
 constexpr long long DIV_SCALE = sel_limits::DIV_SCALE;   // spec/limits.json
@@ -1231,7 +1229,7 @@ std::string to_decimal(Span a) {
 // returns how many. A 128-bit `% 10` is a library call, so the magnitude is cut
 // into 19-digit chunks by 128-bit division (one call per chunk) and each chunk
 // is finished in 64-bit arithmetic -- almost every mantissa fits in 64 bits and
-// never pays for the first step at all (CPP-P6).
+// never pays for the first step at all.
 inline int u128_digits_rev(__uint128_t m, char* buf) {
   int n = 0;
   if (m == 0) {
@@ -1256,7 +1254,7 @@ inline void trim_trailing_zeros(T& m, long long& scale) {
   if (m >= std::numeric_limits<int64_t>::min() && m <= std::numeric_limits<int64_t>::max()) {
     int64_t v = static_cast<int64_t>(m);
     while (scale > 0 && v != 0 && v % 10 == 0) { v /= 10; --scale; }
-    if (v == 0) scale = scale > 0 ? 0 : scale;   // callers reset a zero's scale themselves
+    if (v == 0) scale = scale > 0 ? 0 : scale;   // a zero keeps no fraction digits
     m = static_cast<T>(v);
     return;
   }
@@ -1356,7 +1354,7 @@ Dec dec_from_words(bool neg, std::vector<std::uint64_t> words, long long scale) 
 std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg) {
   if (digits.size() > 38) return std::nullopt;
   // The same limit either way: -2^127 is not a small mantissa (dec_from_mantissa).
-  const __uint128_t limit = static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
+  const __uint128_t limit = ~(static_cast<__uint128_t>(1) << 127);
   __uint128_t magnitude = 0;
   for (const char ch : digits) {
     const unsigned digit = static_cast<unsigned>(ch - '0');
@@ -2021,16 +2019,11 @@ std::shared_ptr<const RecordShape> prepare_record_shape(const Node& node) {
 // Match Lisp's list-key contract: decimal keys 1..9 digits, no leading zero,
 // and at most nine characters.  Keeping this parser on the flat path avoids
 // materializing "1", "2", ... entries merely to answer LIST[index].
+// The 0-based slot a list key names (list_key_number, sel_ast.hpp).
 std::optional<std::size_t> parse_list_slot(const std::string& key) {
-  if (key.empty() || key.size() > 9 || key[0] < '1' || key[0] > '9') {
-    return std::nullopt;
-  }
-  std::size_t value = static_cast<std::size_t>(key[0] - '0');
-  for (std::size_t i = 1; i < key.size(); i++) {
-    if (key[i] < '0' || key[i] > '9') return std::nullopt;
-    value = value * 10 + static_cast<std::size_t>(key[i] - '0');
-  }
-  return value - 1;
+  const std::optional<std::size_t> n = list_key_number(key);
+  if (!n) return std::nullopt;
+  return *n - 1;
 }
 
 }  // namespace
@@ -2150,13 +2143,52 @@ struct Internals {
       }
     }
   }
+
+  // Containers have one allocation for their header and payload. Scalars retain
+  // the small header and can still acquire a separate payload through an alias.
+  // Here rather than at namespace scope because Value::Impl is private to Value.
+  struct CollectionImpl : Value::Impl {
+    Value::Collection payload;
+    CollectionImpl() {
+      inline_collection = true;
+      collection.reset(&payload);
+    }
+    // The derived object owns this payload. Release the base's pointer before
+    // member destruction so it cannot delete the embedded Collection a second time.
+    ~CollectionImpl() { collection.release(); }
+  };
+
+  static void delete_impl(Value::Impl* impl) {
+    if (impl->inline_collection) delete static_cast<CollectionImpl*>(impl);
+    else delete impl;
+  }
+
+  struct ImplFreelist {
+    Value::Impl* head = nullptr;
+    std::size_t count = 0;
+    static constexpr std::size_t MAX_CACHED = 2048;
+    ~ImplFreelist() {
+      while (head) {
+        Value::Impl* next = head->next_free;
+        ::operator delete(head);
+        head = next;
+      }
+    }
+  };
+
+  // The decimal cache (Value::dec_val's writer side). Private on Value because
+  // it trusts its caller: the interpreter stores only the decimal it has just
+  // parsed from, or computed for, the value's own scalar.
+  static bool has_dec(const Value& v) { return v.has_dec(); }
+  static const Dec& dec_ref(const Value& v) { return v.dec_ref(); }
+  static void set_dec(const Value& v, const Dec& d) { v.set_dec(d); }
 };
 
 namespace {
 // What a collecting operation keeps (spec §3.4: `=`, `,`, LIST, RECORD and the
 // aggregates copy what they collect). A value that is a fresh temporary all the
 // way down -- nothing else holds any part of it -- is already an independent
-// copy, so it is kept as it is instead of being copied again (CPP-P7). Anything
+// copy, so it is kept as it is instead of being copied again. Anything
 // shared with a variable, another collection or the caller is still cloned, and
 // so is a tree deeper than the cap, which is how E_DEPTH is still raised.
 Value adopt_or_clone(Value&& v, int levels, Pos pos) {
@@ -2200,47 +2232,15 @@ bool writes_nothing(const Node& root) {
 // nothing it collected can reach its result uncopied. Then an element and its
 // copy cannot be told apart, and the element itself is kept -- after the depth
 // check the copy would have made, so a too-deep element is still E_DEPTH, at the
-// same moment and position (CPP-REG-1: BUCKET copying every joined row was most
-// of scale-test scenario 1's time).
+// same moment and position (BUCKET copying every joined row was most of
+// scale-test scenario 1's time).
 Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
   if (Internals::exclusively_held(coll, index, item, extra)) return item;
   Internals::check_clone_depth(item, 1, Pos{});
   return item;
 }
-}  // namespace
 
-namespace {
-// Containers have one allocation for their header and payload. Scalars retain
-// the small header and can still acquire a separate payload through an alias.
-struct CollectionImpl : Value::Impl {
-  Value::Collection payload;
-  CollectionImpl() {
-    inline_collection = true;
-    collection.reset(&payload);
-  }
-  // The derived object owns this payload. Release the base's pointer before
-  // member destruction so it cannot delete the embedded Collection a second time.
-  ~CollectionImpl() { collection.release(); }
-};
-
-void delete_impl(Value::Impl* impl) {
-  if (impl->inline_collection) delete static_cast<CollectionImpl*>(impl);
-  else delete impl;
-}
-
-struct ImplFreelist {
-  Value::Impl* head = nullptr;
-  std::size_t count = 0;
-  static constexpr std::size_t MAX_CACHED = 2048;
-  ~ImplFreelist() {
-    while (head) {
-      Value::Impl* next = head->next_free;
-      ::operator delete(head);
-      head = next;
-    }
-  }
-};
-thread_local ImplFreelist tl_impl_freelist;
+thread_local Internals::ImplFreelist tl_impl_freelist;
 }  // namespace
 
 void* Value::Impl::operator new(std::size_t size) {
@@ -2254,7 +2254,7 @@ void* Value::Impl::operator new(std::size_t size) {
 }
 
 void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
-  if (size == sizeof(Value::Impl) && ptr && tl_impl_freelist.count < ImplFreelist::MAX_CACHED) {
+  if (size == sizeof(Value::Impl) && ptr && tl_impl_freelist.count < Internals::ImplFreelist::MAX_CACHED) {
     Value::Impl* p = static_cast<Value::Impl*>(ptr);
     p->next_free = tl_impl_freelist.head;
     tl_impl_freelist.head = p;
@@ -2266,7 +2266,7 @@ void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
 
 Value::Value() : p_(new Impl()) {}
 
-Value::Impl* Value::make_collection_impl() { return new CollectionImpl(); }
+Value::Impl* Value::make_collection_impl() { return new Internals::CollectionImpl(); }
 
 Kind Value::kind() const {
   return p_ ? p_->kind : Kind::None;
@@ -2278,18 +2278,6 @@ bool Value::is_bin() const { return p_ && kind() == Kind::Bin; }
 bool Value::is_bool() const { return p_ && kind() == Kind::Bool; }
 bool Value::is_list() const {
   return p_ && p_->is_list;
-}
-void Value::set_is_list(bool b) {
-  if (!p_) return;
-  if (!b && p_->is_list && !p_->coll().storage.empty()) {
-    ensure_children();
-    p_->mutable_coll().storage.clear();
-  }
-  p_->is_list = b;
-  if (b) {
-    p_->mutable_coll().shape.reset();
-    p_->mutable_coll().storage.clear();
-  }
 }
 
 // The deep copy. Recursive, because children are handles too: copying the
@@ -2304,8 +2292,8 @@ void Value::set_is_list(bool b) {
 // at about sixty. Three hosts answered where two died, on the same program.
 //
 // The depth rides as a parameter, as it does in dependencies(): there is nothing
-// to release on the way out, so no guard object is needed and all five hosts
-// spell it the same way. A value of exactly MAX_DEPTH levels is fine; the level
+// to release on the way out, so no guard object is needed and every host
+// spells it the same way. A value of exactly MAX_DEPTH levels is fine; the level
 // past it is refused.
 //
 // `pos` is the caller's, reported when there is one: the evaluator knows which
@@ -2382,16 +2370,16 @@ void Value::destroy(Impl* p) {
   };
 
   steal(p);
-  delete_impl(p);
+  Internals::delete_impl(p);
   while (!pending.empty()) {
     Impl* curr = pending.back();
     pending.pop_back();
     steal(curr);
-    delete_impl(curr);
+    Internals::delete_impl(curr);
   }
 }
 
-// A Dec from host code (spec §8; review 2026-09-28 HOST-13, HOST-14): any of its
+// A Dec from host code (spec §8): any of its
 // three forms -- the small mantissa, the digit string, the binary words -- must
 // be a decimal, and the value is rebuilt canonical (leading zeros go, a negative
 // zero loses its sign) and within the digit caps. Any words are a magnitude, so
@@ -2425,11 +2413,6 @@ Value Value::num(const Dec& d) {
   return Internals::from_dec(dec_guard(dec_make(d.neg, std::move(digits), d.scale), Pos{}));
 }
 
-Value Value::num(std::shared_ptr<const Dec> d) {
-  if (!d) return Value::none();
-  return Value::num(*d);
-}
-
 namespace {
 
 Value make_text(std::string utf8) { return Internals::raw(Kind::Text, std::move(utf8), false); }
@@ -2448,7 +2431,7 @@ Value make_int(long long n) {
 
 Value Value::none() { return Internals::raw(Kind::None, "", false); }
 
-Value Value::null() { return Internals::raw(Kind::None, "", false, false); }
+Value Value::null() { return none(); }
 
 Value Value::text(std::string utf8) {
   if (!sel::is_valid_utf8(utf8)) {
@@ -2486,8 +2469,8 @@ Value Value::list(std::vector<Value> values) {
 }
 
 Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
-  // Keys and values pair up, and every key is text (spec §8; review
-  // 2026-09-28 HOST-12, HOST-17): a record from host code is checked here
+  // Keys and values pair up, and every key is text (spec §8): a record from
+  // host code is checked here
   // rather than failing later, in a dump or an INDEXES, far from the input.
   if (keys.size() != values.size()) {
     throw SelError("E_BAD_ARG", std::to_string(keys.size()) + " key(s) and " + std::to_string(values.size()) +
@@ -2525,7 +2508,7 @@ Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
 }
 
 // A shape from host code is checked like a key list: text, each key once, one
-// slot per key (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18). The
+// slot per key (spec §8). The
 // interpreter's own shapes go through Internals::shaped.
 Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value> storage) {
   if (!shape) throw SelError("E_BAD_ARG", "a shaped value needs a shape", Pos{});
@@ -2652,18 +2635,10 @@ const Value* Value::get(const std::string& key) const {
   return it == p_->coll().children.end() ? nullptr : &it->second;
 }
 
+// The const lookup, handing back a pointer the caller may write through: the
+// handle is non-const, and the storage it points into is this value's own.
 Value* Value::get(const std::string& key) {
-  if (!p_->collection) return nullptr;
-  if (p_->mutable_coll().shape) {
-    const auto it = p_->mutable_coll().shape->key_map.find(key);
-    return it == p_->mutable_coll().shape->key_map.end() ? nullptr : &p_->mutable_coll().storage[it->second];
-  }
-  if (p_->is_list && !p_->mutable_coll().storage.empty()) {
-    const auto index = parse_list_slot(key);
-    return index && *index < p_->mutable_coll().storage.size() ? &p_->mutable_coll().storage[*index] : nullptr;
-  }
-  auto it = find(key);
-  return it == p_->mutable_coll().children.end() ? nullptr : &it->second;
+  return const_cast<Value*>(std::as_const(*this).get(key));
 }
 
 std::vector<std::string> Value::keys() const {
@@ -2684,7 +2659,7 @@ std::vector<std::string> Value::keys() const {
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
-  // A key is text too (spec §8; review 2026-09-25 HOST-05): ASCII keys, nearly
+  // A key is text too (spec §8): ASCII keys, nearly
   // all of them, pass without the full check.
   for (const unsigned char c : key) {
     if (c >= 0x80) {
@@ -2745,8 +2720,8 @@ bool Value::is_vacuous() const {
   if (p_->kind == Kind::Text && size() == 0) {
     const std::string& sc = scalar();
     if (sc.empty()) return true;
-    for (char ch : sc) {
-      if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') return false;
+    for (const char ch : sc) {
+      if (!is_sel_space(static_cast<unsigned char>(ch))) return false;
     }
     return true;
   }
@@ -3022,7 +2997,7 @@ std::map<std::string, Spec>& table() {
 // sel_builtin_manifest.hpp. A name the manifest knows is held to it:
 // min/max/lazy/binds must agree, and the extra arity rule (COND's odd count,
 // LINK's three-or-five) comes from the manifest rather than from the caller —
-// one body for all five hosts. A name it does not know is a host's own
+// one body for every host. A name it does not know is a host's own
 // function (examples/fn-*) and passes.
 const sel_builtin_manifest::Entry* manifest_entry(const std::string& name) {
   using sel_builtin_manifest::ENTRIES;
@@ -3156,7 +3131,6 @@ bool is_alpha(char32_t c) {
   return (c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z') || c == U'_';
 }
 bool is_ident(char32_t c) { return is_alpha(c) || is_digit(c); }
-bool is_space(char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; }
 
 class Lexer {
  public:
@@ -3282,7 +3256,7 @@ class Lexer {
     while (i < to) {
       const char32_t c = chars_[i];
 
-      if (is_space(c)) { i++; continue; }
+      if (is_sel_space(c)) { i++; continue; }
 
       if (c == U'#') {
         while (i < to && chars_[i] != U'\n') i++;
@@ -3309,9 +3283,7 @@ class Lexer {
         while (j < to && is_ident(chars_[j])) j++;
         // Identifiers are ASCII and case-insensitive; upper case is canonical.
         std::string word = ascii_slice(i, j);
-        for (char& ch : word) {
-          if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 32);
-        }
+        for (char& ch : word) ch = ascii_up(ch);
         out.push_back(Token{Tok::Ident, word, pos});
         i = j;
         continue;
@@ -3395,7 +3367,7 @@ class Lexer {
   }
 
   // The operators that start with each ASCII byte, longest first (the order of operators()):
-  // one table lookup instead of a scan over all 31 per token (CPP-P25).
+  // one table lookup instead of a scan over all 31 per token.
   static const std::vector<const std::string*>& operators_starting_with(char32_t c) {
     static const std::array<std::vector<const std::string*>, 128> by_first = [] {
       std::array<std::vector<const std::string*>, 128> table;
@@ -3515,11 +3487,7 @@ class Lexer {
       if (!ok) fail("E_ESCAPE", "bad \\u{" + hex + "} escape", pos);
       const unsigned long cp = std::stoul(hex, nullptr, 16);
       if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
-        std::string upper = hex;
-        for (char& ch : upper) {
-          if (ch >= 'a' && ch <= 'f') ch = static_cast<char>(ch - 32);
-        }
-        fail("E_RANGE", "code point U+" + upper + " is not encodable", pos);
+        fail("E_RANGE", "code point U+" + ascii_upper(hex) + " is not encodable", pos);
       }
       next = j + 1;
       std::string s;
@@ -3657,7 +3625,7 @@ const std::set<std::string>& compare_words() {
 }
 
 // A binary operator as a number, resolved once per node (Node::opc) instead of by
-// a chain of string comparisons on every evaluation (CPP-P5). The comparison codes
+// a chain of string comparisons on every evaluation. The comparison codes
 // are contiguous and in the order compare_result() names them, so the kind of a
 // comparison is `code - BO_NUM_EQ` / `code - BO_TXT_EQ`.
 enum BinOp : unsigned char {
@@ -3691,6 +3659,30 @@ bool cmp_holds(int kind, int c) {
     case 3: return c <= 0;
     case 4: return c > 0;
     default: return c >= 0;
+  }
+}
+
+// The arithmetic operators BO_ADD..BO_MOD on two decimals: the one dispatch the
+// binary operators, the compound assignments and the constant folder share.
+Dec dec_arith(unsigned char opc, const Dec& a, const Dec& b, Pos pos) {
+  switch (opc) {
+    case BO_ADD: return dec_add(a, b, pos);
+    case BO_SUB: return dec_sub(a, b, pos);
+    case BO_MUL: return dec_mul(a, b, pos);
+    case BO_DIV: return dec_div(a, b, pos);
+    default: return dec_mod(a, b, pos);
+  }
+}
+
+// The binary operator a compound assignment applies: `+=` is BO_ADD, and so on.
+unsigned char compound_opcode(char first) {
+  switch (first) {
+    case '+': return BO_ADD;
+    case '-': return BO_SUB;
+    case '*': return BO_MUL;
+    case '/': return BO_DIV;
+    case '%': return BO_MOD;
+    default: return BO_CONCAT;   // `&=`, the only other compound form the parser makes
   }
 }
 
@@ -4142,7 +4134,9 @@ class Parser {
   // left operand in `args`. Every refusal reports the name token.
   NodePtr finish_call(const Token& name_tok, const Spec* spec, std::vector<NodePtr> args) {
     const int count = static_cast<int>(args.size());
-    if (count < spec->min || count > spec->max) {
+    // VARIADIC is "no upper bound", not a bound of 2^20: past it the count is the
+    // size caps' business (spec §6.4, E_RANGE at the call), never E_ARITY.
+    if (count < spec->min || (spec->max < VARIADIC && count > spec->max)) {
       fail("E_ARITY", spec->name + " takes " + arity_text(*spec) + ", got " + std::to_string(count),
            name_tok.pos);
     }
@@ -4186,14 +4180,6 @@ NodePtr parse(const std::string& source) {
 
 }  // namespace
 
-// Context, Args and eval_node are at sel:: scope rather than in the anonymous
-// namespace above, and not by preference: Spec's `fn` is a
-// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
-// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
-// anonymous namespace cannot be named across translation units, so naming Spec
-// in a header names these two as well. eval_node comes with them because its
-// declaration sits between them and has to be on the same side as its
-// definition.
 // The join pre-filter's hand-off (SEL-0049, SEL-0050, SEL-0052). A FILTER
 // whose source is a LINK hands the join its conjuncts; the join pre-applies to
 // its left rows those whose fields no right side carries. Plain data here, so
@@ -4243,6 +4229,14 @@ struct JoinReport {
   bool dropped = false;
 };
 
+// Context, Args and eval_node are at sel:: scope rather than in the anonymous
+// namespace above, and not by preference: Spec's `fn` is a
+// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
+// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
+// anonymous namespace cannot be named across translation units, so naming Spec
+// in a header names these two as well. eval_node comes with them because its
+// declaration sits between them and has to be on the same side as its
+// definition.
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -4257,7 +4251,7 @@ struct Context {
   // The frames of the math plans running now, one after another. A plan's slots
   // are addressed by index, never by pointer or reference held across a step
   // that can evaluate: a load may run a whole nested plan, which grows both
-  // vectors (CPP-C3). The raw vector holds what the plan's loads produced until
+  // vectors. The raw vector holds what the plan's loads produced until
   // an arithmetic step coerces it.
   std::vector<Dec> math_scratchpad;
   std::vector<std::optional<Value>> math_raw;
@@ -4289,11 +4283,15 @@ Value eval_node(const Node& node, Context& ctx);
 // Wraps the flattened argument vector. Values are evaluated at most once, so a
 // built-in body can read the same argument repeatedly without thinking about it,
 // and typed accessors report failures against the argument's own position.
+namespace {
+const Dec& as_dec_ref(const Value& v, Pos pos);
+}  // namespace
+
 class Args {
  public:
   Args(const Node& node, Context& ctx)
       : nodes_(node.items), record_shape_(node.record_shape), name_(node.s), pos_(node.pos), ctx_(ctx) {
-    // Up to kInline arguments live in the object; only a wider call allocates (CPP-P24).
+    // Up to kInline arguments live in the object; only a wider call allocates.
     const std::size_t n = node.items.size();
     if (n <= kInline) {
       vals_ = inline_;
@@ -4309,10 +4307,10 @@ class Args {
   const Node& node(int i) const { return *nodes_[i]; }
   const std::shared_ptr<const RecordShape>& record_shape() const { return record_shape_; }
   NodePtr node_ptr(int i) const { return nodes_[i]; }
+  const std::vector<NodePtr>& nodes() const { return nodes_; }
   Pos pos_of(int i) const { return nodes_[i]->pos; }
   Pos pos() const { return pos_; }
   const std::string& name() const { return name_; }
-  Context& ctx() { return ctx_; }
 
   // The argument's value, moved out: for built-ins that read each argument once
   // and keep it (LIST, RECORD), so a fresh temporary can be adopted without a copy.
@@ -4333,22 +4331,8 @@ class Args {
   const std::string& bytes(int i) { return val(i).as_bytes(pos_of(i)); }
   bool boolean(int i) { return val(i).as_bool(pos_of(i)); }
 
-  Dec dec(int i) {
-    const Value& v = val(i).scalar_source(pos_of(i));
-    if (v.has_dec()) return v.dec_ref();
-    if (v.kind() != Kind::Text) {
-      fail("E_NOT_NUM",
-           std::string("expected a number, got ") +
-               (v.kind() == Kind::Bin ? "bin" : v.kind() == Kind::Bool ? "bool" : "none"),
-           pos_of(i));
-    }
-    Dec d;
-    if (!dec_parse(v.scalar(), d, pos_of(i))) {
-      fail("E_NOT_NUM", "not a number: \"" + v.scalar() + "\"", pos_of(i));
-    }
-    v.set_dec(d);
-    return d;
-  }
+  // The operators' coercion (as_dec_ref), reported at this argument.
+  Dec dec(int i) { return as_dec_ref(val(i), pos_of(i)); }
 
   long long integer(int i) {
     const Dec d = dec(i);
@@ -4398,10 +4382,9 @@ class Args {
 
 namespace {
 
-// Code points in a UTF-8 string that is already known to be valid.
 // Byte-level substring search, linear in the haystack for any needle (glibc's memmem
 // switches to the two-way algorithm for long needles; std::string::find is O(n*m) on
-// aaaa..ab style inputs: a 200 KB needle in 400 KB took 1.6-6.7 s -- CPP-P22).
+// aaaa..ab style inputs: a 200 KB needle in 400 KB took 1.6-6.7 s).
 // UTF-8 is self-synchronising, so a byte match of a valid needle is a code-point match.
 inline std::size_t byte_find(const std::string& hay, const std::string& needle, std::size_t from) {
   if (from > hay.size()) return std::string::npos;
@@ -4416,6 +4399,7 @@ inline std::size_t byte_find(const std::string& hay, const std::string& needle, 
 #endif
 }
 
+// Code points in a UTF-8 string that is already known to be valid.
 std::size_t cp_count(const std::string& s) {
   std::size_t n = 0;
   for (const unsigned char c : s) {
@@ -4498,8 +4482,8 @@ Value eval_list(const Node& node, Context& ctx) {
                    node.pos);
     if (v.kind() == Kind::None && v.size() > 0) {
       // Cloned, not aliased: `,` copies what it collects (§5.9), so the list it
-      // builds does not share structure with the values that fed it. Two of the
-      // five places anything in this file clones — js/src/eval.mjs:163,165.
+      // builds does not share structure with the values that fed it
+      // (conformance/25-value-ownership.selt).
       for (const auto& child : v.entries()) out.push_back(child.second.clone_below(1, node.pos));
     } else {
       out.push_back(adopt_or_clone(std::move(v), 1, node.pos));
@@ -4508,34 +4492,15 @@ Value eval_list(const Node& node, Context& ctx) {
   return Value::list(std::move(out));
 }
 
-// Numeric coercion at an arbitrary position, used by the operators. Built-ins go
-// through Args::dec instead, which reports against the argument's own position.
-// The same decimal as as_dec, without the copy: a view of the cache on the Value
-// the number lives in (filled here on first use). Valid while `v` is. A Dec owns
-// a digit string and a vector of binary words, so a comparison loop that copied both sides
-// on every call -- a sort does n log n of them -- spent a third of its time there.
-const Dec& as_dec_ref(const Value& v, Pos pos);
-
-Dec as_dec(const Value& v, Pos pos) {
-  const Value& src = v.scalar_source(pos);
-  if (src.has_dec()) {
-    return src.dec_ref();
-  }
-  if (src.kind() != Kind::Text) {
-    fail("E_NOT_NUM",
-         std::string("expected a number, got ") +
-             (src.kind() == Kind::Bin ? "bin" : src.kind() == Kind::Bool ? "bool" : "none"),
-         pos);
-  }
-  Dec d;
-  if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
-  src.set_dec(d);
-  return d;
-}
-
+// Numeric coercion (spec §3.2), the one body every reader of a number shares: the
+// operators, Args::dec (at the argument's own position) and Value::as_decimal.
+// A view of the cache on the Value the number lives in (filled here on first use),
+// valid while `v` is: a Dec owns a digit string and a vector of binary words, so
+// a comparison loop that copied both sides on every call -- a sort does n log n
+// of them -- spent a third of its time there. as_dec is the copy.
 const Dec& as_dec_ref(const Value& v, Pos pos) {
   const Value& src = v.scalar_source(pos);
-  if (!src.has_dec()) {
+  if (!Internals::has_dec(src)) {
     if (src.kind() != Kind::Text) {
       fail("E_NOT_NUM",
            std::string("expected a number, got ") +
@@ -4544,10 +4509,20 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
     }
     Dec d;
     if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
-    src.set_dec(std::move(d));
+    Internals::set_dec(src, std::move(d));
   }
-  return src.dec_ref();
+  return Internals::dec_ref(src);
 }
+
+Dec as_dec(const Value& v, Pos pos) { return as_dec_ref(v, pos); }
+
+}  // namespace
+
+Dec Value::as_decimal(Pos pos) const { return as_dec_ref(*this, pos); }
+
+std::string dec_digits(const Dec& d) { return dec_get_digits(d); }
+
+namespace {
 
 Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
 
@@ -4581,6 +4556,35 @@ int probe_size(const Node& n, int limit) {
     default: return 1;
   }
 }
+
+// An aggregate's binder frame (a binder names one element for the duration of
+// that element): pushed for the walk, popped by pop() where the walk is done, or
+// by the destructor however else the walk ends -- an error included, which is
+// what every hand-written push/try/catch/pop it replaces was for. One that
+// pushes nothing (TOP without a body) pops nothing.
+class FrameScope {
+ public:
+  using Frame = std::vector<std::pair<std::string, Value>>;
+  explicit FrameScope(Context& ctx) : ctx_(ctx) {}
+  FrameScope(Context& ctx, Frame frame) : ctx_(ctx) { push(std::move(frame)); }
+  FrameScope(const FrameScope&) = delete;
+  FrameScope& operator=(const FrameScope&) = delete;
+  ~FrameScope() { pop(); }
+  void push(Frame frame) {
+    ctx_.frames.push_back(std::move(frame));
+    pushed_ = true;
+  }
+  void pop() {
+    if (pushed_) {
+      ctx_.frames.pop_back();
+      pushed_ = false;
+    }
+  }
+
+ private:
+  Context& ctx_;
+  bool pushed_ = false;
+};
 
 // Shifts ctx.depth by the levels probe_eval skipped while a subtree that it does not
 // walk is evaluated, so E_DEPTH is raised at the node it would have been raised at.
@@ -4642,11 +4646,6 @@ bool probe_eval(const Node& n, Context& ctx, Value& out, int level) {
   return true;
 }
 
-Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
-Value apply_unary(const Node& node, const Value& v);
-int probe_size(const Node& n, int limit);
-bool probe_eval(const Node& n, Context& ctx, Value& out, int level);
-
 Value eval_binary(const Node& node, Context& ctx) {
   const std::string& op = node.s;
   const unsigned char opc = node.opc ? node.opc : bin_opcode(op);
@@ -4690,7 +4689,7 @@ Value eval_binary(const Node& node, Context& ctx) {
     // A left operand that is a small tree of operators over names and literal-key
     // indexes (`(_["k"] & "x") ?? 0`, `A["a"] + 1 ??? 0`) is evaluated by probe_eval,
     // which reports a miss instead of throwing it: the exception cost about 10 us a
-    // row (CPP-P4 leftover). Anything it does not understand is evaluated by
+    // row. Anything it does not understand is evaluated by
     // eval_node inside it, so the try below still catches what that throws.
     const int probed = probe_size(*node.l, 13);
     const bool probe = probed <= 12 && ctx.depth + probed + 1 <= MAX_DEPTH;
@@ -4729,13 +4728,9 @@ Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Va
   // this; do not collapse these back into one expression.
   switch (opc) {
     case BO_ADD: case BO_SUB: case BO_MUL: case BO_DIV: case BO_MOD: {
-      const Dec a = as_dec(l, lp);
-      const Dec b = as_dec(r, rp);
-      if (opc == BO_ADD) return make_num(dec_add(a, b, node.pos));
-      if (opc == BO_SUB) return make_num(dec_sub(a, b, node.pos));
-      if (opc == BO_MUL) return make_num(dec_mul(a, b, node.pos));
-      if (opc == BO_DIV) return make_num(dec_div(a, b, node.pos));
-      return make_num(dec_mod(a, b, node.pos));
+      const Dec& a = as_dec_ref(l, lp);
+      const Dec& b = as_dec_ref(r, rp);
+      return make_num(dec_arith(opc, a, b, node.pos));
     }
     case BO_CONCAT: return concat(l, r, lp, rp, node.pos);
     case BO_EQL: return Value::boolean(l.eql(r, node.pos));
@@ -4756,14 +4751,26 @@ Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Va
       return Value::boolean(cmp_holds(opc - BO_TXT_EQ, bytes_compare(a, b)));
     }
     case BO_NUM_EQ: case BO_NUM_NE: case BO_NUM_LT: case BO_NUM_LE: case BO_NUM_GT: case BO_NUM_GE: {
-      const Dec a = as_dec(l, lp);
-      const Dec b = as_dec(r, rp);
+      const Dec& a = as_dec_ref(l, lp);
+      const Dec& b = as_dec_ref(r, rp);
       return Value::boolean(cmp_holds(opc - BO_NUM_EQ, dec_cmp(a, b)));
     }
     default: break;
   }
 
   fail("E_SYNTAX", "unknown operator " + op, node.pos);
+}
+
+// What `target op= rhs` stores: the binary operator applied to the target's value
+// as read before the right-hand side ran, coerced target first (§6.2), with the
+// operands' errors at their own positions and the result's at the assignment.
+Value compound_value(const Node& node, const Value& target, const Value& rhs) {
+  const Pos tp = node.l->pos, vp = node.r->pos;
+  const unsigned char opc = compound_opcode(node.s[0]);
+  if (opc == BO_CONCAT) return concat(target, rhs, tp, vp, node.pos);
+  const Dec& a = as_dec_ref(target, tp);
+  const Dec& b = as_dec_ref(rhs, vp);
+  return make_num(dec_arith(opc, a, b, node.pos));
 }
 
 // Walks from the root along PATH, creating any level that is missing, and
@@ -4789,8 +4796,8 @@ Value* walk_create(Context& ctx, const std::vector<std::string>& path, std::size
 // index expression can read the level an earlier one just created.
 //
 // The walk keeps only the path built so far and re-derives from the root after
-// every evaluation. That is **not** a C++ workaround — every host does it, and
-// js/src/eval.mjs and python/sel/eval.py say so in the same words. It is
+// every evaluation. That is **not** a C++ workaround — every host does it
+// (docs/contributing.md, "The traps"). It is
 // spec/SPEC.md §5.7: the store lands at the path in the tree as it exists once
 // the right-hand side has run, so holding the container found during the walk
 // would silently discard the assignment whenever that container has since been
@@ -4858,24 +4865,7 @@ Value eval_assign(const Node& node, Context& ctx) {
       const Value target_value = *current;
 
       const Value rhs = eval_node(*node.r, ctx);
-      const Pos tp = node.l->pos, vp = node.r->pos;
-      const char binop = node.s[0];
-
-      if (binop == '&') {
-        value = concat(target_value, rhs, tp, vp, node.pos);
-      } else {
-        const Dec a = as_dec(target_value, tp);
-        const Dec b = as_dec(rhs, vp);
-        Dec res;
-        switch (binop) {
-          case '+': res = dec_add(a, b, node.pos); break;
-          case '-': res = dec_sub(a, b, node.pos); break;
-          case '*': res = dec_mul(a, b, node.pos); break;
-          case '/': res = dec_div(a, b, node.pos); break;
-          default: res = dec_mod(a, b, node.pos); break;
-        }
-        value = make_num(std::move(res));
-      }
+      value = compound_value(node, target_value, rhs);
       // Re-derived after the right-hand side ran (§5.7): it may have created a
       // variable, and the root's child vector moved, so the pointer taken before
       // it is dangling. The store lands where the name is now, not where it was.
@@ -4896,8 +4886,8 @@ Value eval_assign(const Node& node, Context& ctx) {
     // `=` copies by value (§5.7), and the assignment *evaluates to* that copy —
     // so cloning late would return something that still aliases the right-hand
     // side, and `A[1] = A` would answer with the A the store had just mutated
-    // instead of the value that was assigned. js/src/eval.mjs:262 clones in
-    // exactly this position, for exactly this reason.
+    // instead of the value that was assigned. Every host clones in exactly
+    // this position, for exactly this reason (conformance/25-value-ownership.selt).
     //
     // The depth cap counts the path to the target as well as the value (§6.4):
     // `path.size() - 1` levels of index sit above where it lands, and the error is
@@ -4909,24 +4899,7 @@ Value eval_assign(const Node& node, Context& ctx) {
     const Value target_value = *current;   // copied: the right-hand side may move the tree
 
     const Value rhs = eval_node(*node.r, ctx);
-    const Pos tp = node.l->pos, vp = node.r->pos;
-    const char binop = node.s[0];
-
-    if (binop == '&') {
-      value = concat(target_value, rhs, tp, vp, node.pos);
-    } else {
-      const Dec a = as_dec(target_value, tp);
-      const Dec b = as_dec(rhs, vp);
-      Dec res;
-      switch (binop) {
-        case '+': res = dec_add(a, b, node.pos); break;
-        case '-': res = dec_sub(a, b, node.pos); break;
-        case '*': res = dec_mul(a, b, node.pos); break;
-        case '/': res = dec_div(a, b, node.pos); break;
-        default: res = dec_mod(a, b, node.pos); break;
-      }
-      value = make_num(std::move(res));
-    }
+    value = compound_value(node, target_value, rhs);
   }
 
   // Re-derived after the right-hand side ran, which may have replaced or
@@ -5009,7 +4982,7 @@ Value eval_dispatch(const Node& node, Context& ctx) {
 
 // Gives the frame's scratchpad slots back on every exit, a throw included: a
 // caught error (`??` swallows E_UNDEF_VAR and E_NO_KEY) used to leave the top
-// advanced, so each one permanently consumed a plan's worth of slots (CPP-C19).
+// advanced, so each one permanently consumed a plan's worth of slots.
 struct MathFrame {
   Context& ctx;
   const MathPlan& plan;
@@ -5282,11 +5255,6 @@ void for_each_snapshot_value(const Snapshot& snap, Fn&& fn) {
   for (const Value& item : snap.items) fn(item);
 }
 
-std::string upper_name(std::string name) {
-  for (char& ch : name) ch = ascii_up(ch);
-  return name;
-}
-
 bool is_nested_record(const Value& value) { return value.size() > 0 && !value.is_list(); }
 
 // nullptr means "there is no first element"; a NULL or field-less first
@@ -5305,12 +5273,16 @@ struct AliasPlanKey {
   }
 };
 
+// boost's hash_combine: folds `v` into `h`.
+constexpr std::size_t hash_combine(std::size_t h, std::size_t v) {
+  return h ^ (v + static_cast<std::size_t>(0x9e3779b9) + (h << 6) + (h >> 2));
+}
+
 struct AliasPlanKeyHash {
   std::size_t operator()(const AliasPlanKey& key) const noexcept {
     const std::size_t source_hash = std::hash<const RecordShape*>{}(key.source.get());
     const std::size_t table_hash = std::hash<std::string>{}(key.table);
-    return source_hash ^ (table_hash + static_cast<std::size_t>(0x9e3779b9) +
-                          (source_hash << 6) + (source_hash >> 2));
+    return hash_combine(source_hash, table_hash);
   }
 };
 
@@ -5338,8 +5310,7 @@ std::shared_ptr<const AliasPlan> alias_plan_for(
 
   std::vector<std::string> keys = source->keys;
   keys.push_back(table);
-  std::string lower = table;
-  for (char& ch : lower) ch = ascii_down(ch);
+  const std::string lower = ascii_lower(table);
   const bool append_lower = lower != table &&
                             source->key_map.find(lower) == source->key_map.end();
   if (append_lower) keys.push_back(lower);
@@ -5375,11 +5346,7 @@ Value ensure_row_table_alias(const Value& row, const std::string& table) {
   Value out = Value::none();
   for (const auto& [key, value] : row.entries()) out.set(key, value);
   out.set(table, row);
-  const std::string lower = [&] {
-    std::string v = table;
-    for (char& ch : v) ch = ascii_down(ch);
-    return v;
-  }();
+  const std::string lower = ascii_lower(table);
   if (lower != table && !row.has(lower)) out.set(lower, row);
   return out;
 }
@@ -5396,11 +5363,7 @@ Value make_null_record(const Value& sample, const std::string& table) {
   }
   if (!table.empty() && !is_positional_binder(table)) {
     out.set(table, Value::none());
-    const std::string lower = [&] {
-      std::string v = table;
-      for (char& ch : v) ch = ascii_down(ch);
-      return v;
-    }();
+    const std::string lower = ascii_lower(table);
     if (lower != table) out.set(lower, Value::none());
   }
   return out;
@@ -5418,8 +5381,7 @@ char join_category(const Value& value) {
 
 std::vector<std::string> join_binder_keys(const std::string& name, const char* positional) {
   std::vector<std::string> keys{name};
-  std::string lower = name;
-  for (char& ch : lower) ch = ascii_down(ch);
+  const std::string lower = ascii_lower(name);
   if (lower != name) keys.push_back(lower);
   if (name != positional) keys.push_back(positional);
   return keys;
@@ -5449,15 +5411,15 @@ Value make_joined_row(const Value& left, const Value* right, const std::string& 
   std::vector<std::pair<std::string, Value>> right_entries;
   if (rside.size() > 0 && !rside.is_list()) right_entries = rside.entries();
   std::set<std::string> right_names;
-  for (const auto& entry : right_entries) right_names.insert(upper_name(entry.first));
+  for (const auto& entry : right_entries) right_names.insert(ascii_upper(entry.first));
   for (const auto& [key, value] : left_entries) {
-    if (join_category(value) != kJoinNested && !right_names.count(upper_name(key))) put(key, value);
+    if (join_category(value) != kJoinNested && !right_names.count(ascii_upper(key))) put(key, value);
   }
   if (right) {
     std::set<std::string> left_names;
-    for (const auto& entry : left_entries) left_names.insert(upper_name(entry.first));
+    for (const auto& entry : left_entries) left_names.insert(ascii_upper(entry.first));
     for (const auto& [key, value] : right_entries) {
-      if (join_category(value) == kJoinScalar && !left_names.count(upper_name(key))) put(key, value);
+      if (join_category(value) == kJoinScalar && !left_names.count(ascii_upper(key))) put(key, value);
     }
   }
   return out;
@@ -5511,18 +5473,18 @@ JoinPlan make_join_plan(const Value& left, const Value& rside, bool matched, con
   const std::vector<std::string> no_keys;
   const auto& rkeys = rside.shape() ? rside.shape()->keys : no_keys;
   std::set<std::string> right_names;
-  for (const std::string& key : rkeys) right_names.insert(upper_name(key));
+  for (const std::string& key : rkeys) right_names.insert(ascii_upper(key));
   for (std::size_t i = 0; i < lkeys.size(); ++i) {
-    if (join_category(lstore[i]) != kJoinNested && !right_names.count(upper_name(lkeys[i]))) {
+    if (join_category(lstore[i]) != kJoinNested && !right_names.count(ascii_upper(lkeys[i]))) {
       put(lkeys[i], JoinPlan::Op::LeftSlot, i);
     }
   }
   if (matched) {
     const auto& rstore = rside.storage();
     std::set<std::string> left_names;
-    for (const std::string& key : lkeys) left_names.insert(upper_name(key));
+    for (const std::string& key : lkeys) left_names.insert(ascii_upper(key));
     for (std::size_t i = 0; i < rkeys.size(); ++i) {
-      if (join_category(rstore[i]) == kJoinScalar && !left_names.count(upper_name(rkeys[i]))) {
+      if (join_category(rstore[i]) == kJoinScalar && !left_names.count(ascii_upper(rkeys[i]))) {
         put(rkeys[i], JoinPlan::Op::RightSlot, i);
       }
     }
@@ -5703,14 +5665,14 @@ struct JoinProjector {
     // holds; so does one named like a binder key, which the binder holds.)
     if (right) {
       std::set<std::string> left_names;
-      for (const std::string& k : left.shape()->keys) left_names.insert(upper_name(k));
+      for (const std::string& k : left.shape()->keys) left_names.insert(ascii_upper(k));
       std::set<std::string> binder_names;
       for (const std::string& k : join_binder_keys(b1, "_1")) binder_names.insert(k);
       for (const std::string& k : join_binder_keys(b2, "_2")) binder_names.insert(k);
       const auto& rkeys = rside->shape()->keys;
       const auto& rs = rside->storage();
       for (std::size_t i = 0; i < rkeys.size(); ++i) {
-        if (!left_names.count(upper_name(rkeys[i])) && !binder_names.count(rkeys[i])
+        if (!left_names.count(ascii_upper(rkeys[i])) && !binder_names.count(rkeys[i])
             && rs[i].kind() == Kind::None && !rs[i].is_list()) {
           plan.rkept.push_back(i);
         }
@@ -5738,7 +5700,7 @@ bool expr_depends_only(const Node& root, const std::set<std::string>& allowed) {
     if (!node) continue;
     switch (node->t) {
       case NT::Var:
-        if (allowed.count(upper_name(node->s)) == 0) return false;
+        if (allowed.count(ascii_upper(node->s)) == 0) return false;
         break;
       case NT::Index: case NT::Bin: case NT::Assign:
         todo.push_back(node->l.get());
@@ -5757,7 +5719,7 @@ bool expr_depends_only(const Node& root, const std::set<std::string>& allowed) {
 }
 
 bool node_contains_var(const Node& root, std::string_view wanted) {
-  const std::string upper_wanted = upper_name(std::string(wanted));
+  const std::string upper_wanted = ascii_upper(std::string(wanted));
   std::vector<const Node*> todo{&root};
   while (!todo.empty()) {
     const Node* node = todo.back();
@@ -5792,9 +5754,9 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
   // With the same name on both sides the right binder shadows the left (spec
   // §7.4): every read of the name is the RIGHT element, so there is no left key
   // to extract, and the general path -- which binds the right last -- answers.
-  if (upper_name(b1) == upper_name(b2)) return std::nullopt;
-  const std::set<std::string> left{upper_name(b1), "_1", "_"};
-  const std::set<std::string> right{upper_name(b2), "_2"};
+  if (ascii_upper(b1) == ascii_upper(b2)) return std::nullopt;
+  const std::set<std::string> left{ascii_upper(b1), "_1", "_"};
+  const std::set<std::string> right{ascii_upper(b2), "_2"};
   if (expr_depends_only(*node.l, left) && expr_depends_only(*node.r, right)) {
     return JoinEqui{node.l, node.r, node.s == "==", false};
   }
@@ -5806,7 +5768,7 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
 
 struct FastJoinKey {
   // Bad: a value the comparison rejects -- never bucketed; the pair it meets
-  // raises (review 2026-09-25 SEM-06).
+  // raises.
   enum class Type : uint8_t { Empty, Int64, SmallDec, BigDec, Text, Bad };
   Type type = Type::Empty;
   bool neg = false;
@@ -5835,13 +5797,13 @@ struct FastJoinKeyHash {
         return std::hash<int64_t>{}(k.int_val);
       case FastJoinKey::Type::SmallDec: {
         std::size_t h = std::hash<int64_t>{}(k.int_val);
-        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h = hash_combine(h, std::hash<int32_t>{}(k.scale));
         h ^= (k.neg ? 1 : 0);
         return h;
       }
       case FastJoinKey::Type::BigDec: {
         std::size_t h = std::hash<std::string>{}(k.text);
-        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h = hash_combine(h, std::hash<int32_t>{}(k.scale));
         h ^= (k.neg ? 1 : 0);
         return h;
       }
@@ -6066,7 +6028,7 @@ NodePtr join_read_self(const NodePtr& node, const std::unordered_set<std::string
                        const std::string& binder) {
   if (!node) return node;
   if (node->t == NT::Index && node->l && node->l->t == NT::Var && node->l->s == binder && node->r &&
-      node->r->t == NT::Text && names.count(upper_name(node->r->s))) {
+      node->r->t == NT::Text && names.count(ascii_upper(node->r->s))) {
     auto var = std::make_shared<Node>();
     var->t = NT::Var;
     var->pos = node->pos;
@@ -6086,14 +6048,14 @@ NodePtr join_read_self(const NodePtr& node, const std::unordered_set<std::string
 // names the row is bound under in the joined row.
 std::unordered_set<std::string> join_row_keys(const Value& value, const std::vector<std::string>& bound) {
   std::unordered_set<std::string> keys;
-  for (const std::string& b : bound) keys.insert(upper_name(b));
+  for (const std::string& b : bound) keys.insert(ascii_upper(b));
   std::unordered_set<const RecordShape*> shapes;
   for_each_collection_value(value, [&](const Value& row) {
     if (const auto& shape = row.shape()) {
       if (!shapes.insert(shape.get()).second) return;
-      for (const std::string& k : shape->keys) keys.insert(upper_name(k));
+      for (const std::string& k : shape->keys) keys.insert(ascii_upper(k));
     } else {
-      for (const std::string& k : row.keys()) keys.insert(upper_name(k));
+      for (const std::string& k : row.keys()) keys.insert(ascii_upper(k));
     }
   });
   return keys;
@@ -6108,12 +6070,10 @@ std::shared_ptr<JoinSideFacts> join_side_facts(const Value& value, std::unordere
   for (const std::string& b : bound) {
     if (is_positional_binder(b) || b == "_") continue;
     side->names.insert(b);
-    std::string lower = b;
-    for (char& ch : lower) ch = ascii_down(ch);
-    side->names.insert(lower);
+    side->names.insert(ascii_lower(b));
   }
   if (const Value* first = first_collection_item(value)) {
-    for (const std::string& k : first->keys()) side->first.insert(upper_name(k));
+    for (const std::string& k : first->keys()) side->first.insert(ascii_upper(k));
   }
   return side;
 }
@@ -6121,7 +6081,7 @@ std::shared_ptr<JoinSideFacts> join_side_facts(const Value& value, std::unordere
 // The field NAME (as written) is on this side's first row, on every row, as
 // text (a number is text) or, when NUMERIC, as a number.
 bool join_side_total(JoinSideFacts& side, const std::string& name, bool numeric) {
-  if (!side.first.count(upper_name(name)) || side.nullable) return false;
+  if (!side.first.count(ascii_upper(name)) || side.nullable) return false;
   const std::string id = (numeric ? "N:" : "T:") + name;
   auto it = side.facts.find(id);
   if (it != side.facts.end()) return it->second;
@@ -6154,7 +6114,7 @@ bool join_side_present(JoinSideFacts& side, const std::string& name) {
 // NAME on SIDE's first row and on every row as a non-null scalar: what a
 // promoted join key needs to be read without raising.
 bool join_side_any(JoinSideFacts& side, const std::string& name) {
-  if (!side.first.count(upper_name(name)) || side.nullable) return false;
+  if (!side.first.count(ascii_upper(name)) || side.nullable) return false;
   const std::string id = "A:" + name;
   auto it = side.facts.find(id);
   if (it != side.facts.end()) return it->second;
@@ -6207,7 +6167,7 @@ bool join_keys_safe(const std::vector<JoinObligation>& obligations, JoinSideFact
       continue;
     }
     if (obj->t == NT::Var && ob.row_names.count(obj->s)) {
-      const std::string upper = upper_name(field);
+      const std::string upper = ascii_upper(field);
       JoinSideFacts* owner = nullptr;
       int owners = 0;
       const auto consider = [&](JoinSideFacts* side) {
@@ -6231,7 +6191,7 @@ bool join_keys_safe(const std::vector<JoinObligation>& obligations, JoinSideFact
 bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSideFacts* left,
                    JoinSideFacts& right, const std::vector<std::shared_ptr<JoinSideFacts>>& above) {
   for (const auto& [name, numeric] : reqs) {
-    const std::string key = upper_name(name);
+    const std::string key = ascii_upper(name);
     JoinSideFacts* owner = nullptr;
     int owners = 0;
     const auto consider = [&](JoinSideFacts* side) {
@@ -6251,9 +6211,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   std::optional<JoinPrefilter> prefilter = std::move(ctx.join_prefilter);
   ctx.join_prefilter.reset();
   const int count = a.count();
-  if (count != 3 && count != 5) {
-    fail("E_ARITY", a.name() + " takes 3 or 5 arguments, got " + std::to_string(count), a.pos());
-  }
+  if (count != 3 && count != 5) unreachable_arity(a.name());
   const Node& left_node = a.node(0);
   const Node& right_node = a.node(1);
   const std::vector<JoinStage> no_stages;
@@ -6286,14 +6244,14 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     std::string name = single_relation_name(n);
     return name.empty() ? std::string(fallback) : name;
   };
-  const std::vector<std::string> b1_names = count == 5
-      ? std::vector<std::string>{a.symbol(2), "_1"} : std::vector<std::string>{bound_name(left_node, "_1"), "_1"};
-  const std::vector<std::string> b2_names = count == 5
-      ? std::vector<std::string>{a.symbol(3), "_2"} : std::vector<std::string>{bound_name(right_node, "_2"), "_2"};
-  const std::vector<JoinObligation> no_obligations;
-  const std::vector<JoinObligation>& obligations = prefilter ? prefilter->obligations : no_obligations;
+  // The two sides' binder names, decided once: the explicit binders of the
+  // five-argument form, or each side's relation name (else _1/_2).
   const std::string jb1 = count == 5 ? a.symbol(2) : bound_name(left_node, "_1");
   const std::string jb2 = count == 5 ? a.symbol(3) : bound_name(right_node, "_2");
+  const std::vector<std::string> b1_names{jb1, "_1"};
+  const std::vector<std::string> b2_names{jb2, "_2"};
+  const std::vector<JoinObligation> no_obligations;
+  const std::vector<JoinObligation>& obligations = prefilter ? prefilter->obligations : no_obligations;
   const std::optional<JoinEqui> jequi = extract_join_equi(a.node(count == 5 ? 4 : 2), jb1, jb2);
   std::shared_ptr<JoinSideFacts> right_side;
   const auto owned_by_left = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
@@ -6343,8 +6301,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       // dropped below never arrives, so the key goes down as an obligation
       // for the join that drops to prove (join_keys_safe).
       std::vector<JoinObligation> obs;
-      std::string lower_b1 = jb1;
-      for (char& ch : lower_b1) ch = ascii_down(ch);
+      const std::string lower_b1 = ascii_lower(jb1);
       obs.push_back(JoinObligation{jequi->left.get(), {jb1, lower_b1, "_1", "_"}, above.size() + 1});
       obs.insert(obs.end(), obligations.begin(), obligations.end());
       ctx.join_prefilter = JoinPrefilter{std::move(handed), true, std::move(sides), std::move(obs)};
@@ -6374,20 +6331,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     ctx.join_prefilter_report.reset();
     below.reset();
   }
-  std::string b1 = "_1";
-  std::string b2 = "_2";
-  NodePtr predicate;
-  if (count == 3) {
-    b1 = single_relation_name(a.node(0));
-    if (b1.empty()) b1 = "_1";
-    b2 = single_relation_name(a.node(1));
-    if (b2.empty()) b2 = "_2";
-    predicate = a.node_ptr(2);
-  } else {
-    b1 = a.symbol(2);
-    b2 = a.symbol(3);
-    predicate = a.node_ptr(4);
-  }
+  const std::string& b1 = jb1;
+  const std::string& b2 = jb2;
+  const NodePtr predicate = a.node_ptr(count == 3 ? 2 : 4);
   if (left_value.is_null()) return Value::list({});
 
   const Value* first_left = first_collection_item(left_value);
@@ -6418,11 +6364,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   const auto add_frame_names = [](std::vector<std::pair<std::string, Value>>& frame,
                                   const std::string& name, const Value& value) {
     frame.emplace_back(name, value);
-    const std::string lower = [&] {
-      std::string v = name;
-      for (char& ch : v) ch = ascii_down(ch);
-      return v;
-    }();
+    const std::string lower = ascii_lower(name);
     if (lower != name) frame.emplace_back(lower, value);
   };
 
@@ -6433,12 +6375,12 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     std::vector<std::pair<std::string, Value>> frame;
     add_frame_names(frame, b2, Value::none());
     frame.emplace_back("_2", Value::none());
-    ctx.frames.push_back(std::move(frame));
+    FrameScope key_scope(ctx, std::move(frame));
     // The right rows are read in order here, where they are close together,
     // rather than scattered pair by pair in the projector.
     JoinFlatTest flat_test{b1, b2};
     bool right_flat = true;
-    try {
+    {
       for_each_snapshot_value(take_snapshot(right_value, false), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b2);
         set_frame(ctx.frames.back(), b2, row);
@@ -6449,11 +6391,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
         if (join_key && join_key->type != FastJoinKey::Type::Bad) buckets[*join_key].push_back(row);
         if (right_flat && !flat_test(row)) right_flat = false;
       });
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
     }
-    ctx.frames.pop_back();
+    key_scope.pop();
     projector.right_flat = right_flat;
 
     // The pre-filter, decided from the rows themselves (join_stage_walk). On
@@ -6475,11 +6414,11 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // joined row -- the binder is bound last (spec §7.4) -- unless the left
     // binder has the same name, or a join above rebinds it.
     const auto right_names = [&](const JoinStage& stage) {
-      std::unordered_set<std::string> names{upper_name(b2)};
+      std::unordered_set<std::string> names{ascii_upper(b2)};
       if (stage.above == 0) names.insert("_2");
       return names;
     };
-    const bool right_ok = !left_join && upper_name(b1) != upper_name(b2);
+    const bool right_ok = !left_join && ascii_upper(b1) != ascii_upper(b2);
     const auto right_here = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
       if (!right_ok) return false;
       const auto names = right_names(stage);
@@ -6510,7 +6449,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       // A handed-down join key that could raise on a dropped row, and
       // nothing is dropped.
       const bool safe = obligations.empty() || join_keys_safe(obligations, *left_side, *right_side, above);
-      const std::unordered_set<std::string> self_names{upper_name(b1), "_1"};
+      const std::unordered_set<std::string> self_names{ascii_upper(b1), "_1"};
       std::vector<JoinApplied> walk_applied;
       if (safe) walk_applied = join_stage_walk(stages, owned_here, total_here, right_here).first;
       for (const JoinApplied& applied : walk_applied) {
@@ -6557,18 +6496,13 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       for (const std::string& binder : binders) right_frame.emplace_back(binder, Value::none());
       const bool before = report.errored;
       report.errored = false;
-      ctx.frames.push_back(std::move(right_frame));
-      try {
-        for (const auto& [key, bucket] : buckets) {
-          for (const Value& right : bucket) {
-            if (verdict(right_prefix, right) == 1) rejected.insert(Internals::identity(right));
-          }
+      FrameScope right_scope(ctx, std::move(right_frame));
+      for (const auto& [key, bucket] : buckets) {
+        for (const Value& right : bucket) {
+          if (verdict(right_prefix, right) == 1) rejected.insert(Internals::identity(right));
         }
-      } catch (...) {
-        ctx.frames.pop_back();
-        throw;
       }
-      ctx.frames.pop_back();
+      right_scope.pop();
       if (report.errored) prefix.resize(*left_before_right);
       report.errored = report.errored || before;
     }
@@ -6585,8 +6519,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     const Node& el = *equi->left;
     if (!prefix.empty() && deep && el.t == NT::Index && el.l && el.l->t == NT::Var && el.r &&
         el.r->t == NT::Text) {
-      const std::string owner = upper_name(el.l->s);
-      if (owner == upper_name(b1) || owner == "_1" || owner == "_") fast_field = el.r->s;
+      const std::string owner = ascii_upper(el.l->s);
+      if (owner == ascii_upper(b1) || owner == "_1" || owner == "_") fast_field = el.r->s;
     }
 
     // The binders the conjuncts read come first: a frame is searched in
@@ -6608,8 +6542,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     }
     add_once("_1");
     add_once("_");
-    ctx.frames.push_back(std::move(frame));
-    try {
+    FrameScope left_scope(ctx, std::move(frame));
+    {
       for_each_snapshot_value(take_snapshot(left_value, false), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b1);
         int asked = -1;
@@ -6661,11 +6595,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           emit(projector(row, nullptr));
         }
       });
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
     }
-    ctx.frames.pop_back();
+    left_scope.pop();
     report.dropped = report.dropped || dropped;
     if (prefilter) ctx.join_prefilter_report = std::move(report);
     if (numbered) {
@@ -6679,8 +6610,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     frame.emplace_back("_", Value::none());
     add_frame_names(frame, b2, Value::none());
     frame.emplace_back("_2", Value::none());
-    ctx.frames.push_back(std::move(frame));
-    try {
+    FrameScope scope(ctx, std::move(frame));
+    {
       // Each side is listed ONCE (spec §7.3): the right side is walked again for every
       // left row, and a predicate that grows it must not give later left rows more rows.
       const Snapshot general_left = take_snapshot(left_value, false);
@@ -6706,11 +6637,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           output.push_back(projector(left, nullptr));
         }
       });
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
     }
-    ctx.frames.pop_back();
+    scope.pop();
   }
   return Value::list(std::move(output));
 }
@@ -6759,7 +6687,7 @@ void register_structure() {
                 cap_collection(static_cast<u128>(n / 2), a.pos());
                 // Literal, distinct keys (prepare_record_shape): the keys are the shape's own,
                 // a literal key cannot fail to be text, so the values go straight into the
-                // shaped storage -- no intermediate record (CPP-P21). Same evaluation order:
+                // shaped storage -- no intermediate record. Same evaluation order:
                 // the arguments were evaluated before this call, left to right.
                 // The shape is checked against the key NODES as they are now: the planners
                 // rewrite argument lists and a stale shape must not name the wrong keys.
@@ -6781,7 +6709,7 @@ void register_structure() {
                 for (int i = 0; i < n; i += 2) {
                   // The key is coerced into a local first: argument evaluation order is
                   // unspecified, and the copy below can raise E_DEPTH for an over-deep
-                  // host value, which must not beat the key's own E_NOT_TEXT (CPP-C15).
+                  // host value, which must not beat the key's own E_NOT_TEXT.
                   const std::string key = a.text(i);
                   rec.set(key, adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
                 }
@@ -6848,12 +6776,11 @@ void register_structure() {
 
   // DISTINCT and DEDUPE are one operation (spec §7.3), so one body: DISTINCT
   // compared every pair, which was O(n^2) and never walked a lone value --
-  // one nested past the cap answered where DEDUPE raised E_DEPTH (review
-  // 2026-09-25 HOST-07).
+  // one nested past the cap answered where DEDUPE raised E_DEPTH.
   const auto dedupe = [](Args& a, Context&) -> Value {
                 const Value& val = a.val(0);
                 if (val.is_null()) return Value::list({});
-                // Open addressing over indices into `out` (CPP-P23): a chained
+                // Open addressing over indices into `out`: a chained
                 // unordered_map<hash, vector<Value>> paid two allocations per distinct
                 // value. Slots hold an index into `out`; the parallel `hashes` vector
                 // keeps the full hash so a probe compares 64 bits before any eql().
@@ -6938,7 +6865,7 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
         if (!n) continue;
         switch (n->t) {
           case NT::Index:
-            if (bare_read(n)) { entry.fields.insert(upper_name(n->r->s)); break; }
+            if (bare_read(n)) { entry.fields.insert(ascii_upper(n->r->s)); break; }
             if (n->l && n->l->t == NT::Index) { todo.push_back(n->l.get()); todo.push_back(n->r.get()); break; }
             return false;
           case NT::Num: case NT::Text: case NT::Bool: break;
@@ -6987,10 +6914,10 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   frame.reserve(needs_k ? 2 : 1);
   frame.emplace_back(binder, Value::none());
   if (needs_k) frame.emplace_back("_K", Value::none());
-  ctx.frames.push_back(std::move(frame));
+  FrameScope scope(ctx, std::move(frame));
 
   std::optional<Value> stopped;
-  try {
+  {
     for (std::size_t i = 0; i < count; ++i) {
       const Value& item = snap.items[i];
       ctx.frames.back()[0].second = item;
@@ -7003,11 +6930,8 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
         break;
       }
     }
-  } catch (...) {
-    ctx.frames.pop_back();
-    throw;
   }
-  ctx.frames.pop_back();
+  scope.pop();
   return stopped;
 }
 
@@ -7073,18 +6997,25 @@ struct SortEntry {
   std::size_t idx;
 };
 
+// The SORT/TOP form of this call (sort_form, sel_ast.hpp). compile() refused
+// every count no form takes.
+SortForm sort_form_of(const Args& a) {
+  if (const auto form = sort_form(a.name(), a.nodes())) return *form;
+  unreachable_arity(a.name());
+}
+
 Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   const Value& val = a.val(0);
   // Nothing to sort still means the direction is read and checked (spec §7.4).
   const bool nothing_to_sort = val.is_null() || collection_size(val) == 0;
   const std::size_t source_size = nothing_to_sort ? 0 : collection_size(val);
 
-  const int count = a.count();
+  const SortForm form = sort_form_of(a);
   std::string direction;
   std::vector<SortEntry> indexed;
   indexed.reserve(source_size);
 
-  if (count == 1) {
+  if (form.key < 0) {
     direction = forced_dir.value_or("ASC");
     if (nothing_to_sort) return Value::list({});
     const Snapshot snap = take_snapshot(val, false);
@@ -7097,46 +7028,11 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       indexed.push_back({detached, std::move(detached), i});
     }
   } else {
-    std::string binder;
-    const Node* body = nullptr;
-
-    if (count == 2) {
-      binder = "_";
-      body = &a.node(1);
-      direction = forced_dir.value_or("ASC");
-    } else if (count == 3) {
-      if (forced_dir.has_value()) {
-        binder = a.symbol(1);
-        body = &a.node(2);
-        direction = *forced_dir;
-      } else if (a.node(2).t == NT::Text) {
-        binder = "_";
-        body = &a.node(1);
-        std::string d = a.text(2);
-        for (char& c : d) c = ascii_up(c);
-        direction = d;
-      } else if (a.is_symbol(1)) {
-        binder = a.symbol(1);
-        body = &a.node(2);
-        direction = "ASC";
-      } else {
-        binder = "_";
-        body = &a.node(1);
-        std::string d = a.text(2);
-        for (char& c : d) c = ascii_up(c);
-        direction = d;
-      }
-    } else {  // 4
-      binder = a.symbol(1);
-      body = &a.node(2);
-      std::string d = a.text(3);
-      for (char& c : d) c = ascii_up(c);
-      direction = d;
-    }
-
+    const std::string binder = form.binder >= 0 ? a.symbol(form.binder) : "_";
+    const Node* body = &a.node(form.key);
+    direction = form.dir >= 0 ? ascii_upper(a.text(form.dir)) : forced_dir.value_or("ASC");
     if (direction != "ASC" && direction != "DESC") {
-      const int pos_idx = (count == 4) ? 3 : 2;
-      fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(pos_idx));
+      fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(form.dir));
     }
     if (nothing_to_sort) return Value::list({});
 
@@ -7146,9 +7042,9 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     frame.reserve(needs_k ? 2 : 1);
     frame.emplace_back(binder, Value::none());
     if (needs_k) frame.emplace_back("_K", Value::none());
-    ctx.frames.push_back(std::move(frame));
+    FrameScope scope(ctx, std::move(frame));
 
-    try {
+    {
       for (std::size_t i = 0; i < source_size; i++) {
         const Value& item = snap.items[i];
         ctx.frames.back()[0].second = item;
@@ -7158,11 +7054,8 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
         Value eval_key = a.eval(*body);
         indexed.push_back({keep_element(val, i, item, 1), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
       }
-    } catch (...) {
-      ctx.frames.pop_back();
-      throw;
     }
-    ctx.frames.pop_back();
+    scope.pop();
   }
 
   const bool desc = (direction == "DESC");
@@ -7194,38 +7087,13 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   // all evaluated and checked, whatever there is to sort.
   const bool nothing_to_do = limit == 0 || source_size == 0;
 
-  const int sort_count = a.count() - 1;
-  std::string binder = "_";
-  const Node* body = nullptr;
-  std::string direction = forced_dir.value_or("ASC");
-  if (sort_count == 1) {
-    binder.clear();
-  } else if (sort_count == 2) {
-    body = &a.node(1);
-  } else if (sort_count == 3) {
-    if (forced_dir.has_value()) {
-      binder = a.symbol(1);
-      body = &a.node(2);
-    } else if (a.node(2).t == NT::Text) {
-      body = &a.node(1);
-      direction = upper_name(a.text(2));
-    } else if (a.is_symbol(1)) {
-      binder = a.symbol(1);
-      body = &a.node(2);
-    } else {
-      body = &a.node(1);
-      direction = upper_name(a.text(2));
-    }
-  } else if (sort_count == 4) {
-    binder = a.symbol(1);
-    body = &a.node(2);
-    direction = upper_name(a.text(3));
-  } else {
-    fail("E_ARITY", a.name() + " has an invalid sort form", a.pos());
-  }
+  const SortForm form = sort_form_of(a);
+  const std::string binder = form.key < 0 ? "" : form.binder >= 0 ? a.symbol(form.binder) : "_";
+  const Node* body = form.key >= 0 ? &a.node(form.key) : nullptr;
+  const std::string direction =
+      form.dir >= 0 ? ascii_upper(a.text(form.dir)) : forced_dir.value_or("ASC");
   if (direction != "ASC" && direction != "DESC") {
-    const int direction_index = sort_count == 4 ? 3 : 2;
-    fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(direction_index));
+    fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(form.dir));
   }
   if (nothing_to_do) return Value::list({});
 
@@ -7272,18 +7140,19 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   // the output is just the `compare` order of the first k -- a sort and a cut. The
   // `compare` ties on the source index, so the result is identical either way.
   const bool sort_all = k == source_size || k * 2 >= source_size;
+  FrameScope scope(ctx);
   if (body) {
     std::vector<std::pair<std::string, Value>> frame;
     frame.reserve(needs_k ? 2 : 1);
     frame.emplace_back(binder, Value::none());
     if (needs_k) frame.emplace_back("_K", Value::none());
-    ctx.frames.push_back(std::move(frame));
+    scope.push(std::move(frame));
   }
   if (sort_all) heap.reserve(source_size);
 
   std::size_t index = 0;
   const Snapshot snap = take_snapshot(value, needs_k);
-  try {
+  {
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.items[i];
       TopEntry candidate;
@@ -7323,11 +7192,8 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       }
       index++;
     }
-  } catch (...) {
-    if (body) ctx.frames.pop_back();
-    throw;
   }
-  if (body) ctx.frames.pop_back();
+  scope.pop();
   std::stable_sort(heap.begin(), heap.end(), compare);
   if (heap.size() > k) heap.erase(heap.begin() + static_cast<std::ptrdiff_t>(k), heap.end());
   std::vector<Value> out;
@@ -7377,7 +7243,7 @@ Value do_bucket(Args& a, Context& ctx) {
   frame.reserve(needs_k_key ? 2 : 1);
   frame.emplace_back(binder, Value::none());
   if (needs_k_key) frame.emplace_back("_K", Value::none());
-  ctx.frames.push_back(std::move(frame));
+  FrameScope scope(ctx, std::move(frame));
 
   // The rows a projected BUCKET collects are read by its projection and by
   // nothing else: its binder cannot be assigned, and a projection that is a
@@ -7392,7 +7258,7 @@ Value do_bucket(Args& a, Context& ctx) {
     return alias_rows ? keep_or_alias(val, i, item, 1) : keep_element(val, i, item, 1);
   };
   const Snapshot snap = take_snapshot(val, needs_k_key);
-  try {
+  {
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.items[i];
       ctx.frames.back()[0].second = item;
@@ -7444,11 +7310,8 @@ Value do_bucket(Args& a, Context& ctx) {
         if (agg_node) group_buckets[hash].push_back(groups.size() - 1);
       }
     }
-  } catch (...) {
-    ctx.frames.pop_back();
-    throw;
   }
-  ctx.frames.pop_back();
+  scope.pop();
 
   if (!agg_node) {
     // One entry per key text, each key new by construction (`bare_groups` saw to
@@ -7468,20 +7331,15 @@ Value do_bucket(Args& a, Context& ctx) {
   frame.reserve(needs_k_agg ? 2 : 1);
   frame.emplace_back(binder, Value::none());
   if (needs_k_agg) frame.emplace_back("_K", Value::none());
-  ctx.frames.push_back(std::move(frame));
-  try {
-    for (auto& g : groups) {
-      ctx.frames.back()[0].second = Value::list(std::move(g.rows));
-      if (needs_k_agg) {
-        ctx.frames.back()[1].second = std::move(g.key);
-      }
-      out.push_back(a.eval(*agg_node));
+  scope.push(std::move(frame));   // the key frame was popped above; this is the projection's
+  for (auto& g : groups) {
+    ctx.frames.back()[0].second = Value::list(std::move(g.rows));
+    if (needs_k_agg) {
+      ctx.frames.back()[1].second = std::move(g.key);
     }
-  } catch (...) {
-    ctx.frames.pop_back();
-    throw;
+    out.push_back(a.eval(*agg_node));
   }
-  ctx.frames.pop_back();
+  scope.pop();
   return Value::list(std::move(out));
 }
 
@@ -7609,11 +7467,7 @@ void register_aggregates() {
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
-                if (kept.empty()) {
-                  Value out = Value::none();
-                  out.set_is_list(true);
-                  return out;
-                }
+                if (kept.empty()) return Value::list({});
                 if (sequential) return Value::list(std::move(kept));
                 std::vector<Value::Entry> entries;
                 entries.reserve(kept.size());
@@ -7693,7 +7547,7 @@ void register_aggregates() {
 // that is not 10xxxxxx, and a byte-level match of a valid needle in a valid
 // haystack always begins and ends on code point boundaries. So lengths, slices,
 // searches and ASCII case maps can all run on the bytes -- identical results,
-// without decoding the whole string into a vector<char32_t> first (CPP-P9).
+// without decoding the whole string into a vector<char32_t> first.
 
 // Byte offset reached by moving `k` code points forward from byte `pos`; the end
 // of the string if there are fewer.
@@ -7716,22 +7570,7 @@ std::size_t cp_count_range(const std::string& s, std::size_t from, std::size_t t
   return n;
 }
 
-// ASCII only, deliberately. The hosts' own case mappings cannot be reconciled
-// without shipping a case table, and guessing would break the invariant silently.
-// Bytes of a multi-byte sequence are all >= 0x80, so they are never touched.
-std::string ascii_case(const std::string& s, bool up) {
-  std::string out = s;
-  if (up) {
-    for (char& ch : out) if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 32);
-  } else {
-    for (char& ch : out) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch + 32);
-  }
-  return out;
-}
 
-bool is_sel_space(char32_t c) {
-  return c == 0x20 || c == 0x09 || c == 0x0d || c == 0x0a;
-}
 
 std::string trim_text(const std::string& s, bool left, bool right) {
   std::size_t a = 0, b = s.size();
@@ -7742,7 +7581,7 @@ std::string trim_text(const std::string& s, bool left, bool right) {
 }
 
 Value pad(Args& a, bool left) {
-  // Byte-level (CPP-P22): the old version widened every code point to 4 bytes twice
+  // Byte-level: the old version widened every code point to 4 bytes twice
   // (padding, then the result) and re-encoded; at the 16M-code-point cap that was
   // ~128 MB of scratch for a 16 MB answer.
   const std::string& text = a.text(0);
@@ -7827,7 +7666,7 @@ void register_text() {
                   if (f < 1) {
                     fail("E_RANGE", "FIND start is 1-based and must be at least 1", a.pos_of(2));
                   }
-                  from = static_cast<long long>(f - 1);
+                  from = f - 1;
                 }
                 if (needle.empty()) fail("E_BAD_ARG", "FIND needle must not be empty", a.pos_of(0));
                 // `from` counts code points and may be enormous: past the end nothing matches.
@@ -7902,10 +7741,10 @@ void register_text() {
               }});
 
   define(Spec{"UPPER", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_text(ascii_case(a.text(0), true));
+                return make_text(ascii_upper(a.text(0)));
               }});
   define(Spec{"LOWER", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_text(ascii_case(a.text(0), false));
+                return make_text(ascii_lower(a.text(0)));
               }});
 
   define(Spec{"BACKWARDS", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -8113,7 +7952,7 @@ void register_binary() {
                   const int lo = hex_value(s[i * 2 + 1]);
                   if (hi < 0 || lo < 0) {
                     // The position, not the text: slicing bytes put half a UTF-8
-                    // sequence into the message (CPP-C52), and the input is data.
+                    // sequence into the message, and the input is data.
                     fail("E_BAD_ARG", "FROM_HEX: byte " + std::to_string(i * 2 + 1) + " is not a hex digit pair",
                          a.pos_of(0));
                   }
@@ -8793,24 +8632,6 @@ class RxParser {
   }
 };
 
-bool rx_nullable(const RxTree& t, int n) {
-  const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
-  switch (x.k) {
-    case RxNode::K::Empty:
-    case RxNode::K::Anchor: return true;
-    case RxNode::K::Atom: return false;
-    case RxNode::K::Cat:
-      for (const int k : x.kids) if (!rx_nullable(t, k)) return false;
-      return true;
-    case RxNode::K::Alt:
-      for (const int k : x.kids) if (rx_nullable(t, k)) return true;
-      return false;
-    case RxNode::K::Group: return rx_nullable(t, x.kids[0]);
-    case RxNode::K::Repeat: return x.lo == 0 || rx_nullable(t, x.kids[0]);
-  }
-  return false;
-}
-
 // True when a capture inside `n` need not take part every time `n` is entered:
 // it sits under an alternation with other branches, or under a quantifier whose
 // minimum is 0.
@@ -8845,7 +8666,8 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
     work.pop_back();
     const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
     if (x.k == RxNode::K::Repeat && (x.hi == -1 || x.hi > 1)) {
-      if (rx_nullable(t, x.kids[0])) {
+      // RxParser::measure stored it on every node as the tree was built.
+      if (t.nodes[static_cast<std::size_t>(x.kids[0])].nullable) {
         bad_regex("a loop whose body can match the empty string is not portable", pattern, 0, pos);
       }
       if (rx_optional_capture(t, x.kids[0], false)) {
@@ -9173,7 +8995,7 @@ class RxAnalysis {
 
 // Validates and rewrites in one pass, returning source that means the same thing
 // to every engine. Every host runs this, so every host compiles the same
-// pattern -- and the SEL→SQL translator is a fifth caller from another
+// pattern -- and the SEL→SQL translator is a caller from another
 // translation unit, which is why it is declared in sel_ast.hpp and defined at
 // namespace scope rather than in the anonymous namespace above.
 std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_case) {
@@ -9536,11 +9358,11 @@ void register_regex() {
                 const std::size_t n = subject.size();
                 srell::u32smatch m;
                 while (s <= n) {
-                  const auto flags = s > 0 ? srell::regex_constants::match_prev_avail
-                                           : srell::regex_constants::match_default;
+                  const auto match_flags = s > 0 ? srell::regex_constants::match_prev_avail
+                                                 : srell::regex_constants::match_default;
                   if (!guarded_search(a.pos(), [&] {
                         return srell::regex_search(subject.cbegin() + static_cast<std::ptrdiff_t>(s),
-                                                   subject.cend(), m, re, flags);
+                                                   subject.cend(), m, re, match_flags);
                       })) {
                     break;
                   }
@@ -9668,7 +9490,7 @@ void register_builtins() {
 //
 // The depth rides as a parameter rather than as a member with an RAII guard,
 // because there is nothing to release on the way out -- which is also what lets
-// the five hosts spell this identically. It is capped at the same MAX_DEPTH the
+// every host spells this identically. It is capped at the same MAX_DEPTH the
 // evaluator uses and trips at the same node, so a program whose dependencies
 // cannot be computed is exactly a program that could not have been evaluated.
 //
@@ -9851,19 +9673,15 @@ constexpr std::string_view OPT_PIPELINE_OPS[] = {
     "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
     "LINK", "LINK_LEFT"};
 
-bool opt_pipeline_op(std::string_view name) {
+}  // namespace
+
+// The pipeline vocabulary (sel_ast.hpp), shared with the SQL planner.
+bool is_pipeline_op(std::string_view name) {
   return std::find(std::begin(OPT_PIPELINE_OPS), std::end(OPT_PIPELINE_OPS), name) !=
          std::end(OPT_PIPELINE_OPS);
 }
 
-std::shared_ptr<Node> opt_copy(const NodePtr& node) {
-  if (!node) return nullptr;
-  auto copy = std::make_shared<Node>(*node);
-  copy->l = node->l;
-  copy->r = node->r;
-  copy->items = node->items;
-  return copy;
-}
+namespace {
 
 NodePtr opt_bool(bool value, Pos pos) {
   auto node = std::make_shared<Node>();
@@ -9899,15 +9717,17 @@ bool opt_is_literal(const NodePtr& node) {
 }
 
 NodePtr opt_hoist_literal(const NodePtr& child, Pos pos) {
-  auto copy = opt_copy(child);
+  auto copy = copy_node(child);
   copy->pos = pos;
   return copy;
 }
 
-std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
+}  // namespace
+
+std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root) {
   std::vector<NodePtr> steps;
   NodePtr current = root;
-  while (current && current->t == NT::Call && opt_pipeline_op(current->s) &&
+  while (current && current->t == NT::Call && is_pipeline_op(current->s) &&
          !current->items.empty()) {
     steps.push_back(current);
     current = current->items.front();
@@ -9916,12 +9736,11 @@ std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
   return {current, steps};
 }
 
-NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
-                           const Pos* last_pos = nullptr) {
+NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps, const Pos* last_pos) {
   NodePtr current = std::move(source);
   for (std::size_t k = 0; k < steps.size(); k++) {
     const NodePtr& step = steps[k];
-    auto next = opt_copy(step);
+    auto next = copy_node(step);
     next->items.clear();
     next->items.push_back(current);
     next->items.insert(next->items.end(), step->items.begin() + 1, step->items.end());
@@ -9931,9 +9750,7 @@ NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
   return current;
 }
 
-int opt_text_compare(std::string_view a, std::string_view b) {
-  return bytes_compare(a, b);
-}
+namespace {
 
 NodePtr opt_fold(const NodePtr& node) {
   if (!node) return node;
@@ -9961,52 +9778,36 @@ NodePtr opt_fold(const NodePtr& node) {
       if (left->t == NT::Bool && left->b) return opt_bool(true, node->pos);
       if (left->t == NT::Bool && right->t == NT::Bool) return opt_bool(left->b || right->b, node->pos);
     }
-    if (left->t == NT::Num && right->t == NT::Num &&
-        (node->s == "+" || node->s == "-" || node->s == "*" || node->s == "/" || node->s == "%")) {
+    // The evaluator's own dispatch (dec_arith, cmp_holds), so a fold cannot
+    // answer differently from the operator it replaces.
+    const unsigned char opc = node->opc ? node->opc : bin_opcode(node->s);
+    if (left->t == NT::Num && right->t == NT::Num && opc >= BO_ADD && opc <= BO_MOD) {
       try {
         Dec a, b;
         if (dec_parse(left->s, a, node->pos) && dec_parse(right->s, b, node->pos)) {
-          Dec result;
-          if (node->s == "+") result = dec_add(a, b, node->pos);
-          else if (node->s == "-") result = dec_sub(a, b, node->pos);
-          else if (node->s == "*") result = dec_mul(a, b, node->pos);
-          else if (node->s == "/") result = dec_div(a, b, node->pos);
-          else result = dec_mod(a, b, node->pos);
-          return opt_num(dec_format(result), node->pos);
+          return opt_num(dec_format(dec_arith(opc, a, b, node->pos)), node->pos);
         }
       } catch (const SelError&) {
       }
     }
-    if (left->t == NT::Num && right->t == NT::Num &&
-        (node->s == "==" || node->s == "!=" || node->s == "<" || node->s == "<=" ||
-         node->s == ">" || node->s == ">=")) {
+    if (left->t == NT::Num && right->t == NT::Num && opc >= BO_NUM_EQ && opc <= BO_NUM_GE) {
       try {
         Dec a, b;
         if (dec_parse(left->s, a, node->pos) && dec_parse(right->s, b, node->pos)) {
-          const int c = dec_cmp(a, b);
-          const bool result = node->s == "==" ? c == 0 : node->s == "!=" ? c != 0
-              : node->s == "<" ? c < 0 : node->s == "<=" ? c <= 0
-              : node->s == ">" ? c > 0 : c >= 0;
-          return opt_bool(result, node->pos);
+          return opt_bool(cmp_holds(opc - BO_NUM_EQ, dec_cmp(a, b)), node->pos);
         }
       } catch (const SelError&) {
       }
     }
-    if (left->t == NT::Text && right->t == NT::Text &&
-        (node->s == "$==" || node->s == "$!=" || node->s == "$<" || node->s == "$<=" ||
-         node->s == "$>" || node->s == "$>=")) {
-      const int c = opt_text_compare(left->s, right->s);
-      const bool result = node->s == "$==" ? c == 0 : node->s == "$!=" ? c != 0
-          : node->s == "$<" ? c < 0 : node->s == "$<=" ? c <= 0
-          : node->s == "$>" ? c > 0 : c >= 0;
-      return opt_bool(result, node->pos);
+    if (left->t == NT::Text && right->t == NT::Text && opc >= BO_TXT_EQ && opc <= BO_TXT_GE) {
+      return opt_bool(cmp_holds(opc - BO_TXT_EQ, bytes_compare(left->s, right->s)), node->pos);
     }
     return node;
   }
   // items are the arguments themselves: the condition is items[0]. This arm
   // once tested for four items and never fired, which is how C++ came to
-  // report the IF's position while the four hosts that folded reported the
-  // branch literal's.
+  // report the IF's position while the hosts that folded reported the branch
+  // literal's.
   if (node->t == NT::Call && node->s == "IF" && node->items.size() == 3 &&
       node->items[0]->t == NT::Bool) {
     const NodePtr& branch = node->items[node->items[0]->b ? 1 : 2];
@@ -10020,8 +9821,8 @@ std::vector<std::string> opt_field_refs(const Node& node, std::string binder = "
   const auto walk = [&](const auto& self, const Node& item) -> void {
     if (item.t == NT::Index && item.l && item.r && item.l->t == NT::Var &&
         item.r->t == NT::Text) {
-      const std::string var = upper_name(item.l->s);
-      if (var == upper_name(binder) || var == "_" || var == "_1" || var == "_2") {
+      const std::string var = ascii_upper(item.l->s);
+      if (var == ascii_upper(binder) || var == "_" || var == "_1" || var == "_2") {
         refs.insert(item.r->s);
       }
     }
@@ -10038,11 +9839,11 @@ std::vector<std::string> opt_field_refs(const Node& node, std::string binder = "
 // evaluator's frames.
 bool opt_reads_var(const Node& node, const std::vector<std::string>& names) {
   std::set<std::string> wanted;
-  for (const std::string& name : names) wanted.insert(upper_name(name));
+  for (const std::string& name : names) wanted.insert(ascii_upper(name));
   bool found = false;
   const auto walk = [&](const auto& self, const Node& item) -> void {
     if (found) return;
-    if (item.t == NT::Var && wanted.count(upper_name(item.s))) { found = true; return; }
+    if (item.t == NT::Var && wanted.count(ascii_upper(item.s))) { found = true; return; }
     if (item.t == NT::Index && item.l && item.r && item.l->t == NT::Var && item.r->t == NT::Text) return;
     if (item.l) self(self, *item.l);
     if (item.r) self(self, *item.r);
@@ -10095,9 +9896,19 @@ bool opt_source_is_list(const NodePtr& source) {
 // A fold that hoists a text literal into that slot -- `IF(TRUE, "DESC",
 // "ASC")` -- would change the form, so the slot is walked without folding.
 bool opt_step_arg_folds(const Node& step, std::size_t index) {
-  const std::size_t sort_count = step.s == "SORT_BY" ? step.items.size()
-      : step.s == "TOP_BY" ? step.items.size() - 1 : 0;
-  return !(sort_count == 3 && index == 2 && step.items[1]->t == NT::Var && !step.items[1]->grouped);
+  // The slot a form is told apart by (a manifest `when` that asks for a text
+  // literal) is not folded while another form holds: a fold could turn the
+  // call into that form.
+  const auto form = sort_form(step.s, step.items);
+  if (!form) return true;
+  for (int i = 0; i < sel_builtin_manifest::FORM_COUNT; i++) {
+    const auto& f = sel_builtin_manifest::FORMS[i];
+    if (step.s == f.name && static_cast<std::size_t>(f.count) == step.items.size() &&
+        f.when_kind == 2 && static_cast<std::size_t>(f.when_arg) == index && form->dir != f.when_arg) {
+      return false;
+    }
+  }
+  return true;
 }
 
 struct OptMapInfo { std::string binder; NodePtr body; bool explicit_binder = false; };
@@ -10111,12 +9922,11 @@ OptMapInfo opt_map_info(const Node& step) {
           explicit_binder};
 }
 
+// MAP's reading of the arguments, plus whether it is a FILTER form at all.
 OptFilterInfo opt_filter_info(const Node& step) {
-  const auto& args = step.items;
-  const bool explicit_binder = args.size() == 3 && args[1]->t == NT::Var && !args[1]->grouped;
-  return {explicit_binder ? args[1]->s : "_",
-          explicit_binder ? args[2] : args.size() > 1 ? args[1] : nullptr,
-          explicit_binder, args.size() == 2 || explicit_binder};
+  OptMapInfo m = opt_map_info(step);
+  const bool valid = step.items.size() == 2 || m.explicit_binder;
+  return {std::move(m.binder), std::move(m.body), m.explicit_binder, valid};
 }
 
 std::vector<std::string> opt_map_passthroughs(const Node& step) {
@@ -10129,7 +9939,7 @@ std::vector<std::string> opt_map_passthroughs(const Node& step) {
     const NodePtr& value = info.body->items[i + 1];
     if (key->t == NT::Text && value->t == NT::Index && value->l && value->r &&
         value->l->t == NT::Var && value->r->t == NT::Text &&
-        upper_name(value->l->s) == upper_name(info.binder) && value->r->s == key->s) {
+        ascii_upper(value->l->s) == ascii_upper(info.binder) && value->r->s == key->s) {
       fields.push_back(key->s);
     }
   }
@@ -10146,29 +9956,16 @@ bool opt_map_has_computed(const Node& step) {
 struct OptSortInfo { std::string binder = "_"; NodePtr key; };
 
 OptSortInfo opt_sort_info(const Node& step) {
-  const auto& args = step.items;
-  const std::size_t count = args.size();
   OptSortInfo info;
-  if (step.s == "SORT" || step.s == "SORT_DESC") {
-    if (count == 1) return info;
-    info.binder = count == 3 && args[1]->t == NT::Var && !args[1]->grouped ? args[1]->s : "_";
-    info.key = count == 3 ? args[2] : args[1];
-  } else if (step.s == "TOP" || step.s == "TOP_DESC") {
-    if (count == 2) return info;
-    // TOP(source, key, n) has three arguments and TOP(source, binder, key, n)
-    // has four; `sort_count` excludes n, so the explicit-binder form is 3.
-    const std::size_t sort_count = count - 1;
-    info.binder = sort_count == 3 && args[1]->t == NT::Var && !args[1]->grouped ? args[1]->s : "_";
-    info.key = sort_count == 3 ? args[2] : args[1];
-  } else if (step.s == "SORT_BY" || step.s == "TOP_BY") {
-    const std::size_t sort_count = step.s == "TOP_BY" ? count - 1 : count;
-    if (sort_count == 2 || (sort_count == 3 && args[2]->t == NT::Text)) {
-      info.key = args[1];
-    } else if (count > 2 && args[1]->t == NT::Var && !args[1]->grouped) {
-      info.binder = args[1]->s;
-      info.key = args[2];
-    }
+  const auto form = sort_form(step.s, step.items);
+  if (!form || form->key < 0) return info;
+  if (form->binder >= 0) {
+    // A binder slot that is not a bare name raises E_EXPECT_SYMBOL when run; no
+    // name is bound then, so nothing in the key counts as a read of the row.
+    const Node& b = *step.items[static_cast<std::size_t>(form->binder)];
+    info.binder = b.t == NT::Var && !b.grouped ? b.s : "";
   }
+  info.key = step.items[static_cast<std::size_t>(form->key)];
   return info;
 }
 
@@ -10230,8 +10027,8 @@ NodePtr opt_combine_and(const std::vector<NodePtr>& nodes, Pos pos = {}) {
 
 NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const std::string& new_name) {
   if (!node) return nullptr;
-  auto copy = opt_copy(node);
-  if (copy->t == NT::Var && upper_name(copy->s) == upper_name(old_name)) copy->s = new_name;
+  auto copy = copy_node(node);
+  if (copy->t == NT::Var && ascii_upper(copy->s) == ascii_upper(old_name)) copy->s = new_name;
   if (copy->l) copy->l = opt_rename_var(copy->l, old_name, new_name);
   if (copy->r) copy->r = opt_rename_var(copy->r, old_name, new_name);
   for (NodePtr& item : copy->items) item = opt_rename_var(item, old_name, new_name);
@@ -10241,8 +10038,8 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 // that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 // two FILTERs changes which rows reach what, so it may only pass over
-// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// expressions that cannot raise on any of them (spec §7.3). Literals, _K and
+// the binder itself never raise. On the
 // logical path the rows are a bound relation's, which always carry their typed
 // columns, so a field read through the binder cannot raise either, nor a
 // comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -10253,23 +10050,27 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // for a declared field of an unchanged row; for anything else it can raise
 // E_NO_KEY, and a rewrite that stops it being evaluated for some rows (a FILTER
 // hoisted above a SORT_BY whose key it is) hides the error `run()` reports
-// (CPP-C35). Unset -- the physical optimizer, or a caller with no relation --
+// Unset -- the physical optimizer, or a caller with no relation --
 // keeps the historical assumption (a read of the binder is taken as safe).
-thread_local const std::set<std::string>* tl_opt_declared = nullptr;
-thread_local bool tl_opt_shape_known = false;
+// Passed down explicitly, as a null pointer when there is nothing to say.
+struct OptFields {
+  const std::set<std::string>* declared = nullptr;   // upper-cased field names
+  bool shape_known = false;   // the row is still the source's at this step
+};
 
-bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
+                      const OptFields* fields) {
   static const std::set<std::string> safe_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
                                               "$>", "$>=", "AND", "OR", "+", "-", "*"};
   if (!node) return true;
   switch (node->t) {
     case NT::Num: case NT::Text: case NT::Bool: case NT::Null: return true;
     case NT::Var: {
-      const std::string name = upper_name(node->s);
-      return name == "_K" || name == upper_name(binder);
+      const std::string name = ascii_upper(node->s);
+      return name == "_K" || name == ascii_upper(binder);
     }
     case NT::Index:
-      if (!(logical && node->l && node->l->t == NT::Var && upper_name(node->l->s) == upper_name(binder) &&
+      if (!(logical && node->l && node->l->t == NT::Var && ascii_upper(node->l->s) == ascii_upper(binder) &&
             node->r && node->r->t == NT::Text)) {
         return false;
       }
@@ -10277,13 +10078,13 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
       // a declared field of a row whose shape is still the source's. Without them
       // (a caller that only asked for the logical rewrite) the historical
       // assumption stands.
-      return tl_opt_declared == nullptr ||
-             (tl_opt_shape_known && tl_opt_declared->count(upper_name(node->r->s)) > 0);
+      return !fields || !fields->declared ||
+             (fields->shape_known && fields->declared->count(ascii_upper(node->r->s)) > 0);
     case NT::Bin:
-      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
-             opt_cannot_raise(node->r, binder, logical);
+      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+             opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
-      return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical);
+      return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical, fields);
     default:
       return false;
   }
@@ -10294,7 +10095,8 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
 // E_NOT_BOOL on its first row -- `_`, `_K`, a number, text or NULL all pass
 // opt_cannot_raise and all raise there. Only a boolean literal, a comparison
 // (logical path) or AND/OR/NOT over such, is safe to move or to fuse.
-bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
+                                const OptFields* fields) {
   static const std::set<std::string> compare_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
                                                  "$>", "$>="};
   if (!node) return false;
@@ -10302,32 +10104,59 @@ bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, 
     case NT::Bool: return true;
     case NT::Bin:
       if (node->s == "AND" || node->s == "OR") {
-        return opt_predicate_cannot_raise(node->l, binder, logical) &&
-               opt_predicate_cannot_raise(node->r, binder, logical);
+        return opt_predicate_cannot_raise(node->l, binder, logical, fields) &&
+               opt_predicate_cannot_raise(node->r, binder, logical, fields);
       }
-      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
-             opt_cannot_raise(node->r, binder, logical);
+      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+             opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
-      return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical);
+      return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical, fields);
     default:
       return false;
   }
 }
 
 // Every field a MAP computes (or its whole body) cannot raise.
-bool opt_map_cannot_raise(const Node& step, bool logical) {
+bool opt_map_cannot_raise(const Node& step, bool logical, const OptFields* fields) {
   const OptMapInfo info = opt_map_info(step);
   if (info.body && info.body->t == NT::Call && info.body->s == "RECORD") {
     for (std::size_t i = 0; i < info.body->items.size(); i++) {
       const NodePtr& arg = info.body->items[i];
-      if (i % 2 == 0 ? arg->t != NT::Text : !opt_cannot_raise(arg, info.binder, logical)) return false;
+      if (i % 2 == 0 ? arg->t != NT::Text : !opt_cannot_raise(arg, info.binder, logical, fields)) return false;
     }
     return true;
   }
-  return opt_cannot_raise(info.body, info.binder, logical);
+  return opt_cannot_raise(info.body, info.binder, logical, fields);
 }
 
-std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical) {
+// How deep an expression goes, its root counted as 1, and never more than `cap`
+// + 1 (the walk stops there), so it is bounded whatever the source's length.
+int opt_bounded_depth(const NodePtr& root, int cap) {
+  int deepest = 0;
+  std::vector<const Node*> level{root.get()};
+  while (!level.empty() && deepest <= cap) {
+    ++deepest;
+    std::vector<const Node*> next;
+    for (const Node* n : level) {
+      if (!n) continue;
+      if (n->l) next.push_back(n->l.get());
+      if (n->r) next.push_back(n->r.get());
+      for (const NodePtr& c : n->items) next.push_back(c.get());
+    }
+    level = std::move(next);
+  }
+  return deepest;
+}
+
+// Where each step of a pipeline stands in the tree as written (the outermost
+// step is the pipeline node's own depth), for the one rule that deepens a
+// subtree: FILTER fusion. Keyed by the step node; a fused step keeps the depth
+// of the step it was copied from.
+using OptStepDepths = std::unordered_map<const Node*, int>;
+
+std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical,
+                                       const std::set<std::string>* declared,
+                                       OptStepDepths* step_depths = nullptr) {
   bool changed = true;
   while (changed) {
     changed = false;
@@ -10337,13 +10166,13 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
       const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
       // The row is the source's while every step before this one keeps its shape.
-      tl_opt_shape_known = true;
+      OptFields fields{declared, true};
       for (std::size_t k = 0; k < i; ++k) {
         const std::string& name = current[k]->s;
         if (name != "FILTER" && name != "SORT" && name != "SORT_DESC" && name != "SORT_BY" &&
             name != "TOP" && name != "TOP_DESC" && name != "TOP_BY" && name != "TAKE" &&
             name != "DROP" && name != "DISTINCT" && name != "DEDUPE") {
-          tl_opt_shape_known = false;
+          fields.shape_known = false;
           break;
         }
       }
@@ -10352,7 +10181,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto left = opt_numeric_literal(first->items[1]);
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right) {
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;   // the merged step is the result of the later one
           merged->items = {first->items[0], opt_num(std::to_string(std::min(*left, *right)), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
@@ -10366,7 +10195,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto left = opt_numeric_literal(first->items[1]);
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right && *left <= std::numeric_limits<long long>::max() - *right) {
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;
           merged->items = {first->items[0], opt_num(std::to_string(*left + *right), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
@@ -10383,7 +10212,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
           opt_numeric_literal((*second)->items[1]).value_or(0) >= 1) {
         const std::string top_name = first->s == "SORT" ? "TOP" : first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
-        auto fused = opt_copy(first);
+        auto fused = copy_node(first);
         fused->pos = (*second)->pos;
         fused->s = top_name;
         fused->spec = registry_lookup(top_name);
@@ -10400,7 +10229,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
             }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical)) {
+            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical, &fields)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -10411,8 +10240,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
           (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
           opt_keys_renumbered_by(third) &&
-          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical) &&
-          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false))) {
+          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical, &fields) &&
+          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false, nullptr))) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -10422,9 +10251,9 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && first->s == "SELECT_COLS" && (*second)->s == "FILTER") {
         const OptFilterInfo info = opt_filter_info(**second);
         const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-        const auto fields = opt_select_fields(*first);
+        const auto selected = opt_select_fields(*first);
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-              return std::find(fields.begin(), fields.end(), f) != fields.end();
+              return std::find(selected.begin(), selected.end(), f) != selected.end();
             }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
             opt_keys_renumbered_by(third)) {
           next.push_back(*second);
@@ -10446,8 +10275,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto passes = opt_map_passthroughs(*first);
         if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical) &&
-            opt_cannot_raise(sort.key, sort.binder, logical)) {
+            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical, &fields) &&
+            opt_cannot_raise(sort.key, sort.binder, logical, &fields)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -10459,20 +10288,34 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const OptFilterInfo left = opt_filter_info(*first);
         const OptFilterInfo right = opt_filter_info(**second);
         // Fused, the second predicate runs on a row before the first has seen
-        // the rows after it: only one that cannot raise may be fused.
-        const auto* saved_declared = tl_opt_declared;
-        tl_opt_declared = nullptr;
-        const bool can_fuse = left.valid && right.valid && opt_predicate_cannot_raise(right.predicate, right.binder, logical);
-        tl_opt_declared = saved_declared;
+        // the rows after it: only one that cannot raise may be fused. Judged
+        // without the declared fields (the historical assumption for a read).
+        bool can_fuse = left.valid && right.valid &&
+                        opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
+        // Fused, the second predicate sits one level deeper than it did: under
+        // the AND that joins them. A fused pair must spend what the two stages
+        // spent (spec §6.4), so a predicate that would reach the cap that way
+        // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+        if (can_fuse && step_depths) {
+          const auto at = step_depths->find(second->get());
+          if (at != step_depths->end() &&
+              at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
+            can_fuse = false;
+          }
+        }
         if (can_fuse) {
-          const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
+          const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
           const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;
           merged->items = left.explicit_binder
               ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
               : std::vector<NodePtr>{first->items[0], predicate};
+          if (step_depths) {
+            const auto at = step_depths->find(first.get());
+            if (at != step_depths->end()) (*step_depths)[merged.get()] = at->second;
+          }
           next.push_back(std::move(merged));
           i += 2;
           changed = true;
@@ -10505,7 +10348,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
 }
 
 std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodePtr> steps) {
-  steps = opt_logical_steps(source, std::move(steps), false);
+  steps = opt_logical_steps(source, std::move(steps), false, nullptr);
   // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   // anything can see the keys a FILTER's result carries. A following step
   // that renumbers without reading `_K` hides them (opt_keys_renumbered_by,
@@ -10514,9 +10357,9 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
   std::vector<NodePtr> rewritten;
   rewritten.reserve(steps.size());
   for (std::size_t i = 0; i < steps.size(); ++i) {
-    auto copy = opt_copy(steps[i]);
+    auto copy = copy_node(steps[i]);
     if (copy->s == "FILTER" && !copy->items.empty()) {
-      auto body = opt_copy(copy->items.back());
+      auto body = copy_node(copy->items.back());
       body->keys_unobserved = opt_keys_renumbered_by(i + 1 < steps.size() ? &steps[i + 1] : nullptr);
       // The next step is where what this FILTER keeps is copied: a MAP copies what
       // it collects, a FILTER keeps (and copies) its elements. When neither body
@@ -10601,6 +10444,21 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
   const auto set_src2 = [](MathStep& st, const EmitResult& r) {
     st.src2 = r.slot; st.raw2 = r.raw; st.src2_pos = r.raw_pos;
   };
+  // One computing step: a fresh slot, its operands (one or two), its position,
+  // pushed onto the plan; the result is that slot, a number.
+  const auto push_step = [&](MathOp op, const EmitResult& a, const EmitResult* b, Pos pos,
+                             std::optional<Pos> aux = std::nullopt) -> EmitResult {
+    const uint32_t dst = alloc_slot();
+    MathStep step;
+    step.op = op;
+    step.dst = dst;
+    set_src1(step, a);
+    if (b) set_src2(step, *b);
+    step.pos = pos;
+    if (aux) step.aux_pos = *aux;
+    plan->steps.push_back(std::move(step));
+    return EmitResult{dst, false, {}, false, {}};
+  };
 
   const auto emit = [&](auto& self, const NodePtr& node, int depth) -> std::optional<EmitResult> {
     if (!node || depth > MAX_DEPTH || slot_count > MAX_PLAN_SLOTS) return std::nullopt;
@@ -10647,72 +10505,36 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       // tree coerces it, so a later operand's error cannot get in front.
       const auto propagate = [&](const EmitResult& kept) -> EmitResult {
         if (!kept.raw) return kept;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = MathOp::Coerce;
-        step.dst = dst;
-        set_src1(step, kept);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(MathOp::Coerce, kept, nullptr, node->pos);
       };
 
-      // Copy propagation:
-      // x + 0
-      if (op == "+" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
+      // Copy propagation: x + 0, 0 + x, x - 0, x * 1, 1 * x (an integer 0 or 1,
+      // scale 0, so the result's scale is the other operand's).
+      const auto is_zero = [](const auto& r) {
+        return r.is_const && dec_is_zero(r.const_val) && r.const_val.scale == 0;
+      };
+      const auto is_one = [](const auto& r) {
+        return r.is_const && !r.const_val.neg && dec_get_digits(r.const_val) == "1" && r.const_val.scale == 0;
+      };
+      if (((op == "+" || op == "-") && is_zero(*res_r)) || (op == "*" && is_one(*res_r))) {
+        // The constant's own load step, when it was just emitted, is dropped.
         if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
           plan->steps.pop_back();
         }
         return propagate(*res_l);
       }
-      // 0 + x
-      if (op == "+" && res_l->is_const && dec_is_zero(res_l->const_val) && res_l->const_val.scale == 0) {
-        return propagate(*res_r);
-      }
-      // x - 0
-      if (op == "-" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
-        if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
-          plan->steps.pop_back();
-        }
-        return propagate(*res_l);
-      }
-      // x * 1
-      if (op == "*" && res_r->is_const && !res_r->const_val.neg && dec_get_digits(res_r->const_val) == "1" && res_r->const_val.scale == 0) {
-        if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
-          plan->steps.pop_back();
-        }
-        return propagate(*res_l);
-      }
-      // 1 * x
-      if (op == "*" && res_l->is_const && !res_l->const_val.neg && dec_get_digits(res_l->const_val) == "1" && res_l->const_val.scale == 0) {
+      if ((op == "+" && is_zero(*res_l)) || (op == "*" && is_one(*res_l))) {
         return propagate(*res_r);
       }
 
-      const uint32_t dst = alloc_slot();
-      const MathOp op_code = math_op_native(math_op_for(*node)->name);
-
-      MathStep step;
-      step.op = op_code;
-      step.dst = dst;
-      set_src1(step, *res_l);
-      set_src2(step, *res_r);
-      step.pos = node->pos;
-      plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}, false, {}};
+      return push_step(math_op_native(math_op_for(*node)->name), *res_l, &*res_r, node->pos);
     }
 
     if (node->t == NT::Un && is_math_op(*node)) {
       if (!node->l) return std::nullopt;
       const auto res_x = self(self, node->l, depth + 1);
       if (!res_x) return std::nullopt;
-      const uint32_t dst = alloc_slot();
-      MathStep step;
-      step.op = math_op_native(math_op_for(*node)->name);
-      step.dst = dst;
-      set_src1(step, *res_x);
-      step.pos = node->pos;
-      plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}, false, {}};
+      return push_step(math_op_native(math_op_for(*node)->name), *res_x, nullptr, node->pos);
     }
 
     // Math builtins: operand count, fold and error positions from the manifest
@@ -10725,14 +10547,7 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (args.size() != 1) return std::nullopt;
         const auto res_arg = self(self, args[0], depth + 1);
         if (!res_arg) return std::nullopt;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, *res_arg);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(op_code, *res_arg, nullptr, node->pos);
       }
       if (entry->arity == 2) {
         if (args.size() != 2) return std::nullopt;
@@ -10740,16 +10555,9 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (!res0) return std::nullopt;
         const auto res1 = self(self, args[1], depth + 1);
         if (!res1) return std::nullopt;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, *res0);
-        set_src2(step, *res1);
-        step.pos = node->pos;
-        if (entry->aux >= 0) step.aux_pos = args[static_cast<std::size_t>(entry->aux)]->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        const std::optional<Pos> aux =
+            entry->aux >= 0 ? std::optional<Pos>(args[static_cast<std::size_t>(entry->aux)]->pos) : std::nullopt;
+        return push_step(op_code, *res0, &*res1, node->pos, aux);
       }
       // fold: one or more operands, combined pairwise left to right. Every
       // argument is evaluated before the first is coerced (a strict function
@@ -10766,25 +10574,10 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       if (operands.size() == 1) {
         // MAX(x) is x, coerced.
         if (!curr.raw) return curr;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = MathOp::Coerce;
-        step.dst = dst;
-        set_src1(step, curr);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(MathOp::Coerce, curr, nullptr, node->pos);
       }
       for (std::size_t k = 1; k < operands.size(); k++) {
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, curr);
-        set_src2(step, operands[k]);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        curr = EmitResult{dst, false, {}, false, {}};
+        curr = push_step(op_code, curr, &operands[k], node->pos);
       }
       return curr;
     }
@@ -10812,28 +10605,34 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
 
 // `fold` is the other hosts' foldConstants option: off for the one slot
 // whose shape the evaluator reads (opt_step_arg_folds).
-NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true, bool in_math = false) {
+// `declared` is the SQL planner's field list (OptFields), null elsewhere.
+NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>* declared, int depth,
+                 bool fold = true, bool in_math = false) {
   if (!node) return node;
   // The evaluator/SQL normaliser owns the public depth error and its source
   // position. opt_root never descends into a tree that reaches the cap; this
   // guard keeps the walk bounded should a rewrite ever deepen one.
   if (depth > MAX_DEPTH) return node;
-  if (node->t == NT::Call && opt_pipeline_op(node->s) && !node->items.empty()) {
-    auto [source, steps] = opt_unwind(node);
-    NodePtr optimized_source = opt_tree(source, physical, depth + 1, fold, false);
+  if (node->t == NT::Call && is_pipeline_op(node->s) && !node->items.empty()) {
+    auto [source, steps] = unwind_pipeline(node);
+    NodePtr optimized_source = opt_tree(source, physical, declared, depth + 1, fold, false);
     std::vector<NodePtr> optimized_steps;
     optimized_steps.reserve(steps.size());
-    for (const NodePtr& step : steps) {
-      auto copy = opt_copy(step);
+    OptStepDepths step_depths;
+    for (std::size_t index = 0; index < steps.size(); ++index) {
+      const NodePtr& step = steps[index];
+      auto copy = copy_node(step);
+      step_depths[copy.get()] = depth + static_cast<int>(steps.size() - 1 - index);
       copy->items.clear();
       copy->items.push_back(step->items[0]);
       for (std::size_t i = 1; i < step->items.size(); i++) {
-        copy->items.push_back(opt_tree(step->items[i], physical, depth + 1,
+        copy->items.push_back(opt_tree(step->items[i], physical, declared, depth + 1,
                                        fold && opt_step_arg_folds(*step, i), false));
       }
       optimized_steps.push_back(std::move(copy));
     }
-    std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps), !physical);
+    std::vector<NodePtr> final_steps =
+        opt_logical_steps(optimized_source, std::move(optimized_steps), !physical, declared, &step_depths);
     if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
     // Whatever the rewrites did, the pipeline's value is still the value of the
     // node that was written outermost, and a consumer that objects to it (NOT,
@@ -10846,26 +10645,25 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
       carrier->items.push_back(std::move(optimized_source));
       return carrier;
     }
-    return opt_build_pipeline(std::move(optimized_source), final_steps, &node->pos);
+    return build_pipeline(std::move(optimized_source), final_steps, &node->pos);
   }
 
   const bool is_curr_math = is_math_op(*node);
   const bool next_in_math = is_curr_math;
 
-  auto copy = opt_copy(node);
+  auto copy = copy_node(node);
   // An assignment's target is walked iteratively by the evaluator (spec 6.4:
   // a chain of index brackets, not a nesting) and is never charged or folded
-  // there, so it is left as written here too, as the other four hosts leave
-  // it; only the value is optimised (review 2026-09-15, low: C++ alone
-  // rewrote targets, harmlessly today).
-  if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, depth + 1, fold, next_in_math);
-  if (copy->r) copy->r = opt_tree(copy->r, physical, depth + 1, fold, next_in_math);
-  for (NodePtr& child : copy->items) child = opt_tree(child, physical, depth + 1, fold, next_in_math);
+  // there, so it is left as written here too, as the other hosts leave it;
+  // only the value is optimised.
+  if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, declared, depth + 1, fold, next_in_math);
+  if (copy->r) copy->r = opt_tree(copy->r, physical, declared, depth + 1, fold, next_in_math);
+  for (NodePtr& child : copy->items) child = opt_tree(child, physical, declared, depth + 1, fold, next_in_math);
   NodePtr folded = fold ? opt_fold(copy) : copy;
   if (physical && !in_math && is_math_op(*folded)) {
     auto plan = opt_compile_math_plan(folded);
     if (plan) {
-      auto copy_with_plan = opt_copy(folded);
+      auto copy_with_plan = copy_node(folded);
       copy_with_plan->math_plan = std::move(plan);
       return copy_with_plan;
     }
@@ -10895,14 +10693,21 @@ bool opt_exceeds_depth(const Node& node, int depth) {
 // additions (each of them foldable), and a rewrite that lifts a child would
 // move it; not rewriting loses nothing, because such a tree either raises or
 // keeps its deep part on a branch that is never evaluated.
-NodePtr opt_root(const NodePtr& ast, bool physical) {
+NodePtr opt_root(const NodePtr& ast, bool physical, const std::set<std::string>* declared = nullptr) {
   if (ast && opt_exceeds_depth(*ast, 1)) return ast;
-  return opt_tree(ast, physical, 1);
+  return opt_tree(ast, physical, declared, 1);
 }
 
 }  // namespace
 
-#include "sel_optimizer.cpp"
+// The optimiser's entry points (sel_ast.hpp): the logical rewrite the SQL
+// planner asks for, with or without its relation's declared fields, and the
+// in-memory rewrite Program::physical_ast() builds the tree run() evaluates.
+NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_root(ast, false); }
+NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields) {
+  return opt_root(ast, false, &declared_fields);
+}
+NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true); }
 
 // ============================================================================
 // --- host API. See spec/SPEC.md §8.
@@ -10928,7 +10733,7 @@ Program::Program(std::string source, std::shared_ptr<const Node> ast)
       physical_(std::make_shared<Physical>()) {}
 
 std::shared_ptr<const Node> Program::physical_ast() const {
-  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast(ast_); });
+  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast_in_memory(ast_); });
   return physical_->tree;
 }
 
@@ -11009,8 +10814,9 @@ int HostArgs::count() const { return args_.count(); }
 // An argument the call does not have is E_BAD_ARG at the call (spec §8.1), never
 // a read past the end of the argument vector: a function registered with
 // min < max that reads an optional argument without testing count() used to get
-// a heap-buffer-overflow (CPP-C13).
-static void host_arg_in_range(const Args& args, int i) {
+// a heap-buffer-overflow.
+namespace {
+void host_arg_in_range(const Args& args, int i) {
   if (i < 0 || i >= args.count()) {
     fail("E_BAD_ARG",
          "a host function read argument " + std::to_string(i + 1) + " but the call has " +
@@ -11018,10 +10824,13 @@ static void host_arg_in_range(const Args& args, int i) {
          args.pos());
   }
 }
+}  // namespace
 
 const Value& HostArgs::val(int i) { host_arg_in_range(args_, i); return args_.val(i); }
 const std::string& HostArgs::text(int i) { host_arg_in_range(args_, i); return args_.text(i); }
+const std::string& HostArgs::bytes(int i) { host_arg_in_range(args_, i); return args_.bytes(i); }
 bool HostArgs::boolean(int i) { host_arg_in_range(args_, i); return args_.boolean(i); }
+Dec HostArgs::decimal(int i) { host_arg_in_range(args_, i); return args_.dec(i); }
 long long HostArgs::integer(int i) { host_arg_in_range(args_, i); return args_.integer(i); }
 long long HostArgs::non_neg_int(int i) { host_arg_in_range(args_, i); return args_.non_neg_int(i); }
 Pos HostArgs::pos_of(int i) const {
@@ -11039,10 +10848,7 @@ void register_function(const std::string& name, int min, int max, HostFunction f
     throw std::invalid_argument(
         "SEL function name must be ASCII letters, digits and _, starting with a letter: " + name);
   }
-  std::string key = name;
-  for (char& c : key) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
+  const std::string key = ascii_upper(name);
   if (is_reserved(key)) throw std::invalid_argument(key + " is a reserved word");
   if (table().count(key)) throw std::invalid_argument(key + " is a builtin; a host function cannot replace it");
   if (min < 0 || max < min) {

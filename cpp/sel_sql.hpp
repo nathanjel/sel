@@ -8,6 +8,13 @@
 // docs/internals/sql-translation.md is the guide; sql/MAP.md specifies the dialect map,
 // and sql/errors.md fixes the error codes. Where this implementation and those
 // documents disagree, this implementation is wrong.
+//
+// Threads: register dialects, builders and SQL spellings first; from then on
+// the map is read-only, and translate(), translate_statement() and
+// plan_hybrid() may run on several threads at once, each with its own Program
+// and Bindings (a Binding holds Values, which are not thread-safe -- see
+// sel.hpp). execute_hybrid() runs a continuation like Program::run() does: one
+// context per thread. tests/sql_race.cpp holds this under the thread sanitizer.
 
 #ifndef SEL_SQL_HPP
 #define SEL_SQL_HPP

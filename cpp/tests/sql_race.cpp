@@ -1,4 +1,4 @@
-// Concurrent translation, for the thread sanitizer (T10, CPP-C12).
+// Concurrent translation, for the thread sanitizer.
 //
 // `Map::check_numeric_guard` recorded the dialects it had checked in a plain
 // std::set, written on the FIRST numeric-guard use from translate(), so two

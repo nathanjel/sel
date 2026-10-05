@@ -1,7 +1,9 @@
 // Everything that turns a value or a template into characters. The one place
 // quoting happens, so there is one place to get it right.
 //
-// Internal to the SQL layer.
+// Installed with the library because a registered builder (Map::define_builder,
+// sel_sql_map.hpp) is handed an Emit and returns its parts; examples/dialect
+// uses it. Everything else here is the SQL layer's own and not a stable surface.
 
 #ifndef SEL_SQL_EMIT_HPP
 #define SEL_SQL_EMIT_HPP
@@ -129,7 +131,7 @@ class Emit {
   // what every other guard in this layer exists to prevent. The cycle is
   // refused rather than a depth capped, because the cycle is the actual mistake
   // and a depth cap would need a number nobody can justify. With cycles refused
-  // the chain is bounded by the number of lexical keys, which is fifteen.
+  // the chain is bounded by the number of lexical keys the map defines.
   std::vector<Fragment::Part> fill(std::string_view tpl,
                                    std::span<const Fragment> args, Pos pos = {},
                                    const std::set<std::string>& expanding = {}) const;

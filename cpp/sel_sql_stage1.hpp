@@ -28,6 +28,8 @@
 #ifndef SEL_SQL_STAGE1_HPP
 #define SEL_SQL_STAGE1_HPP
 
+#include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -117,7 +119,7 @@ void require_numeric(const SNode& n, sel::Value& root);
 
 // The canonical spelling of a constant that is TEXT holding a number, or nothing when it
 // is anything else (or SEL refuses it: the operand's own translation reports that).
-// PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+// In arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
 // would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
 // the translator spells it as the exact numeric literal it stands for.
 std::optional<std::string> numeric_text_constant(const SNode& n, sel::Value& root);

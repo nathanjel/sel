@@ -10,8 +10,7 @@ int main(int argc, char** argv) {
   using namespace sel;
   const std::string mode = argc > 1 ? argv[1] : "text";
   const int count = 200000;
-  std::cout << "Value=" << sizeof(Value) << " Dec=" << sizeof(Dec)
-            << " Impl=" << sizeof(Value::Impl) << '\n';
+  std::cout << "Value=" << sizeof(Value) << " Dec=" << sizeof(Dec) << '\n';
   if (mode == "aggregate") {
     std::vector<Value> items;
     for (int i=0;i<10000;++i) items.push_back(Value::integer(i));

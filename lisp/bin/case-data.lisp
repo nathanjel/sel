@@ -9061,8 +9061,40 @@
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
-   :name "stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused"
+   :name "stmt.order-by.helper-in-the-key-slot-is-a-key-not-a-direction"
    :at "23-statements.sqlt:458"
+   :dialect "mariadb"
+   :source "D = \"DESC\"; ITEMS .> SORT_BY(r, D)"
+   :expect "SELECT * FROM `items` ORDER BY CAST('DESC' AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.top-by-helper-in-the-key-slot-is-a-key-not-a-direction"
+   :at "23-statements.sqlt:478"
+   :dialect "mariadb"
+   :source "D = \"DESC\"; ITEMS .> TOP_BY(r, D, 2)"
+   :expect "SELECT * FROM `items` ORDER BY CAST('DESC' AS CHAR) COLLATE utf8mb4_nopad_bin ASC LIMIT 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
+  (list
+   :name "stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused"
+   :at "23-statements.sqlt:491"
    :dialect "mariadb"
    :source "ITEMS .> SORT_BY(r, r[\"qty\"], IF(TRUE, \"DESC\", \"ASC\"))"
    :expect nil
@@ -9078,7 +9110,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.order-by.binder-form-with-a-computed-key"
-   :at "23-statements.sqlt:471"
+   :at "23-statements.sqlt:504"
    :dialect "mariadb"
    :source "ITEMS .> FILTER(_[\"qty\"] > 0) .> SORT_BY(O, IF(TRUE, \"DESC\", \"ASC\"))"
    :expect "SELECT * FROM `items` WHERE (`qty` > 0) ORDER BY CAST(CASE WHEN TRUE THEN 'DESC' ELSE 'ASC' END AS CHAR) COLLATE utf8mb4_nopad_bin ASC"
@@ -9094,7 +9126,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.order-by.direction-is-case-insensitive"
-   :at "23-statements.sqlt:488"
+   :at "23-statements.sqlt:521"
    :dialect "mariadb"
    :source "ITEMS .> SORT_BY(_[\"qty\"], \"desc\")"
    :expect "SELECT * FROM `items` ORDER BY `qty` DESC"
@@ -9110,7 +9142,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.map.computed-field-then-keyless-sort"
-   :at "23-statements.sqlt:503"
+   :at "23-statements.sqlt:536"
    :dialect "mariadb"
    :source "ITEMS .> MAP(RECORD(\"q\", 0 - _[\"qty\"])) .> SORT()"
    :expect "SELECT `_sub1`.* FROM (SELECT (0 - `qty`) AS `q` FROM `items`) `_sub1` ORDER BY `_sub1`.`q` ASC"
@@ -9126,7 +9158,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "stmt.map.explicit-binder-leaves-underscore-unbound"
-   :at "23-statements.sqlt:522"
+   :at "23-statements.sqlt:555"
    :dialect "mariadb"
    :source "ITEMS .> MAP(g, RECORD(\"x\", _[\"amount\"]))"
    :expect nil
@@ -9142,7 +9174,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.map.refuse-count-of-a-row-outside-a-bucket"
-   :at "23-statements.sqlt:538"
+   :at "23-statements.sqlt:571"
    :dialect "mariadb"
    :source "ITEMS .> MAP(RECORD(\"id\", _[\"dept\"], \"n\", COUNT(_)))"
    :expect nil
@@ -9158,7 +9190,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.lane.translator-never-folds"
-   :at "23-statements.sqlt:556"
+   :at "23-statements.sqlt:589"
    :dialect "postgresql"
    :source "ORDERS .> FILTER(IF(TRUE, 2, 1) >= _[\"id\"])"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (CASE WHEN TRUE THEN 2 ELSE 1 END >= \"o\".\"id\")"
@@ -9174,7 +9206,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "stmt.lane.translator-refuses-what-it-would-not-have-folded"
-   :at "23-statements.sqlt:577"
+   :at "23-statements.sqlt:610"
    :dialect "postgresql"
    :source "ORDERS .> FILTER(IF(TRUE, \"x\", 1) >= _[\"id\"])"
    :expect nil
@@ -9190,7 +9222,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "stmt.lane.constant-filter-then-take"
-   :at "23-statements.sqlt:590"
+   :at "23-statements.sqlt:623"
    :dialect "postgresql"
    :source "ORDERS .> FILTER(TRUE) .> TAKE(1)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE TRUE LIMIT 1"
@@ -9206,7 +9238,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "stmt.lane.sort-then-filter-keeps-the-order"
-   :at "23-statements.sqlt:603"
+   :at "23-statements.sqlt:636"
    :dialect "postgresql"
    :source "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_[\"id\"] > 1)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > 1) ORDER BY \"o\".\"id\" ASC"
@@ -9222,7 +9254,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "stmt.order-by.later-sort-is-the-primary-key"
-   :at "23-statements.sqlt:624"
+   :at "23-statements.sqlt:657"
    :dialect "postgresql"
    :source "ORDERS .> SORT_BY(_[\"name\"]) .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(2)"
    :expect "SELECT \"o\".* FROM \"orders\" \"o\" ORDER BY \"o\".\"id\" DESC, CAST(\"o\".\"name\" AS TEXT) COLLATE \"C\" ASC LIMIT 2"
@@ -9238,7 +9270,7 @@
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
    :name "stmt.order-by.later-sort-over-a-grouped-statement"
-   :at "23-statements.sqlt:644"
+   :at "23-statements.sqlt:677"
    :dialect "postgresql"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"d\", _K, \"n\", COUNT(_))) .> SORT_BY(_[\"n\"]) .> SORT_BY(_[\"d\"])"
    :expect "SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" ORDER BY MIN(CAST(\"dept\" AS TEXT) COLLATE \"C\") ASC, COUNT(*) ASC"
@@ -9254,7 +9286,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "DEPT" (binding-column "dept" nil :text)) (cons "AMOUNT" (binding-column "amount" nil :num))) nil nil)))))
   (list
    :name "stmt.order-by.sort-after-pagination-sorts-the-page"
-   :at "23-statements.sqlt:657"
+   :at "23-statements.sqlt:690"
    :dialect "postgresql"
    :source "ITEMS .> BUCKET(_[\"dept\"], RECORD(\"d\", _K, \"n\", COUNT(_))) .> TAKE(2) .> SORT_BY(_[\"n\"])"
    :expect "SELECT \"_sub1\".* FROM (SELECT CAST(\"dept\" AS TEXT) COLLATE \"C\" AS \"d\", COUNT(*) AS \"n\" FROM \"items\" GROUP BY CAST(\"dept\" AS TEXT) COLLATE \"C\" LIMIT 2) \"_sub1\" ORDER BY \"_sub1\".\"n\" ASC"

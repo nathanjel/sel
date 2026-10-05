@@ -9,20 +9,23 @@
 // there is no duplicate-symbol problem.
 
 #include "../sel.cpp"
+#include "read_file.hpp"
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 int main(int argc, char** argv) {
   if (argc < 2) {
     std::cerr << "usage: check-decimal oracle.txt\n";
     return 2;
   }
-  std::ifstream in(argv[1]);
-  if (!in) {
+  std::string text;
+  if (!selbin::read_bytes(argv[1], text)) {
     std::cerr << "cannot read " << argv[1] << "\n";
     return 2;
   }
+  std::istringstream in(text);
 
   using namespace sel;
 
@@ -79,6 +82,10 @@ int main(int argc, char** argv) {
   for (const auto& f : failures) std::cout << "  " << f << "\n";
   if (mismatches > failures.size()) {
     std::cout << "  ... and " << (mismatches - failures.size()) << " more\n";
+  }
+  if (cases == 0) {
+    std::cout << "  no cases ran\n";
+    return 1;
   }
   return mismatches ? 1 : 0;
 }

@@ -24,16 +24,6 @@ namespace {
   throw std::runtime_error(message);
 }
 
-// ASCII only, matching sel::registry and PHP's strtoupper. Locale-aware
-// upper-casing would fold non-ASCII differently on different hosts, and a
-// function name is ASCII by the lexer's rules anyway.
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
-  return out;
-}
 
 std::string join(std::span<const std::string_view> xs) {
   std::string out;
@@ -93,9 +83,6 @@ bool is_unify(std::string_view s) {
   }
 }
 
-bool contains(std::span<const std::string_view> xs, std::string_view k) {
-  return std::find(xs.begin(), xs.end(), k) != xs.end();
-}
 
 const Arity* find_arity(std::span<const Arity> xs, std::string_view k) {
   for (const Arity& a : xs) {
@@ -176,7 +163,7 @@ struct Registry {
   // afterwards.
   std::set<std::string, std::less<>> guard_checked;
   // Translation threads reach guard_checked on the first numeric-guard use of a
-  // dialect (CPP-C12: a data race under TSan); registration is a start-up
+  // dialect (a data race under TSan); registration is a start-up
   // activity, but it clears the set, so it takes the lock too.
   std::mutex guard_mutex;
 
@@ -436,13 +423,6 @@ std::string_view section_name(Section s) {
     case Section::Skel: return "skel";
   }
   return "";
-}
-
-std::optional<Section> section_from_name(std::string_view name) {
-  if (name == "ops") return Section::Ops;
-  if (name == "funcs") return Section::Funcs;
-  if (name == "skel") return Section::Skel;
-  return std::nullopt;
 }
 
 // --- registration ------------------------------------------------------------
@@ -747,7 +727,7 @@ void Map::check_numeric_guard(const std::string& dialect) {
   // Recorded only AFTER every check has passed (below): a dialect memoised
   // before it was validated was refused once and then silently accepted, and
   // the SQL the check had rejected went out on every later translation
-  // (CPP-C36). A refusal repeats, every use.
+  // A refusal repeats, every use.
 
   const Lexical* guard = lexical(dialect, "numericGuard");
   if (!guard || guard->kind != LexKind::Text) return;

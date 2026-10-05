@@ -8,6 +8,7 @@
 // lexer.
 
 #include "../sel.hpp"
+#include "read_file.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -256,11 +257,12 @@ Outcome run_case(const Case& c) {
   return r;
 }
 
+// Raw bytes (a CR in a case body is program text), and a path that cannot be
+// read is a suite error -- not an empty file that passes with nothing run.
 std::string read_file(const std::filesystem::path& p) {
-  std::ifstream in(p, std::ios::binary);
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  return ss.str();
+  std::string text;
+  if (!selbin::read_bytes(p.string(), text)) throw std::runtime_error("cannot read " + p.string());
+  return text;
 }
 
 }  // namespace
@@ -328,5 +330,11 @@ int main(int argc, char** argv) {
 
   std::cout << "\n" << pass << " passed, " << failures.size() << " failed, " << suite_errors.size()
             << " suite errors\n";
+  // A run that checked nothing is not a pass: an empty file, or a directory
+  // with no .selt in it, would otherwise exit 0.
+  if (pass == 0 && failures.empty() && suite_errors.empty()) {
+    std::cout << "no cases ran\n";
+    return 1;
+  }
   return (failures.empty() && suite_errors.empty()) ? 0 : 1;
 }

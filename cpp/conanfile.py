@@ -10,6 +10,7 @@ See cpp/third_party/srell/PINNED.md.
 """
 
 from conan import ConanFile
+from conan.errors import ConanInvalidConfiguration
 from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
 import os
@@ -24,7 +25,7 @@ class SelConan(ConanFile):
     homepage = "https://github.com/nathanjel/sel"
     description = (
         "A small expression language for validation rules that evaluate "
-        "identically on PHP, JavaScript, Python, C++ and Common Lisp"
+        "identically on PHP, JavaScript, Python, C++, Common Lisp, Rust and Go"
     )
     topics = ("expression-language", "validation", "rules", "decimal", "interpreter")
 
@@ -43,13 +44,12 @@ class SelConan(ConanFile):
         # parent directory ("copy() it is not possible to use relative patterns
         # starting with '..'"). It lands at the root of the source folder, which
         # is why CMakeLists.txt looks for it in both places.
-        # Every file the build includes: the generated headers and
-        # sel_optimizer.cpp, which sel.cpp includes, were missing until 0.9.1,
-        # and the package did not compile. tools/check-cpp-package.sh builds
-        # from exactly this list.
+        # Every file the build includes: the generated headers were missing
+        # until 0.9.1, and the package did not compile.
+        # tools/check-cpp-package.sh builds from exactly this list.
         for pattern in ("CMakeLists.txt", "sel.hpp", "sel_ast.hpp", "sel_limits.hpp",
                         "sel_math_ops.hpp", "sel_builtin_manifest.hpp", "sel.cpp",
-                        "sel_optimizer.cpp", "sel_sql*.hpp", "sel_sql*.cpp", "third_party/*"):
+                        "sel_sql*.hpp", "sel_sql*.cpp", "third_party/*"):
             copy(self, pattern, self.recipe_folder, self.export_sources_folder)
         copy(self, "LICENSE",
              os.path.join(self.recipe_folder, ".."), self.export_sources_folder)
@@ -57,6 +57,12 @@ class SelConan(ConanFile):
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
+
+    def validate(self):
+        # The decimal core needs __int128, the __builtin_* overflow checks and
+        # GNU inline assembly: GCC and Clang (MinGW included), not MSVC.
+        if str(self.settings.compiler) == "msvc":
+            raise ConanInvalidConfiguration("sel-lang needs GCC or Clang; MSVC is not supported")
 
     def layout(self):
         cmake_layout(self)

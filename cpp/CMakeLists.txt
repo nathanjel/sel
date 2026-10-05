@@ -3,12 +3,11 @@
 # Three ways to consume this, in increasing order of ceremony:
 #
 #   1. Copy sel.hpp, sel_ast.hpp, the three generated headers sel_limits.hpp,
-#      sel_math_ops.hpp and sel_builtin_manifest.hpp, sel.cpp, sel_optimizer.cpp
-#      (which sel.cpp includes) and third_party/srell/ into your project and
-#      compile sel.cpp. Nothing here is needed, and you include only
-#      sel.hpp. This remains the primary story.
+#      sel_math_ops.hpp and sel_builtin_manifest.hpp, sel.cpp and
+#      third_party/srell/ into your project and compile sel.cpp. Nothing here
+#      is needed, and you include only sel.hpp. This remains the primary story.
 #      For SEL->SQL as well, add sel_sql.hpp, sel_sql_emit.hpp, sel_sql_map.hpp,
-#      sel_sql_node.hpp, sel_sql_stage1.hpp, sel_sql_translator.hpp and the six
+#      sel_sql_node.hpp, sel_sql_stage1.hpp, sel_sql_translator.hpp and every
 #      sel_sql_*.cpp beside them, and include sel_sql.hpp. It is a strict
 #      addition: the evaluator's own file list does not change.
 #   2. add_subdirectory(path/to/sel/cpp) and link `sel-lang::sel-lang`.
@@ -47,8 +46,6 @@ add_library(sel-lang
   sel_sql_stage1.cpp
   sel_sql_translator.cpp
   sel_sql_hybrid.cpp)
-set_property(SOURCE sel.cpp APPEND PROPERTY OBJECT_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/sel_optimizer.cpp")
 # The package is `sel-lang` everywhere it is published, so the exported target
 # matches. `sel::sel` is kept as a shorter alias for in-tree use.
 add_library(sel-lang::sel-lang ALIAS sel-lang)
@@ -115,17 +112,22 @@ endforeach()
 # --- harness ------------------------------------------------------------------
 #
 # Not built by default: this is the repository's test rig, not part of what a
-# consumer installs.
+# consumer installs. It is a SUBSET of the harness -- enough for a consumer to
+# run the unit tests and the conformance suite against their own build of the
+# library. cpp/Makefile is the full harness (the SQL suite, the fuzz and replay
+# drivers, the sanitizer builds, every example) and is what tools/check.sh uses.
 
 option(SEL_BUILD_TOOLS "Build the SEL CLI and test harness" OFF)
 
 if(SEL_BUILD_TOOLS)
-  # `ast` also includes sel_ast.hpp; `sqlmap` and `sqlt` include the SQL
-  # layer's own internal headers; the others use sel.hpp alone.
+  # `ast` also includes sel_ast.hpp; `sqlmap` includes the SQL layer's own
+  # internal headers; the others use sel.hpp alone.
   foreach(tool sel conformance batch e2e api ast sqlmap)
     add_executable(sel-${tool} bin/${tool}.cpp)
     target_link_libraries(sel-${tool} PRIVATE sel-lang)
   endforeach()
+  # `sel --version` prints the package version; the CLI keeps no copy of it.
+  target_compile_definitions(sel-sel PRIVATE SEL_VERSION="${PROJECT_VERSION}")
 
   # These include sel.cpp directly to reach the internals, so they must not also
   # link the library.
@@ -137,8 +139,9 @@ if(SEL_BUILD_TOOLS)
 
   # The worked examples. Built here rather than left as loose files because an
   # example nothing compiles is an example that rots -- and these are the C++
-  # half of a set whose whole promise is that all five hosts print the same
-  # thing. tools/check-examples.sh runs them and diffs that.
+  # member of a set whose whole promise is that every host prints the same
+  # thing. tools/check-examples.sh runs them (from cpp/Makefile's build) and
+  # diffs that.
   # sql and dialect link the SEL->SQL layer as well; no extra wiring here,
   # because it is part of the one sel-lang library rather than a second target.
   foreach(ex plain complex sql dialect)

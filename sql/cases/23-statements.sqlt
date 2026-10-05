@@ -455,6 +455,39 @@ ITEMS .> SORT_BY(_["qty"], IF(TRUE, "DESC", "ASC"))
 E_BAD_ARG 1:28
 ===
 
+### name: stmt.order-by.helper-in-the-key-slot-is-a-key-not-a-direction
+--- note
+The form of a three-argument SORT_BY (and a four-argument TOP_BY) is read off
+the call as written, as the evaluator reads it (spec §7.3): the third slot is a
+name here, not a text literal, so the bare name r is the binder and the helper
+D is the KEY -- a constant, which run() sorts by, keeping the rows in order. A
+translator that decided the form after inlining D took "DESC" for a direction
+and r for an unbound key.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+D = "DESC"; ITEMS .> SORT_BY(r, D)
+--- expect
+SELECT * FROM `items` ORDER BY CAST('DESC' AS CHAR) COLLATE utf8mb4_nopad_bin ASC
+===
+
+### name: stmt.order-by.top-by-helper-in-the-key-slot-is-a-key-not-a-direction
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+D = "DESC"; ITEMS .> TOP_BY(r, D, 2)
+--- expect
+SELECT * FROM `items` ORDER BY CAST('DESC' AS CHAR) COLLATE utf8mb4_nopad_bin ASC LIMIT 2
+===
+
 ### name: stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused
 --- dialect
 mariadb

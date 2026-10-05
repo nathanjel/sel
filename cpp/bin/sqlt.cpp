@@ -117,7 +117,7 @@ std::string join_tables(const std::vector<std::string>& tables) {
 //
 // A `--- plan` case asks the planner rather than the translator. It asserts
 // the classification, the physical sources, the SQL prefix, and that the
-// continuation exists exactly when the classification says so. The other four
+// continuation exists exactly when the classification says so. The other
 // hosts also snapshot the caller's AST and compare it after planning; here the
 // tree is `shared_ptr<const Node>` all the way down, so a planner that wrote to
 // it would not compile, and the check is the type.
@@ -255,7 +255,7 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
   // SQL, or the same refusal at the same place, or a startup error again. A
   // translator that keeps state between calls -- a dialect marked as checked
   // before it was checked, a parameter list that grows -- passes one translation
-  // and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+  // and fails here.
   if (program && bindings) {
     auto describe = [](bool has_thrown, const std::string& what, bool has_error,
                        const SqlError& e, const std::string& text) {
@@ -317,7 +317,7 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
   // public full-delegation entry point, which must say exactly what
   // translate() says -- the same text, or the same refusal at the same column.
   // Two hosts ran the logical optimiser in that lane and three did not, and
-  // only a twin check can see it (review 2026-09-15 finding C).
+  // only a twin check can see it.
   if (as_ == "statement" && program) {
     bool twin_has_error = false;
     std::string twin_sql;
@@ -495,5 +495,10 @@ int main(int argc, char** argv) {
               "%d refused by the type system), %d failed, %d suite errors\n",
               passed, mirrored, compile_refused,
               static_cast<int>(failures.size()), suite_errors);
+  // A filter that matched nothing is a mistyped name, not a pass.
+  if (passed == 0 && failures.empty() && suite_errors == 0) {
+    std::printf("no case matched\n");
+    return 1;
+  }
   return failures.empty() && suite_errors == 0 ? 0 : 1;
 }

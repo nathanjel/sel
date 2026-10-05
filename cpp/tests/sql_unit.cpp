@@ -140,7 +140,7 @@ int main() {
   // are the run() half). sql/cases/25-hybrid-plans.sqlt pins the SQL side of
   // these; only executing the plan can see the position the memory side reports.
   // This is also the arm that never fired here: the C++ IF fold tested for four
-  // items and so reported the IF's column by accident while the four hosts that
+  // items and so reported the IF's column by accident while the hosts that
   // folded reported the literal's.
   const sel::Value rows = sel::Value::list(
       {sel::Value::record({"id"}, {sel::Value::text("1")}),
@@ -153,7 +153,7 @@ int main() {
       return e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
     }
   };
-  // The rows with a helper assignment are review 2026-09-15 finding AJ: the
+  // The rows with a helper assignment: the
   // planner used to plan stage 1's tree, in which a helper is inlined at its
   // definition-site position, so the continuation reported `Y = "x"; ... + Y`
   // at 1:5 where run() reports the read at 1:45, and evaluated the helper per
@@ -245,8 +245,8 @@ int main() {
       // swap through.
       {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)", "pure_memory"},
       {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "pure_memory"},
-      // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
-      // SEM-07); a MAP that cannot raise lets it through.
+      // REPEAT can raise, so the FILTER stays behind the MAP (spec §7.3); a MAP
+      // that cannot raise lets it through.
       {"ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"plus\", r[\"amount\"] + 1)) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)", "pure_sql"},
       {"ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "pure_memory"},
       {"ORDERS .> MAP(RECORD(\"x\", _[\"id\"], \"X\", REPEAT(_[\"name\"], 2))) .> TAKE(2)", "hybrid"},
@@ -347,7 +347,7 @@ int main() {
     }
   }
 
-  // The runner contract (finding AK): the statement in `params` mode with
+  // The runner contract: the statement in `params` mode with
   // `bindings()` in placeholder order -- text literals as `?`, numbers inlined
   // -- in every host, so a driver binds what it is handed as it is. Lisp handed
   // the runner inline SQL and its creation-order slot list.
@@ -393,8 +393,8 @@ int main() {
     }
   }
 
-  // --- the remediation wave (2026-09-29: T08 scope, T09 kinds, T10 rendering,
-  // T11 hybrid). Each block names the finding it holds.
+  // --- scope, kinds, rendering and the hybrid planner. Each block says what it
+  // holds.
   {
     int wave = 0;
     const auto fail = [&](const std::string& what, const std::string& got, const std::string& want) {
@@ -420,17 +420,17 @@ int main() {
       if (got != want) fail(what, got, want);
     };
 
-    // CPP-C23: a helper keeps the scope it was written in; a binder that reuses
+    // A helper keeps the scope it was written in; a binder that reuses
     // a free name of the helper does not capture it.
     check("def not captured by a binder",
           expr("X = Y + 1; ALL((1, 2), Y, Y > X)"),
           "((1 > (`t`.`y` + 1)) AND (2 > (`t`.`y` + 1)))");
-    // CPP-C56: a supplied correlate is parenthesised.
+    // A supplied correlate is parenthesised.
     check("correlate parenthesised",
           expr("ANY(ITEMS, I, I[\"QTY\"] > 0)").find("WHERE (oi.a=o.id OR oi.b=o.id) AND") != std::string::npos
               ? "parenthesised" : "bare",
           "parenthesised");
-    // CPP-C29: UNKNOWN through IF is UNKNOWN, so it is guarded, not laundered.
+    // UNKNOWN through IF is UNKNOWN, so it is guarded, not laundered.
     check("IF cannot launder", expr("IF(N > 0, U, 1) + 1 == 2").find("REGEXP") != std::string::npos ? "guarded" : "bare",
           "guarded");
     // §5a: an UNKNOWN relation SUM body is guarded all or nothing; SQLite refuses.
@@ -438,7 +438,7 @@ int main() {
           expr("SUM(ITEMS, _[\"QTY\"])").find("COUNT(*) = COUNT(CASE WHEN") != std::string::npos ? "whole" : "plain",
           "whole");
     check("SUM refused on sqlite", expr("SUM(ITEMS, _[\"QTY\"])", "sqlite"), "ERR E_SQL_UNSUPPORTED");
-    // CPP-C59/§11.6: counts are exact, clamped at 2^63 - 1, and a scale on a whole
+    // docs/internals/sql-translation.md §11.6: counts are exact, clamped at 2^63 - 1, and a scale on a whole
     // number is fine.
     {
       const Bindings rb({{"R", orders()}});
@@ -453,11 +453,11 @@ int main() {
             stmt("R .> DROP(9223372036854775807) .> DROP(1)"),
             "SELECT \"o\".* FROM \"orders\" \"o\" OFFSET 9223372036854775807");
       check("a fractional count is still refused", stmt("R .> TAKE(1.5)"), "ERR E_NOT_INT");
-      // CPP-C60: DISTINCT after a sort stays in memory (refused here).
+      // DISTINCT after a sort stays in memory (refused here).
       check("distinct after a sort", stmt("R .> SORT_BY(_[\"ID\"]) .> MAP(RECORD(\"a\", _[\"CUSTOMER_ID\"])) .> DISTINCT"),
             "ERR E_SQL_SHAPE");
     }
-    // CPP-C17/C10: a doubling helper chain is refused by the size budget in
+    // A doubling helper chain is refused by the size budget in
     // bounded time, and a long chain by depth -- neither is exponential or a crash.
     {
       std::string doubling = "X0 = N;";
@@ -473,37 +473,37 @@ int main() {
       chain += " X250 > 0";
       check("long constant chain refused by depth", expr(chain), "ERR E_SQL_DEPTH");
     }
-    // CPP-C36/CPP-C12: a bad numericGuard is refused on EVERY use, not just the
+    // A bad numericGuard is refused on EVERY use, not just the
     // first, and registration is safe under translation threads (tsan lane).
     {
       sel::sql::Map::define_dialect(
           "wave-evil", sel::sql::DialectSpec::extending("mariadb").lexical(
                            "numericGuard",
                            "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
-      int refused = 0;
+      int refusals = 0;
       for (int i = 0; i < 3; ++i) {
         try {
           (void)Sql::translate(sel::compile("U + 1 > 0"), "wave-evil", wb);
         } catch (const std::logic_error&) {
-          ++refused;
+          ++refusals;
         } catch (const std::runtime_error&) {
-          ++refused;
+          ++refusals;
         }
       }
-      if (refused != 3) fail("guard refused on every use", std::to_string(refused), "3");
+      if (refusals != 3) fail("guard refused on every use", std::to_string(refusals), "3");
     }
-    // CPP-C53: registration refuses a textEscape that leaves a quote in the literal.
+    // Registration refuses a textEscape that leaves a quote in the literal.
     {
-      bool refused = false;
+      bool escape_refused = false;
       try {
         sel::sql::Map::define_dialect(
             "wave-noescape", sel::sql::DialectSpec::extending("sqlite").lexical_escapes("textEscape", {}));
       } catch (const std::exception&) {
-        refused = true;
+        escape_refused = true;
       }
-      if (!refused) fail("empty textEscape refused at registration", "accepted", "refused");
+      if (!escape_refused) fail("empty textEscape refused at registration", "accepted", "refused");
     }
-    // CPP-C54: a pure-memory plan runs on a copy of the caller's context.
+    // A pure-memory plan runs on a copy of the caller's context.
     {
       const Bindings rb({{"ORDERS", orders()}});
       const sel::Program p = sel::compile("Y = 5; ORDERS .> SORT_BY(REPEAT(\"a\", 2)) .> MAP(RECORD(\"y\", Y))");
@@ -515,19 +515,19 @@ int main() {
       }, context);
       if (context.has("Y")) fail("execute_hybrid mutated the caller's context", "Y is set", "Y is not set");
     }
-    // CPP-P24: execute_hybrid copies only the variables the continuation assigns to.
+    // execute_hybrid copies only the variables the continuation assigns to.
     // The caller's context is still never written to, however the program writes.
     {
       const Bindings rb({{"ORDERS", orders()}});
       const auto big_context = []() {
         sel::Value context = sel::Value::none();
-        std::vector<sel::Value> rows;
+        std::vector<sel::Value> big_rows;
         for (int i = 1; i <= 3; i++) {
           sel::Value r = sel::Value::none();
           r.set("id", sel::Value::num(std::to_string(i)));
-          rows.push_back(std::move(r));
+          big_rows.push_back(std::move(r));
         }
-        context.set("BIG", sel::Value::list(std::move(rows)));
+        context.set("BIG", sel::Value::list(std::move(big_rows)));
         context.set("KEEP", sel::Value::text("k"));
         return context;
       };
@@ -551,7 +551,85 @@ int main() {
       odd.set("A", sel::Value::num("1"));
       check("a context with a scalar is cloned whole", run("A + 1", odd), "t\"2\"");
     }
-    // CPP-C35: a FILTER is not hoisted above a SORT_BY whose key can raise.
+    // Hybrid isolation from application functions: a host function is handed
+    // values and may change them, so a continuation that calls one runs on a copy
+    // of the whole context -- direct, inside IF, inside an aggregate body, and in
+    // the continuation of a real hybrid split. The caller's A.k stays "1".
+    {
+      sel::register_function("POKE", 1, 1, [](sel::HostArgs& args) {
+        sel::Value target = args.val(0);   // a handle: set() writes the shared value
+        target.set("k", sel::Value::text("9"));
+        return sel::Value::text("poked");
+      });
+      const Bindings rb({{"ORDERS", orders()}});
+      const auto fresh = [] {
+        sel::Value context = sel::Value::none();
+        sel::Value a = sel::Value::none();
+        a.set("k", sel::Value::text("1"));
+        context.set("A", a);
+        context.set("ORDERS", sel::evaluate("LIST(RECORD('ID', '1'), RECORD('ID', '2'))"));
+        return context;
+      };
+      const auto in_memory = [](const sel::sql::HybridPlan& plan) {
+        return [&plan](const std::string&, const std::vector<sel::Value>&) {
+          sel::Value c = sel::Value::none();
+          c.set("ORDERS", sel::evaluate("LIST(RECORD('ID', '1'), RECORD('ID', '2'))"));
+          return sel::Program("", plan.sql_prefix_ast).run(c);
+        };
+      };
+      // The shapes of sql/oracle/hybrid.json's `application` programs.
+      for (const char* source : {"POKE(A)", "IF(TRUE, POKE(A), 0)", "MAP(LIST(1), POKE(A))",
+                                 "X = POKE(A); X[\"nope\"]",
+                                 "ORDERS .> SORT_BY(_[\"ID\"]) .> TAKE(2) .> MAP(RECORD(\"i\", _[\"ID\"], \"k\", POKE(A)[\"k\"]))",
+                                 "ORDERS .> FILTER(_[\"ID\"] > 1) .> MAP(RECORD(\"p\", POKE(A), \"r\", REPEAT(\"x\", 2)))"}) {
+        const auto plan = Sql::plan_hybrid(sel::compile(source), "sqlite", rb);
+        sel::Value context = fresh();
+        try {
+          (void)Sql::execute_hybrid(plan, in_memory(plan), context);
+        } catch (const sel::SelError&) {
+          // write-then-error: the error is run()'s; the caller's A is what is checked
+        }
+        check(std::string("a host function cannot write the caller's context: ") + source,
+              context.get("A")->get("k")->scalar(), "1");
+      }
+    }
+    // A continuation that reads the reassigned source as a value sees the
+    // reassigned value, as run() does: n is 4 (six rows, two dropped), three rows,
+    // and the SQL prefix is LIMIT 3 OFFSET 2.
+    {
+      sel::register_function("HOSTF", 1, 1, [](sel::HostArgs& args) { return args.val(0); });
+      const Bindings rb({{"ORDERS", Binding::relation(
+          "orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}})}});
+      const sel::Value six_rows = sel::evaluate(
+          "LIST(RECORD('ID', '1'), RECORD('ID', '2'), RECORD('ID', '3'), RECORD('ID', '4'), "
+          "RECORD('ID', '5'), RECORD('ID', '6'))");
+      const sel::Program program = sel::compile(
+          "ORDERS = ORDERS .> DROP(2); "
+          "ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"x\", HOSTF(_[\"ID\"])))");
+      const auto plan = Sql::plan_hybrid(program, "sqlite", rb);
+      const auto context = [&] {
+        sel::Value c = sel::Value::none();
+        c.set("ORDERS", six_rows);
+        return c;
+      };
+      const auto prefix_in_memory = [&](const std::string&, const std::vector<sel::Value>&) {
+        sel::Value c = context();
+        return sel::Program("", plan.sql_prefix_ast).run(c);
+      };
+      sel::Value direct_context = context();
+      const std::string want = program.run(direct_context).dump();
+      const std::string got = Sql::execute_hybrid(plan, prefix_in_memory, context()).dump();
+      check("a reread of the reassigned source agrees with run()", got, want);
+      check("...which is n=4 over three rows",
+            want, "-{\"1\"=-{\"n\"=t\"4\", \"x\"=t\"3\"}, \"2\"=-{\"n\"=t\"4\", \"x\"=t\"4\"}, "
+                  "\"3\"=-{\"n\"=t\"4\", \"x\"=t\"5\"}}");
+      check("...and the prefix is LIMIT 3 OFFSET 2",
+            plan.sql_statement ? std::to_string(plan.sql_statement->as_statement().find("LIMIT 3 OFFSET 2") !=
+                                                std::string::npos)
+                               : std::string("no SQL"),
+            "1");
+    }
+    // A FILTER is not hoisted above a SORT_BY whose key can raise.
     {
       const Bindings rb({{"ORDERS", orders()}});
       const auto kind = [&](const std::string& source) {
@@ -563,7 +641,7 @@ int main() {
       check("declared sort key still hoists",
             kind("ORDERS .> SORT_BY(_[\"ID\"]) .> FILTER(_[\"ID\"] > 100) .> TAKE(5)"), "pure_sql");
     }
-    // CPP-P14: the Translator reads the caller's Bindings instead of copying them, and
+    // The Translator reads the caller's Bindings instead of copying them, and
     // the work done once per set (alias clashes, the value bindings) gives the same
     // answers as it did per call.
     {

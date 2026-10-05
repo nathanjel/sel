@@ -9,15 +9,14 @@
 namespace sel::sql {
 namespace {
 
-// ASCII only, matching PHP's strtoupper. A Unicode upper-caser would fold "ß"
-// to "SS" and change a key's length.
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
-  return out;
+// A step whose argument count the parser's arity rule (spec §6.2, from the
+// manifest) refuses. Stage 1 and the planner rebuild calls with the counts they
+// were given (SORT plus TAKE fuses into a TOP of a valid count), so only a tree
+// compile() did not build can reach one: a bug in its builder, not an answer.
+[[noreturn]] void unreachable_arity(const std::string& name) {
+  throw std::logic_error("SEL->SQL: " + name + ": an argument count compile() refuses reached the translator");
 }
+
 void frame_set(std::vector<std::pair<std::string, Binder>>& frame,
                const std::string& name, Binder b);
 std::string relation_alias(const RelationSpec& rel);
@@ -40,9 +39,9 @@ SqlKind declared_kind(const Binding& b, const Value& v) {
 // one function: numeric position for a list, EXACT string for a clist.
 SNodePtr child_of(const SNode& n, const std::string& key) {
   if (n.t() == SNode::T::List) {
-    const std::optional<int> i = list_key(key);
-    if (!i || static_cast<std::size_t>(*i) > n.kids().size()) return nullptr;
-    return n.kids()[static_cast<std::size_t>(*i) - 1];
+    const std::optional<std::size_t> i = list_key_number(key);
+    if (!i || *i > n.kids().size()) return nullptr;
+    return n.kids()[*i - 1];
   }
   if (n.t() == SNode::T::CList) {
     // Insertion-ordered, first match. Stage 1 already refused duplicates, so at
@@ -72,19 +71,12 @@ bool same_relation(const RelationSpec& a, const RelationSpec& b) {
   return a.from == b.from && a.alias == b.alias && a.from_is_raw == b.from_is_raw;
 }
 
-bool contains(const std::vector<std::string>& xs, const std::string& x) {
-  return std::find(xs.begin(), xs.end(), x) != xs.end();
-}
 
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
 std::vector<std::string> binder_keys(const std::vector<std::string>& names) {
   std::vector<std::string> out;
   for (const std::string& name : names) {
-    std::string lower = name;
-    for (char& c : lower) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    for (const std::string& k : {name, lower}) {
+    for (const std::string& k : {name, ascii_lower(name)}) {
       if (!contains(out, k)) out.push_back(k);
     }
   }
@@ -285,15 +277,6 @@ Binder Binder::projected(std::shared_ptr<const RelationSpec> r,
   return b;
 }
 
-std::optional<int> list_key(std::string_view k) {
-  if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
-  int n = 0;
-  for (char c : k) {
-    if (c < '0' || c > '9') return std::nullopt;
-    n = n * 10 + (c - '0');
-  }
-  return n;
-}
 
 // --- lifecycle ---------------------------------------------------------------
 
@@ -335,15 +318,11 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
   return {std::move(normalised), std::move(plan)};
 }
 
-// The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
-// evaluator would: an odd count at the call, a name that is not a text literal
-// at the name. The planner reads RECORD in three places -- a bucket's
-// projection, a bucket's key, a MAP's projection -- and each used to walk the
-// pairs itself.
 // An alias or column name that comes from a SEL text literal is held to the rules a
 // binding's own names already meet: not empty, no NUL (which no dialect can
 // quote, and a C-string client truncates at). E_SQL_UNSUPPORTED at the literal.
-static void check_program_name(const std::string& name, Pos pos) {
+namespace {
+void check_program_name(const std::string& name, Pos pos) {
   if (name.empty()) {
     refuse("E_SQL_UNSUPPORTED",
            "an empty name cannot be quoted as a SQL identifier (PostgreSQL and "
@@ -354,12 +333,19 @@ static void check_program_name(const std::string& name, Pos pos) {
     refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be quoted by any dialect", pos);
   }
 }
+}  // namespace
 
-static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
+// The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
+// evaluator would: a name that is not a text literal, at the name (an odd count
+// never gets here: compile() refuses it). The planner reads RECORD in three places -- a bucket's
+// projection, a bucket's key, a MAP's projection -- and each used to walk the
+// pairs itself.
+namespace {
+std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
                                                                     const std::string& dialect) {
   const auto& args = node->kids();
   if (args.size() % 2 != 0) {
-    refuse("E_ARITY", "RECORD takes an even number of arguments", node->pos());
+    unreachable_arity("RECORD");
   }
   std::vector<std::pair<std::string, SNodePtr>> fields;
   for (std::size_t i = 0; i < args.size(); i += 2) {
@@ -390,6 +376,7 @@ static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePt
   }
   return fields;
 }
+}  // namespace
 
 Fragment Translator::translate(const NodePtr& ast) {
   Begun b = begin(ast);
@@ -434,7 +421,7 @@ Fragment Translator::node(const SNodePtr& n) {
   // again on every re-entry of an inlined helper or an unrolled element, and
   // counted HERE -- before constant folding, kind inference or rendering -- so
   // the work a refusal costs is bounded by the limit and not by what the
-  // program would have expanded to (CPP-C17).
+  // program would have expanded to.
   if (++nodes_ > sel_limits::MAX_SQL_NODES) {
     refuse("E_SQL_SIZE",
            "this program renders more than " + std::to_string(sel_limits::MAX_SQL_NODES) +
@@ -486,7 +473,7 @@ Fragment Translator::node_in_scope(const SNodePtr& n) {
                         n->t() == SNode::T::Call;
   if (!compound) return dispatch(n);
   // A binder that reuses the name of a constant `value` binding is the ELEMENT
-  // inside its body, not the constant (JS-C53): it is not constant there, so it
+  // inside its body, not the constant: it is not constant there, so it
   // must not be folded, validated against the constant, or left unguarded.
   if (!is_constant(*n, visible_consts(), const_memo_.get())) return dispatch(n);
 
@@ -655,8 +642,7 @@ Fragment Translator::index(const SNode& n) {
     // where run() raises E_NO_KEY -- anything else (a bucket's members, a
     // projected row, a relation) is the inner index's own refusal. The
     // relation's binding name, table or alias used to be accepted as the
-    // qualifier too, and a later LINK's left binder read as the source
-    // (review 2026-09-28 SQL-05..08).
+    // qualifier too, and a later LINK's left binder read as the source.
     if (const RowModelPtr row = row_path(obj, n)) {
       return row_field(row, "the row", constant_index(*n.r()), n);
     }
@@ -692,15 +678,15 @@ Fragment Translator::index(const SNode& n) {
                        "index the row its binder gives you",
              n.pos());
     case Binding::Kind::Columns: {
-      const std::optional<int> i = list_key(key);
+      const std::optional<std::size_t> i = list_key_number(key);
       const std::size_t count = b.as_columns().size();
-      if (!i || static_cast<std::size_t>(*i) > count) {
+      if (!i || *i > count) {
         refuse("E_SQL_BINDING",
                obj.s() + "[" + key + "] is outside that binding's " +
                    std::to_string(count) + " column(s)",
                n.pos());
       }
-      return column_ref(b.as_columns()[static_cast<std::size_t>(*i) - 1]);
+      return column_ref(b.as_columns()[*i - 1]);
     }
     case Binding::Kind::Value: {
       const Value* child = b.as_value().get(key);
@@ -725,8 +711,7 @@ Fragment Translator::index(const SNode& n) {
 // appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
 // collated the way the `$` family compares text, because the evaluator groups
 // by the key's exact bytes and a case-insensitive collation would merge groups
-// it keeps apart (review 2026-09-15 finding L; MariaDB's default merged 'A'
-// and 'a'). The result is marked exact so a comparison over it does not wrap
+// it keeps apart (MariaDB's default merged 'A' and 'a'). The result is marked exact so a comparison over it does not wrap
 // it a second time -- MySQL's only_full_group_by accepts a projected or
 // compared key only as the identical expression.
 Fragment Translator::group_key(const Source& src, const RelationalGroup& gb, bool projected) {
@@ -816,7 +801,7 @@ RowModelPtr Translator::row_path(const SNode& node, const SNode& outer) {
 RowModelPtr Translator::row_nested(const RowModelPtr& row, const std::string& key,
                                    const SNode& n, const SNode& outer) {
   if (RowModelPtr nested = nested_of(row, key)) return nested;
-  if (list_key(key)) {
+  if (list_key_number(key)) {
     refuse("E_SQL_SHAPE",
            "[" + key + "] asks for a row by position, and a relation has no first row "
                        "without an ORDER BY that nothing here can supply",
@@ -836,7 +821,7 @@ RowModelPtr Translator::row_nested(const RowModelPtr& row, const std::string& ke
 // message: the binder, or "the row" for a nested record.
 Fragment Translator::row_field(const RowModelPtr& row, const std::string& label,
                                const std::string& key, const SNode& n) {
-  if (list_key(key)) {
+  if (list_key_number(key)) {
     refuse("E_SQL_SHAPE",
            label + "[" + key + "] asks for a row by position, and a relation has no "
                                "first row without an ORDER BY that nothing here can supply",
@@ -1054,7 +1039,7 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
   if (b.shape() == Binder::Shape::Row) {
     // The positional check comes before the field lookup, so a relation field
     // literally named "1" is unreachable through I[1] and I["1"] alike.
-    if (list_key(key)) {
+    if (list_key_number(key)) {
       refuse("E_SQL_SHAPE",
              name + "[" + key + "] asks for a row by position, and a relation "
                                 "has no first row without an ORDER BY that "
@@ -1164,9 +1149,6 @@ std::optional<EqlClass> eql_class(SqlKind k) {
   }
 }
 
-bool contains(std::span<const std::string_view> xs, std::string_view k) {
-  return std::find(xs.begin(), xs.end(), k) != xs.end();
-}
 
 constexpr std::string_view NUMERIC_OPS[] = {"==", "!=", "<", "<=", ">", ">="};
 constexpr std::string_view TEXTUAL_OPS[] = {"$==", "$!=", "$<", "$<=",
@@ -1183,16 +1165,19 @@ void require_comparable_kinds(const Fragment& l, const Fragment& r,
   const std::optional<EqlClass> cl = eql_class(l.kind());
   const std::optional<EqlClass> cr = eql_class(r.kind());
   if (!cl || !cr || *cl == *cr) return;
-  // `other` is computed as if l were always the BOOL side, so a TEXT-vs-BIN
-  // mismatch says "compares a BOOL with a TEXT". A defect in the message, kept:
-  // codes are contract and messages are not, and rewording it here would be the
-  // only host that did.
-  const SqlKind other = l.kind() == SqlKind::Bool ? r.kind() : l.kind();
+  // Both real kinds, and what SEL actually does with them (the same words in
+  // every host; codes are contract, messages are not).
+  const std::string what = op + " compares a " + std::string(kind_name(l.kind())) + " with a " +
+                           std::string(kind_name(r.kind()));
   refuse("E_SQL_SHAPE",
-         op + " compares a BOOL with a " + std::string(kind_name(other)) +
-             ", which SEL answers FALSE for every value because the kinds "
-             "differ. SQL has no way to say that: both sides cast to the same "
-             "characters",
+         op[0] == '$'
+             // SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an
+             // operand of the byte comparisons at all (E_NOT_BIN); SQL would cast
+             // both sides to characters, which says neither.
+             ? what + ", which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to "
+                      "say that: both sides cast to the same characters"
+             : what + ", which SEL answers FALSE for every value because the kinds differ. SQL "
+                      "has no way to say that: both sides cast to the same characters",
          pos);
 }
 
@@ -1318,7 +1303,7 @@ void Translator::require_not_bool_operand(const Fragment& f, Pos pos,
 
 // JOIN takes text (`&`'s rules, spec §5.2/§7.5): a BOOL or BIN element or
 // separator is E_NOT_TEXT in SEL. Concatenating a server's spelling of it
-// ('1', 'true', a byte string) would answer where SEL refuses (PY-C19).
+// ('1', 'true', a byte string) would answer where SEL refuses.
 void Translator::require_join_text(const Fragment& f, Pos pos, const std::string& what) {
   if (f.kind() != SqlKind::Bool && f.kind() != SqlKind::Bin) return;
   refuse("E_SQL_SHAPE",
@@ -1721,7 +1706,7 @@ Map merge_slots(Map a, const Map& b) {
 }  // namespace
 
 // An operand that is a constant TEXT holding a number, in an arithmetic position, is that
-// number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would read the
+// number: SEL computes with it exactly, and MariaDB and MySQL would read the
 // quoted string as a DOUBLE. It is translated as the numeric literal it stands for. The
 // text was translated first (its SQL kind is only known then), so the slots it bound are
 // taken back, or `params` mode would report a value bound that no placeholder uses.
@@ -1834,7 +1819,7 @@ Translator::SlotMap Translator::relation_slots(const RelationSpec& rel) {
   // An uncorrelated relation is a subquery over the whole table, which is legal
   // and occasionally what you want.
   // An application's own correlate is parenthesised: `a OR b AND (body)` binds
-  // the AND to the second operand only (CPP-C56). The default TRUE stays bare.
+  // the AND to the second operand only. The default TRUE stays bare.
   const std::string corr = rel.correlate ? "(" + *rel.correlate + ")"
                                          : std::string(lex_text(dialect_, "true"));
   return {{"from", {Slot{from}}}, {"corr", {Slot{corr}}}};
@@ -1930,7 +1915,7 @@ Fragment Translator::in_operator(const SNode& n) {
       // join_aggregate() already follow.
       const std::string skel = skeleton("inRelation", n.pos());
       // The needle and the column have to be comparable, as `x IN (list)` has
-      // them (PY-C21): a BOOL or BIN needle against a TEXT column would match
+      // them: a BOOL or BIN needle against a TEXT column would match
       // rows whose text is '1', 'true' or the same bytes. text_operand is
       // applied unconditionally -- there is no two-BIN skip as in binary().
       const Fragment needle_raw = node(n.l());
@@ -2008,7 +1993,7 @@ Fragment Translator::in_operator(const SNode& n) {
     // Against an `exact` needle the item stays bare only when it is itself text
     // by construction: a text literal or another exact column. A NUMBER or an
     // undeclared column beside a bare `=` is compared NUMERICALLY by the MySQL
-    // family ('3.0' = 3, '3abc' = 3), where SEL's IN is structural (CPP-C30).
+    // family ('3.0' = 3, '3abc' = 3), where SEL's IN is structural.
     const bool item_is_text = e->t() == SNode::T::Text || f.exact();
     const Fragment item = is_exact && item_is_text ? f : emit_.text_operand(f);
     const Fragment args[] = {needle, item};
@@ -2242,8 +2227,7 @@ Fragment Translator::call(const SNodePtr& n) {
 
   // A binder position holding anything but a bare name (`BUCKET(L, A[1], k, p)`)
   // is refused where it stands, whichever form the call ends up taking: the
-  // binder is left as written by stage 1 and is not an expression to render
-  // (GO-C2, CPP nil-deref).
+  // binder is left as written by stage 1 and is not an expression to render.
   if (n->origin()) {
     if (const auto form = binding_form(name, n->origin()->items, n->spec())) {
       for (std::size_t i = 0; i < n->kids().size() && i < form->scopes.size(); ++i) {
@@ -2259,8 +2243,8 @@ Fragment Translator::call(const SNodePtr& n) {
   // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
   // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the Group
   // binder alone: over a relation row, COUNT(_) is the row's number of
-  // fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
-  // MIN or MAX (finding J). The body binds the member row, as the
+  // fields in SEL, and SEL has no per-group
+  // MIN or MAX. The body binds the member row, as the
   // evaluator's walk does: `_` for the two-argument form, the name given
   // for the three-argument one.
   if (statement_plan_ && !n->kids().empty() && n->kids()[0]->t() == SNode::T::Var) {
@@ -2285,7 +2269,7 @@ Fragment Translator::call(const SNodePtr& n) {
         require_num(inner, body_node->pos(), "SUM");
         if (inner.kind() == SqlKind::Unknown) return sum_whole(inner, body_node->pos());
         // Parts, not their SQL: a literal in the body is a parameter slot with no
-        // text of its own, and concatenating `.sql` dropped it (PHP-C7).
+        // text of its own, and concatenating `.sql` dropped it.
         std::vector<Fragment::Part> p;
         p.push_back({false, "COALESCE(SUM("});
         for (const auto& pt : inner.parts()) p.push_back(pt);
@@ -2325,7 +2309,7 @@ Fragment Translator::call(const SNodePtr& n) {
   for (size_t i = 0; i < rewritten->kids().size(); ++i) {
     const SNodePtr& arg = rewritten->kids()[i];
     // MIN and MAX compare their arguments as numbers: a numeric text constant is the
-    // number, as in arithmetic (PHP-C33).
+    // number, as in arithmetic.
     Fragment f = (name == "MIN" || name == "MAX") ? arithmetic_operand(arg) : node(arg);
     if (f.kind() == SqlKind::List) {
       refuse("E_SQL_SHAPE",
@@ -2664,7 +2648,7 @@ Translator::Source Translator::classify_impl(const SNodePtr& src) {
   }
   // The four text functions that yield a list, the constructors, and every
   // pipeline step -- the optimiser's vocabulary, so a new step is covered by
-  // being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+  // being one (COUNT(LIST(1, 2, 3)) was once translated as 0).
   if (src->t() == SNode::T::Call &&
       (contains(YIELDS_LIST, src->s()) || src->s() == "LIST" || src->s() == "RECORD" ||
        sel::is_pipeline_op(src->s()))) {
@@ -2758,7 +2742,7 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   // a later step -- the joined row carries them as keys, not as names. This
   // frame used to bind `_1`, `_2`, the relations' names and both binders of
   // every join for every later step, so `FILTER(C["id"] > 1)` translated
-  // where `run()` fails (review 2026-09-15 finding W2).
+  // where `run()` fails.
 
   elem_ctx_.push_back({frames_.size(), row, row_key});
   frames_.push_back(std::move(frame));
@@ -2775,7 +2759,7 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
 // members, which only COUNT and SUM read (call()) -- and `_K` is the group
 // key, when there is one key to be it. This is the one place `_K` is a group
 // key: before the bucket it is a source row's position, after the projection
-// the projected row's, and SQL has neither (review 2026-09-15 finding K).
+// the projected row's, and SQL has neither.
 Fragment Translator::with_group(const Source& src, const std::string& binder_name,
                                 const std::function<Fragment()>& render) {
   std::vector<std::pair<std::string, Binder>> frame;
@@ -2824,8 +2808,8 @@ Fragment Translator::with_join_binders(const RelationalPlan& plan,
   // A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
   // right, plus the names the LINK gives them (spec §7.4) and nothing else:
   // a relation's name outside those, its alias or its table is not a binder
-  // (review 2026-09-28 SQL-07), and the left element of a later LINK is the
-  // joined row so far, not the source (SQL-05).
+  // and the left element of a later LINK is the
+  // joined row so far, not the source.
   const JoinRows rows = join_rows(plan);
   const JoinRows::Step& step = rows.steps[static_cast<std::size_t>(&join - plan.joins.data())];
   std::vector<std::pair<std::string, Binder>> frame;
@@ -2869,7 +2853,7 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
     // An unroll is a chain of `+`, and NULL propagates through it, so a guard on
     // each operand IS sound here (a relation's SUM is guarded as a whole, by
     // relation_aggregate). Without it an undeclared column was added unread and
-    // SQLite answered 1 for u='abc', n=1 where SEL raises (GO-C16).
+    // SQLite answered 1 for u='abc', n=1 where SEL raises.
     if (src.shape != Source::Shape::Relation && q.kind() == SqlKind::Unknown) {
       q = guard_numeric(q, *body);
     }
@@ -3105,7 +3089,7 @@ Fragment Translator::has(const SNode& n) {
 Fragment Translator::join_aggregate(const SNode& n) {
   const Source src = classify(n.kids()[0]);
   // FILTER yields a list; ALL, ANY, SUM and COUNT absorb it (§7.5) and JOIN
-  // does not. Dropping the FILTER joined the WHOLE list (LISP-C6).
+  // does not. Dropping the FILTER joined the WHOLE list.
   if (!src.filters.empty()) {
     refuse("E_SQL_SHAPE",
            "JOIN over a FILTER would have to know which elements the filter "
@@ -3160,10 +3144,6 @@ Fragment Translator::join_aggregate(const SNode& n) {
 
 // --- relational pipeline statement compiler ---------------------------------
 
-// The optimizer's list (sel_ast.hpp), not a second copy: one vocabulary of
-// pipeline operators per host, or the planner and the translator drift apart.
-bool pipeline_op_name(std::string_view name) { return sel::is_pipeline_op(name); }
-
 // Whether a MAP must wrap the plan first. An ORDER BY alone does not: the
 // projection and the sort can share one statement (ORDER BY may name the
 // input's columns), and a derived table is where MariaDB DROPS an ORDER BY
@@ -3190,7 +3170,9 @@ bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
 // over the derived table is refused where `run()` raises. `SELECT o.*` was
 // the row before: the left table's columns, which a continuation read where
 // SEL has no key, and which made a derived table over a join name columns
-// it did not have (finding Y, lanes).
+// it did not have.
+namespace {
+
 struct JoinedRowField {
   std::string name;          // ASCII-upper, as the relation keys it
   ColumnSpec spec;
@@ -3205,6 +3187,8 @@ std::vector<JoinedRowField> joined_row_fields(const RelationalPlan& plan) {
   }
   return out;
 }
+
+}  // namespace
 
 std::vector<std::string> Translator::output_field_names(const RelationalPlan& plan) const {
   std::vector<std::string> names;
@@ -3368,7 +3352,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
   std::vector<SNodePtr> steps;
   SNodePtr curr = ast;
 
-  while (curr && curr->t() == SNode::T::Call && pipeline_op_name(curr->s()) && !curr->kids().empty()) {
+  while (curr && curr->t() == SNode::T::Call && sel::is_pipeline_op(curr->s()) && !curr->kids().empty()) {
     steps.push_back(curr);
     curr = curr->kids()[0];
   }
@@ -3447,7 +3431,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         binder = args[1]->s();
         pred = args[2];
       } else {
-        refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step->pos());
+        unreachable_arity("FILTER");
       }
       if (plan.group_by.has_value()) {
         plan.having.push_back({binder, pred, step->pos(), over_groups});
@@ -3496,7 +3480,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         key_node = args[2];
         agg_node = args[3];
       } else {
-        refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step->pos());
+        unreachable_arity("BUCKET");
       }
 
       // A bare bucket's key is an index key (spec §7.4): one text or number.
@@ -3604,7 +3588,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         binder = args[1]->s();
         expr = args[2];
       } else {
-        refuse("E_ARITY", "MAP takes 2 or 3 arguments", step->pos());
+        unreachable_arity("MAP");
       }
       // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's body
       // is evaluated once per group, so it is the bucket's projection.
@@ -3638,7 +3622,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
       // PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified
       // representative row on MariaDB. A loud refusal is acceptable and a silent
-      // misordering is not, so the step stays in memory (CPP-C60).
+      // misordering is not, so the step stays in memory.
       if (!plan.order_by.empty()) {
         refuse("E_SQL_SHAPE",
                "DISTINCT after a sort keeps the first of each run in sorted order, "
@@ -3649,13 +3633,13 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       plan.distinct = true;
     } else if (name == "TAKE") {
       if (args.size() != 2) {
-        refuse("E_ARITY", "TAKE takes 2 arguments", step->pos());
+        unreachable_arity("TAKE");
       }
       int64_t lim = eval_int_param(args[1], "TAKE");
       plan.limit = !plan.limit.has_value() ? lim : std::min(*plan.limit, lim);
     } else if (name == "DROP") {
       if (args.size() != 2) {
-        refuse("E_ARITY", "DROP takes 2 arguments", step->pos());
+        unreachable_arity("DROP");
       }
       int64_t off = eval_int_param(args[1], "DROP");
       // Slices merge first, and the sum is clamped like a single count (§11.6):
@@ -3672,8 +3656,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       // grouped or not, so those wrap; a sort over a projection or a DISTINCT
       // wraps so its key can name what they produced. A sort after a sort
       // does not wrap: the sorts are stable, so the earlier one is the later
-      // one's tie-breaker, and the later one's keys go FIRST in the ORDER BY
-      // (review 2026-09-15 finding V).
+      // one's tie-breaker, and the later one's keys go FIRST in the ORDER BY.
       const bool need_derived =
           plan.limit.has_value() || plan.offset.has_value() ||
           (!plan.group_by.has_value() &&
@@ -3703,14 +3686,13 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       // sort's, a bucket's) are otherwise checked only when the statement is
       // rendered, after this LINK and the steps after it were analysed, which
       // reported a later step's refusal where run() raises at the earlier
-      // one. Lisp has done this since review 2026-09-25 SQL-03; the widened
-      // SQL fuzzer found the other hosts did not (review 2026-09-28 SQL-10).
+      // one. The SQL fuzzer found hosts that did not.
       // The fragment is discarded: its parameters are never placed, and the
       // statement renders these steps again anyway.
       if (!plan.order_by.empty() || plan.projections || plan.select_cols || plan.group_by) {
         // Its parameters (and caveats) are put back: the statement renders these
         // steps again, and a slot the discarded pass created is a value bound
-        // for a placeholder the statement has no place for (CPP-C57).
+        // for a placeholder the statement has no place for.
         const std::size_t slots = params_.size();
         const std::size_t kinds = param_kinds_.size();
         const std::vector<std::string> caveats = caveats_;
@@ -3733,7 +3715,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
       if (args.size() != 3 && args.size() != 5) {
-        refuse("E_ARITY", name + " takes 3 or 5 arguments", step->pos());
+        unreachable_arity(name);
       }
       const SNodePtr& right_node = args[1];
       if (right_node->t() != SNode::T::Var || !bindings_.has(right_node->s())) {
@@ -3774,7 +3756,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       // One table alias per occurrence: a relation joined a second time under
       // an alias the statement already uses (a self-join, or a chain back to
       // an aliased relation) rendered it twice, which the server rejects
-      // (review 2026-09-28 SQL-09). The program stays in memory.
+      // The program stays in memory.
       {
         std::vector<std::string> open{plan.source_alias.value_or(relation_alias(plan.source_relation))};
         for (const RelationalJoin& j : plan.joins) {
@@ -3858,94 +3840,63 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   const auto& args = step->kids();
   const bool top = name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
   if (top && args.empty()) {
-    refuse("E_ARITY", name + " has an invalid sort form", step->pos());
+    unreachable_arity(name);
   }
-  const auto count = top ? args.size() - 1 : args.size();
 
   if (top) {
     const int64_t limit = eval_int_param(args.back(), name);
     plan.limit = !plan.limit.has_value() ? limit : std::min(*plan.limit, limit);
   }
 
-  if (name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC") {
-    std::string dir = (name == "SORT" || name == "TOP") ? "ASC" : "DESC";
-    if (count == 1) {
-      if (plan.source_relation.scalar) {
-        const std::string& scalar_col = *plan.source_relation.scalar;
-        auto shape = std::make_shared<Node>();
-        shape->t = NT::Index;
-        shape->pos = step->pos();
-        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
-        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, scalar_col, false, step->pos()));
-        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
-        plan.order_by.push_back({"_", index_node, dir, step->pos()});
-        return;
-      }
-      if (plan.source_relation.fields.size() == 1) {
-        const std::string& field_name = plan.source_relation.fields[0].first;
-        auto shape = std::make_shared<Node>();
-        shape->t = NT::Index;
-        shape->pos = step->pos();
-        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
-        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, field_name, false, step->pos()));
-        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
-        plan.order_by.push_back({"_", index_node, dir, step->pos()});
-        return;
-      }
-      refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step->pos());
-    } else if (count == 2) {
-      plan.order_by.push_back({"_", args[1], dir, step->pos()});
-    } else if (count == 3) {
-      if (!is_binder_name(*args[1])) {
-        refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name", args[1]->pos());
-      }
-      plan.order_by.push_back({args[1]->s(), args[2], dir, step->pos()});
-    } else {
-      refuse("E_ARITY", name + " takes 1 to 3 arguments", step->pos());
+  // The form is the evaluator's (sort_form): read off the call as written, not
+  // off stage 1's rewrite of it, where a helper inlined into the key slot could
+  // look like a direction -- `D = "DESC"; SORT_BY(L, X, D)` binds X and sorts
+  // by D's value, it does not sort by X descending.
+  const auto form = step->origin() ? sort_form(name, step->origin()->items) : std::nullopt;
+  if (!form || step->origin()->items.size() != args.size()) unreachable_arity(name);
+  std::string dir = name == "SORT_DESC" || name == "TOP_DESC" ? "DESC" : "ASC";
+
+  if (form->key < 0) {
+    // SORT(L) / TOP(L, n): the element is its own key, which for a relation is
+    // its one column.
+    const auto field_key = [&](const std::string& field) {
+      auto shape = std::make_shared<Node>();
+      shape->t = NT::Index;
+      shape->pos = step->pos();
+      SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
+      SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, field, false, step->pos()));
+      return SNode::rewritten(shape, {var_n, idx_n});
+    };
+    if (plan.source_relation.scalar) {
+      plan.order_by.push_back({"_", field_key(*plan.source_relation.scalar), dir, step->pos()});
+      return;
     }
-    return;
+    if (plan.source_relation.fields.size() == 1) {
+      plan.order_by.push_back({"_", field_key(plan.source_relation.fields[0].first), dir, step->pos()});
+      return;
+    }
+    refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step->pos());
   }
 
-  // SORT_BY
   std::string binder = "_";
-  SNodePtr key;
-  std::string dir = "ASC";
-  Pos dir_pos = step->pos();
-
-  if (count == 2) {
-    binder = "_";
-    key = args[1];
-    dir = "ASC";
-  } else if (count == 3) {
-    if (args[2]->t() == SNode::T::Text) {
-      binder = "_";
-      key = args[1];
-      dir = ascii_upper(args[2]->s());
-      dir_pos = args[2]->pos();
-    } else if (is_binder_name(*args[1])) {
-      binder = args[1]->s();
-      key = args[2];
-      dir = "ASC";
-    } else {
-      // Neither form: the third slot is a direction the evaluator would
-      // compute, and SQL cannot -- the four-argument form's refusal.
-      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2]->pos());
+  if (form->binder >= 0) {
+    const SNodePtr& b = args[static_cast<std::size_t>(form->binder)];
+    if (!is_binder_name(*b)) {
+      refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name", b->pos());
     }
-  } else if (count == 4) {
-    if (!is_binder_name(*args[1])) {
-      refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1]->pos());
-    }
-    binder = args[1]->s();
-    key = args[2];
-    if (args[3]->t() != SNode::T::Text) {
-      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3]->pos());
-    }
-    dir = ascii_upper(args[3]->s());
-    dir_pos = args[3]->pos();
-  } else {
-    refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step->pos());
+    binder = b->s();
   }
-
+  const SNodePtr& key = args[static_cast<std::size_t>(form->key)];
+  Pos dir_pos = step->pos();
+  if (form->dir >= 0) {
+    // A direction the evaluator would compute is one SQL cannot.
+    const SNodePtr& d = args[static_cast<std::size_t>(form->dir)];
+    if (d->t() != SNode::T::Text) {
+      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", d->pos());
+    }
+    dir = ascii_upper(d->s());
+    dir_pos = d->pos();
+  }
   if (dir != "ASC" && dir != "DESC") {
     refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", dir_pos);
   }

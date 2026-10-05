@@ -82,6 +82,9 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
   }
   switch (node->t) {
     case NT::Var: {
+      // A read the hybrid planner marked as the catalogue's binding is never a
+      // read of a same-named helper (see Node::binding_read).
+      if (node->binding_read) return SNode::leaf(node);
       // `bound` before `defs`: an aggregate binder SHADOWS a same-named helper.
       // `B = 7; ALL((1,2), B, B > 0)` translates to (1 > 0) AND (2 > 0) -- the
       // helper is never inlined into the body.
@@ -213,7 +216,7 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
   // earlier constant statements have already assigned into: the evaluator
   // reads a helper's value, it does not re-expand its definition. Asking it of
   // the inlined tree (`validate(*value)`) re-walked a shared helper once per
-  // path to it, which is exponential for `A1 = A0 + A0; ...` (CPP-C17).
+  // path to it, which is exponential for `A1 = A0 + A0; ...`.
   if (is_constant(*value, const_names, memo)) {
     try {
       Program("", s).run(scratch);
@@ -318,7 +321,8 @@ bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped);
 // (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
 // computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
 // a text literal too.
-static bool text_literal_results(const SNodePtr& n, int depth = 0) {
+namespace {
+bool text_literal_results(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
   if (!n || depth >= 180 || n->t() != T::Call || (n->s() != "IF" && n->s() != "COND")) return false;
   const auto& args = n->kids();
@@ -336,7 +340,7 @@ static bool text_literal_results(const SNodePtr& n, int depth = 0) {
   return true;
 }
 
-static bool identity_projection(const SNodePtr& n, int depth = 0) {
+bool identity_projection(const SNodePtr& n, int depth = 0) {
   if (!n || depth >= 180) return false;
   using T = SNode::T;
   if (n->t() == T::Var || n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return true;
@@ -357,9 +361,11 @@ static bool identity_projection(const SNodePtr& n, int depth = 0) {
   }
   return false;
 }
+}  // namespace
 
 struct IdentityInputs { bool whole = false; std::set<std::string> fields; };
-static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
+namespace {
+IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
   if (!n || depth >= 180) return {true, {}};
   if (n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return {};
@@ -388,6 +394,7 @@ static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
   }
   return {true, {}};
 }
+}  // namespace
 
 bool identity_loss_before_grouping(const SNodePtr& root, bool needed) {
   IdentityInputs needs{needed, {}};
@@ -412,10 +419,7 @@ bool identity_loss_before_grouping(const SNodePtr& root, bool needed) {
     if (n->s() == "DISTINCT" || n->s() == "DEDUPE") needs = {true, {}};
     if (!needs.whole && (n->s() == "LINK" || n->s() == "LINK_LEFT") && args[1]->t() == SNode::T::Var) {
       const auto& right = args[args.size() == 5 ? 3 : 1]->s();
-      std::erase_if(needs.fields, [&](std::string k) {
-        for (char& c : k) if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-        return k == right;
-      });
+      std::erase_if(needs.fields, [&](const std::string& k) { return ascii_upper(k) == right; });
     }
     n = args[0];
   }
@@ -432,7 +436,8 @@ struct ConstMemo {
 ConstMemo* new_const_memo() { return new ConstMemo; }
 void free_const_memo(ConstMemo* m) { delete m; }
 
-static bool is_constant_uncached(const SNode& n, const std::set<std::string>& bound,
+namespace {
+bool is_constant_uncached(const SNode& n, const std::set<std::string>& bound,
                                  ConstMemo* memo) {
   switch (n.t()) {
     case SNode::T::Num:
@@ -465,6 +470,7 @@ static bool is_constant_uncached(const SNode& n, const std::set<std::string>& bo
       return false;
   }
 }
+}  // namespace
 
 bool is_constant(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo) {
   if (!memo || n.kids().empty()) return is_constant_uncached(n, bound, memo);
@@ -524,7 +530,7 @@ std::int32_t constant_scale(const SNode& n, sel::Value& root) {
     // require_number is the operators' own coercion, and it leaves the parsed
     // decimal on the scalar it read -- which is where the scale is.
     require_number(v, n.pos());
-    return v.scalar_source(n.pos()).dec_ref().scale;
+    return v.scalar_source(n.pos()).dec_val()->scale;
   } catch (const SelError& e) {
     refuse_as_sel(e, n);
   }

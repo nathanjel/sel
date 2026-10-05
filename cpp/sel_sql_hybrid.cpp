@@ -28,13 +28,21 @@ namespace sel::sql {
 namespace {
 
 constexpr std::string_view SQL_SPECIAL_CALLS[] = {
-    "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD", "LIST"};
+    "IF", "COND", "COALESCE", "COUNT", "SUM", "MIN", "MAX", "RECORD", "LIST"};
 
-// Root variable names the program assigns to, anywhere (helper statements, aggregate
-// bodies, index targets `A[k] = x` which write into A). Iterative: a flat chain of
-// 400k operators is one tree as deep as the source is long.
-std::set<std::string> assigned_roots(const Node& root) {
-  std::set<std::string> names;
+// What running a continuation can do to the context it is given: the root names
+// it assigns to, anywhere (helper statements, aggregate bodies, index targets
+// `A[k] = x` which write into A), and whether it calls an application's own
+// function, which is handed values and may change them through its argument --
+// directly, inside IF, inside an aggregate body. Iterative: a flat chain of 400k
+// operators is one tree as deep as the source is long.
+struct ContinuationEffects {
+  std::set<std::string> assigned_roots;
+  bool calls_application_function = false;
+};
+
+ContinuationEffects continuation_effects(const Node& root) {
+  ContinuationEffects out;
   std::vector<const Node*> stack{&root};
   while (!stack.empty()) {
     const Node* n = stack.back();
@@ -42,44 +50,33 @@ std::set<std::string> assigned_roots(const Node& root) {
     if (n->t == NT::Assign) {
       const Node* target = n->l.get();
       while (target && target->t == NT::Index) target = target->l.get();
-      if (target && target->t == NT::Var) names.insert(target->s);
+      if (target && target->t == NT::Var) out.assigned_roots.insert(target->s);
     }
+    if (n->t == NT::Call && n->spec && n->spec->host) out.calls_application_function = true;
     if (n->l) stack.push_back(n->l.get());
     if (n->r) stack.push_back(n->r.get());
     for (const auto& item : n->items) if (item) stack.push_back(item.get());
   }
-  return names;
-}
-
-// A context the program may write to without the caller seeing it (CPP-C54), built
-// without deep-copying what the program never assigns (CPP-P24): entries it does not
-// assign to are shared with the caller's context (nothing writes to them), entries it
-// assigns to are cloned. A context that is not a plain variable map (a scalar, a list)
-// keeps the whole-value clone.
-Value isolated_context(const Value& context, const Node& ast) {
-  if (!context.is_none() || context.is_list()) return context.clone();
-  const std::set<std::string> roots = assigned_roots(ast);
-  Value out = Value::none();
-  for (const auto& entry : context.entries()) {
-    out.set(entry.first, roots.count(entry.first) ? entry.second.clone() : entry.second);
-  }
   return out;
 }
 
-std::string upper_ascii(std::string value) {
-  for (char& ch : value) {
-    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+// A context the program may write to without the caller seeing it: the
+// caller's context is never written, whatever the plan. Built without deep-copying
+// what the program cannot change: entries it does not assign to are
+// shared with the caller's context, entries it assigns to are cloned. Two cases
+// keep the whole-value clone: a context that is not a plain variable map (a
+// scalar, a list), and a continuation that calls an application function, which
+// may write into any value it is handed.
+Value isolated_context(const Value& context, const Node& ast) {
+  if (!context.is_none() || context.is_list()) return context.clone();
+  const ContinuationEffects effects = continuation_effects(ast);
+  if (effects.calls_application_function) return context.clone();
+  Value out = Value::none();
+  for (const auto& entry : context.entries()) {
+    out.set(entry.first,
+            effects.assigned_roots.count(entry.first) ? entry.second.clone() : entry.second);
   }
-  return value;
-}
-
-std::shared_ptr<Node> copy_node(const NodePtr& node) {
-  if (!node) return nullptr;
-  auto copy = std::make_shared<Node>(*node);
-  copy->l = node->l;
-  copy->r = node->r;
-  copy->items = node->items;
-  return copy;
+  return out;
 }
 
 NodePtr text_node(std::string value, Pos pos) {
@@ -130,7 +127,7 @@ bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) 
 // promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
 // LINK makes the rows exact again -- what they compute is over the promoted
 // fields, or is refused -- so a prefix whose LINK nothing has projected is
-// not a split point and not a full pushdown (finding Y, lanes): its
+// not a split point and not a full pushdown: its
 // continuation would read `_["C"]` where the database sent nothing.
 bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count) {
   bool joined = false;
@@ -151,7 +148,7 @@ bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count
 // gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
 // decides which rows survive, not any of this. A prefix that ends before that step
 // is exact; one that includes it answers in another order
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 bool order_is_lost(const std::vector<NodePtr>& steps, std::size_t count) {
   bool sorted = false;
   bool projected = false;
@@ -209,7 +206,7 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect,
                                    std::end(SQL_SPECIAL_CALLS), node->s) !=
                          std::end(SQL_SPECIAL_CALLS);
     if (!special) {
-      const Entry* entry = Map::entry(dialect, Section::Funcs, upper_ascii(node->s));
+      const Entry* entry = Map::entry(dialect, Section::Funcs, ascii_upper(node->s));
       if (!entry || entry->kind == EntryKind::Refusal) return true;
     }
   }
@@ -228,13 +225,17 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect,
 // compared exactly: SEL's record keys are case-sensitive, so `name` and `Name`
 // are two fields. An empty `binder` means a read under ANY name counts -- a
 // downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
+// Not the optimiser's opt_field_refs, deliberately: that one answers a set
+// (sorted) for one binder, and this one's order is the order the dependency
+// columns are projected in, and it has the any-name mode. Both walk l, r and
+// items, the target of an assignment included.
 void collect_field_references(const NodePtr& node, const std::string& binder,
                               std::vector<std::string>& out) {
   if (!node) return;
   if (node->t == NT::Index && node->l && node->l->t == NT::Var &&
       node->r && node->r->t == NT::Text) {
-    const std::string object = upper_ascii(node->l->s);
-    if (binder.empty() || object == upper_ascii(binder) || object == "_" ||
+    const std::string object = ascii_upper(node->l->s);
+    if (binder.empty() || object == ascii_upper(binder) || object == "_" ||
         object == "_1" || object == "_2") {
       const std::string key = node->r->s;
       if (std::find(out.begin(), out.end(), key) == out.end()) out.push_back(key);
@@ -259,12 +260,14 @@ bool fallthrough_downstream(const std::string& name) {
 
 // Whether `node` reads the row itself -- the binder outside an index with a
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
-// can stand in for.
+// can stand in for. The optimiser's opt_reads_row_or_key asks a different
+// question (it also counts `_K`, which a projection does not change), so the
+// two stay apart.
 bool reads_whole_row(const NodePtr& node, const std::string& binder) {
   if (!node) return false;
   if (node->t == NT::Var) {
-    const std::string name = upper_ascii(node->s);
-    return name == upper_ascii(binder) || name == "_" || name == "_1" || name == "_2";
+    const std::string name = ascii_upper(node->s);
+    return name == ascii_upper(binder) || name == "_" || name == "_1" || name == "_2";
   }
   if (node->t == NT::Index && node->l && node->l->t == NT::Var && node->r &&
       node->r->t == NT::Text) {
@@ -283,7 +286,7 @@ bool reads_whole_row(const NodePtr& node, const std::string& binder) {
 bool is_own_field_read(const std::pair<NodePtr, NodePtr>& pair, const std::string& binder) {
   const NodePtr& value = pair.second;
   return value && value->t == NT::Index && value->l && value->l->t == NT::Var && value->r &&
-         value->r->t == NT::Text && upper_ascii(value->l->s) == upper_ascii(binder) &&
+         value->r->t == NT::Text && ascii_upper(value->l->s) == ascii_upper(binder) &&
          value->r->s == pair.first->s;
 }
 
@@ -316,7 +319,7 @@ std::optional<MapRecordDetails> map_record_details(const NodePtr& step) {
   return out;
 }
 
-NodePtr var_node(std::string name, Pos pos) {
+std::shared_ptr<Node> var_node(std::string name, Pos pos) {
   auto node = std::make_shared<Node>();
   node->t = NT::Var;
   node->s = std::move(name);
@@ -332,7 +335,7 @@ NodePtr var_node(std::string name, Pos pos) {
 // aggregate binds (`MAP(L, ORDERS, ORDERS + 1)`), the name in a binder position,
 // an assignment's target, and a read of a name the program has assigned all
 // mean something other than the relation of that name, and reporting the table
-// made a caller lock or fetch one the statement never reads (PHP-C55).
+// made a caller lock or fetch one the statement never reads.
 void collect_tables(const NodePtr& node, const Bindings& bindings,
                     std::vector<std::string>& out, std::set<std::string>& seen,
                     const std::set<std::string>& hidden = {}) {
@@ -409,7 +412,7 @@ std::vector<std::string> source_tables(const NodePtr& ast, const Bindings& bindi
 // plan, because that half is a program run() evaluates and §12.1 promises it
 // reports errors where run() would: run() evaluates the READ of Y at the use
 // site and reports `+`'s operand there, and it evaluates the definition once,
-// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// before the pipeline, not once per row. So
 // the planner does not inline. It plans the program as written, three ways:
 //
 //   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -546,13 +549,14 @@ Definitions literal_helpers(const std::vector<NodePtr>& leading) {
 // The pipeline the planner probes: the result unwound, and where its source
 // is a helper, that helper's definition unwound in turn.
 //
-// `rebound` collects the helpers whose definition was unwound INTO the steps and
-// whose own name is the source that is left: `ORDERS = ORDERS .> DROP(2)` reads
-// the ORDERS binding once, so what is left is that binding and the helper's
-// assignment must not be carried along a second time (PHP-C34).
+// When the source that is left has a helper's name -- `ORDERS = ORDERS .> DROP(2)`
+// unwinds to the ORDERS binding with the DROP among the steps -- it is marked as a
+// read of the binding (Node::binding_read), so wrapping a tree in its helpers again
+// does not inline the helper into the very read that was its own definition (DROP
+// twice), while a later step that reads ORDERS as a value still gets the helper
+// and sees the reassigned rows, as run() does (tests/sql_unit.cpp holds both).
 std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
-    const NodePtr& result, const Definitions& defs, const Definitions& literals,
-    std::set<std::string>* rebound = nullptr) {
+    const NodePtr& result, const Definitions& defs, const Definitions& literals) {
   auto [source, steps] = unwind_pipeline(inline_literals(result, literals));
   std::set<std::string> seen;
   while (source && source->t == NT::Var && defs.count(source->s) != 0 &&
@@ -562,8 +566,10 @@ std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
     source = inner.first;
     steps.insert(steps.begin(), inner.second.begin(), inner.second.end());
   }
-  if (rebound && source && source->t == NT::Var && seen.count(source->s) != 0) {
-    rebound->insert(source->s);
+  if (source && source->t == NT::Var && defs.count(source->s) != 0) {
+    auto marked = copy_node(source);
+    marked->binding_read = true;
+    source = marked;
   }
   return {source, steps};
 }
@@ -573,7 +579,8 @@ std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
 void read_names(const NodePtr& node, std::set<std::string>& out) {
   if (!node) return;
   if (node->t == NT::Var) {
-    out.insert(node->s);
+    // A marked read of the binding is not a read of the same-named helper.
+    if (!node->binding_read) out.insert(node->s);
     return;
   }
   read_names(node->l, out);
@@ -609,24 +616,7 @@ std::vector<NodePtr> referenced_assignments(const std::vector<NodePtr>& leading,
 // `node` behind the assignments it depends on, as the program wrote them -- a
 // seq the translator's stage 1 inlines and the evaluator runs in order -- or
 // `node` itself when it depends on none.
-std::size_t count_reads(const NodePtr& node, const std::string& name) {
-  if (!node) return 0;
-  std::size_t n = node->t == NT::Var && node->s == name ? 1 : 0;
-  n += count_reads(node->l, name) + count_reads(node->r, name);
-  for (const NodePtr& item : node->items) n += count_reads(item, name);
-  return n;
-}
-
-NodePtr with_helpers(const std::vector<NodePtr>& leading_all, const NodePtr& node,
-                     const std::set<std::string>& rebound = {}) {
-  // A rebound helper (see unwind_through_helpers) is already IN the steps: its
-  // assignment is dropped when the tree reads its name only as the source.
-  std::vector<NodePtr> leading;
-  leading.reserve(leading_all.size());
-  for (const NodePtr& s : leading_all) {
-    if (rebound.count(assigned_name(s)) != 0 && count_reads(node, assigned_name(s)) <= 1) continue;
-    leading.push_back(s);
-  }
+NodePtr with_helpers(const std::vector<NodePtr>& leading, const NodePtr& node) {
   const std::vector<NodePtr> kept = referenced_assignments(leading, node);
   if (kept.empty()) return node;
   auto seq = std::make_shared<Node>();
@@ -646,9 +636,8 @@ struct Helpers {
   const Definitions& defs;
   const Bindings& bindings;
   ConstScope& scope;
-  std::set<std::string> rebound = {};
 
-  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node, rebound); }
+  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node); }
 
   // The physical sources of a wrapped tree are read off what the translator
   // renders: stage 1's tree, where an assignment a binder shadows is gone.
@@ -743,7 +732,7 @@ std::optional<HybridPlan> try_plan_fallthrough(
   };
   const auto has_name_folded = [](const std::vector<std::string>& names, const std::string& name) {
     return std::any_of(names.begin(), names.end(), [&](const std::string& value) {
-      return upper_ascii(value) == upper_ascii(name);
+      return ascii_upper(value) == ascii_upper(name);
     });
   };
   std::vector<std::string> projected;
@@ -872,77 +861,130 @@ std::optional<HybridPlan> try_plan_fallthrough(
 }
 
 std::optional<std::string> latest_field_name(const NodePtr& n) {
-  if (n && n->t == NT::Index && n->l && n->l->t == NT::Var && n->l->s == "_"
-      && n->r && n->r->t == NT::Text) return n->r->s;
+  if (n && n->t == NT::Index && n->l && n->l->t == NT::Var && n->l->s == "_" &&
+      n->r && n->r->t == NT::Text) {
+    return n->r->s;
+  }
   return std::nullopt;
 }
 
 std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::vector<NodePtr>& steps,
-    const std::string& dialect, const Bindings& catalog, const Options& opts, const Helpers& helpers) {
-  if (dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite") return std::nullopt;
+                                            const std::string& dialect, const Bindings& catalog,
+                                            const Options& opts, const Helpers& helpers) {
+  if (dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite") {
+    return std::nullopt;
+  }
   const auto& rel = catalog.get(source->s, source->pos).as_relation();
-  const auto it = std::find_if(steps.begin(), steps.end(), [](const auto& s) { return s->s == "BUCKET"; });
-  if (!rel.unique_key || it == steps.end() || rel.from_is_raw || (rel.correlate && !rel.correlate->empty())) return std::nullopt;
+  const auto it = std::find_if(steps.begin(), steps.end(),
+                               [](const auto& s) { return s->s == "BUCKET"; });
+  if (!rel.unique_key || it == steps.end() || rel.from_is_raw ||
+      (rel.correlate && !rel.correlate->empty())) {
+    return std::nullopt;
+  }
   const auto at = static_cast<std::size_t>(it - steps.begin());
   const std::string& revision = *rel.unique_key;
+
+  // BUCKET(_["partition"], RECORD(...)) or BUCKET(_["partition"]) .> MAP(RECORD(...)).
   const auto& ba = steps[at]->items;
-  const auto partition = ba.size() == 2 || ba.size() == 3 ? latest_field_name(ba[1]) : std::nullopt;
+  const auto partition =
+      ba.size() == 2 || ba.size() == 3 ? latest_field_name(ba[1]) : std::nullopt;
   NodePtr body = ba.size() == 3 ? ba[2] : nullptr;
-  if (!body && at + 1 < steps.size() && steps[at + 1]->s == "MAP" && steps[at + 1]->items.size() == 2)
+  if (!body && at + 1 < steps.size() && steps[at + 1]->s == "MAP" &&
+      steps[at + 1]->items.size() == 2) {
     body = steps[at + 1]->items[1];
-  const auto* pf = rel.field(upper_ascii(partition.value_or("")));
-  const auto* rf = rel.field(upper_ascii(revision));
-  if (!partition || !body || body->t != NT::Call || body->s != "RECORD" || body->items.size() != 4
-      || !pf || !rf || (pf->type != SqlKind::Num && pf->type != SqlKind::Text) || rf->type != SqlKind::Num
-      || pf->column != *partition || rf->column != revision || pf->is_raw || rf->is_raw || rf->guard) return std::nullopt;
+  }
+  const auto* pf = rel.field(ascii_upper(partition.value_or("")));
+  const auto* rf = rel.field(ascii_upper(revision));
+  if (!partition || !body || body->t != NT::Call || body->s != "RECORD" ||
+      body->items.size() != 4 || !pf || !rf ||
+      (pf->type != SqlKind::Num && pf->type != SqlKind::Text) || rf->type != SqlKind::Num ||
+      pf->column != *partition || rf->column != revision || pf->is_raw || rf->is_raw || rf->guard) {
+    return std::nullopt;
+  }
+
+  // The record holds _K and TOP_BY(_, _["revision"], "DESC", 1), in either order.
   const auto& ra = body->items;
   if (ra[0]->t != NT::Text || ra[2]->t != NT::Text || ra[0]->s == ra[2]->s) return std::nullopt;
-  NodePtr top; bool has_key = false;
+  NodePtr top;
+  bool has_key = false;
   for (const auto& v : {ra[1], ra[3]}) {
     if (v->t == NT::Call && v->s == "TOP_BY") top = v;
     if (v->t == NT::Var && v->s == "_K") has_key = true;
   }
   if (!top || !has_key) return std::nullopt;
   const auto& ta = top->items;
-  if (ta.size() != 4 || ta[0]->t != NT::Var || ta[0]->s != "_" || latest_field_name(ta[1]) != revision
-      || ta[2]->t != NT::Text || ta[2]->s != "DESC" || ta[3]->t != NT::Num || ta[3]->s != "1") return std::nullopt;
+  if (ta.size() != 4 || ta[0]->t != NT::Var || ta[0]->s != "_" ||
+      latest_field_name(ta[1]) != revision || ta[2]->t != NT::Text || ta[2]->s != "DESC" ||
+      ta[3]->t != NT::Num || ta[3]->s != "1") {
+    return std::nullopt;
+  }
+
+  // Before the BUCKET: FILTERs, and ascending sorts by the revision only.
   for (std::size_t i = 0; i < at; ++i) {
     const auto& s = steps[i];
     if (s->s == "FILTER") continue;
-    if (s->s != "SORT_BY" || (s->items.size() != 2 && s->items.size() != 3) || latest_field_name(s->items[1]) != revision
-        || (s->items.size() == 3 && (s->items[2]->t != NT::Text || s->items[2]->s != "ASC"))) return std::nullopt;
+    if (s->s != "SORT_BY" || (s->items.size() != 2 && s->items.size() != 3) ||
+        latest_field_name(s->items[1]) != revision ||
+        (s->items.size() == 3 && (s->items[2]->t != NT::Text || s->items[2]->s != "ASC"))) {
+      return std::nullopt;
+    }
   }
   std::vector<NodePtr> input_steps(steps.begin(), it);
   if (input_steps.empty()) {
-    auto truth = std::make_shared<Node>(); truth->t = NT::Bool; truth->b = true; truth->pos = source->pos;
-    auto dummy = std::make_shared<Node>(); dummy->t = NT::Call; dummy->s = "FILTER"; dummy->pos = source->pos;
-    dummy->items = {source, truth}; input_steps.push_back(dummy);
+    auto truth = std::make_shared<Node>();
+    truth->t = NT::Bool;
+    truth->b = true;
+    truth->pos = source->pos;
+    auto dummy = std::make_shared<Node>();
+    dummy->t = NT::Call;
+    dummy->s = "FILTER";
+    dummy->pos = source->pos;
+    dummy->items = {source, truth};
+    input_steps.push_back(dummy);
   }
   const NodePtr prefix = helpers.wrap(build_pipeline(source, input_steps));
   auto sql = Sql::try_translate_statement(Program("", prefix), dialect, catalog, opts);
   if (!sql) return std::nullopt;
   try {
     Emit emit(dialect);
-    std::string input = "_sel_input", groups = "_sel_latest";
-    while (upper_ascii(input) == upper_ascii(rel.from)) input += "_";
-    while (upper_ascii(groups) == upper_ascii(rel.from) || upper_ascii(groups) == upper_ascii(input)) groups += "_";
-    const auto qi = emit.ident(input), qg = emit.ident(groups), qr = emit.ident(revision),
-      qmax = emit.ident("_sel_revision"), qfirst = emit.ident("_sel_first");
-    auto key = emit.text_operand(Fragment({{false, emit.ident(*partition), 0}}, pf->type, dialect)).as_value();
+    std::string input = "_sel_input";
+    std::string groups = "_sel_latest";
+    while (ascii_upper(input) == ascii_upper(rel.from)) input += "_";
+    while (ascii_upper(groups) == ascii_upper(rel.from) || ascii_upper(groups) == ascii_upper(input)) {
+      groups += "_";
+    }
+    const auto qi = emit.ident(input);
+    const auto qg = emit.ident(groups);
+    const auto qr = emit.ident(revision);
+    const auto qmax = emit.ident("_sel_revision");
+    const auto qfirst = emit.ident("_sel_first");
+    auto key =
+        emit.text_operand(Fragment({{false, emit.ident(*partition), 0}}, pf->type, dialect)).as_value();
     std::vector<Fragment::Part> parts{{false, "WITH " + qi + " AS (", 0}};
     parts.insert(parts.end(), sql->parts().begin(), sql->parts().end());
-    parts.push_back({false, "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " + qfirst
-      + " FROM " + qi + " GROUP BY " + key + ") SELECT " + qi + ".* FROM " + qi + " JOIN " + qg
-      + " ON " + qi + "." + qr + " = " + qg + "." + qmax + " ORDER BY " + qg + "." + qfirst + " ASC", 0});
+    parts.push_back({false,
+                     "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " +
+                         qfirst + " FROM " + qi + " GROUP BY " + key + ") SELECT " + qi + ".* FROM " +
+                         qi + " JOIN " + qg + " ON " + qi + "." + qr + " = " + qg + "." + qmax +
+                         " ORDER BY " + qg + "." + qfirst + " ASC",
+                     0});
     const std::vector<NodePtr> remaining(it, steps.end());
-    const auto continuation = helpers.wrap(build_pipeline(var_node("_INPUT", steps[at]->pos), remaining));
+    const auto continuation =
+        helpers.wrap(build_pipeline(var_node("_INPUT", steps[at]->pos), remaining));
     HybridPlan plan;
-    plan.dialect = dialect; plan.is_hybrid = true;
-    plan.sql_statement = Fragment(parts, SqlKind::Statement, dialect, sql->params(), sql->param_kinds(), sql->caveats());
-    plan.sql_prefix_ast = prefix; plan.continuation_ast = continuation; plan.continuation_program = Program("", continuation);
-    plan.source_tables = {rel.from}; plan.selected_member = SelectedMember{*partition, revision};
+    plan.dialect = dialect;
+    plan.is_hybrid = true;
+    plan.sql_statement = Fragment(parts, SqlKind::Statement, dialect, sql->params(),
+                                  sql->param_kinds(), sql->caveats());
+    plan.sql_prefix_ast = prefix;
+    plan.continuation_ast = continuation;
+    plan.continuation_program = Program("", continuation);
+    plan.source_tables = {rel.from};
+    plan.selected_member = SelectedMember{*partition, revision};
     return plan;
-  } catch (const SqlError&) { return std::nullopt; }
+  } catch (const SqlError&) {
+    return std::nullopt;
+  }
 }
 
 // The plan for a program nothing of which reaches the database. The
@@ -964,8 +1006,10 @@ HybridPlan pure_memory_plan(const Program& program, std::string dialect,
 HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
                             const Bindings& bindings, const Options& options) {
   Map::require_target(dialect);
-  Bindings checked = bindings;
-  checked.check_aliases();
+  // Checked in place: a copy of every binding just to call a const method cost
+  // more than planning a small rule against a big catalogue.
+  bindings.check_aliases();
+  const Bindings& checked = bindings;
 
   // Stage 1 first, exactly as the translator runs it, for its verdict. A
   // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
@@ -974,7 +1018,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   // planner's answers. Its TREE is not what is planned, though: see "helper
   // assignments" above -- and a tree stage 1 can only express with a clist
   // (`R[1] = 5; ORDERS .> ... .> MAP(_["id"] + R[1])`) is no longer read as
-  // a refusal of the whole program: the other four hosts push the prefix
+  // a refusal of the whole program: the other hosts push the prefix
   // before the MAP down, and the translator refuses the keyed list only where
   // it is rendered (plan.helper.indexed-helper-is-carried-as-written).
   ConstScope scope;
@@ -994,8 +1038,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     return node && node->t == NT::Var && checked.has(node->s) &&
            checked.get(node->s, node->pos).kind() == Binding::Kind::Relation;
   };
-  std::set<std::string> rebound;
-  const auto unwound = unwind_through_helpers(parts.result, defs, literals, &rebound);
+  const auto unwound = unwind_through_helpers(parts.result, defs, literals);
   if (unwound.second.empty() || !is_relation(unwound.first)) {
     return pure_memory_plan(program, dialect, checked);
   }
@@ -1009,7 +1052,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   auto [source, steps] = unwind_pipeline(optimized);
   if (steps.empty() || !is_relation(source)) return pure_memory_plan(program, dialect, checked);
 
-  const Helpers helpers{parts.leading, defs, checked, scope, rebound};
+  const Helpers helpers{parts.leading, defs, checked, scope};
 
   // The whole pipeline, unless its rows would be a bucket's keys: the
   // translator renders a bare bucket as its keys, and a plan that pushes the
@@ -1031,10 +1074,10 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
 
   if (auto latest = try_latest_member(source, steps, dialect, checked, options, helpers)) return std::move(*latest);
   if (!identity_barrier) {
-  if (auto fallthrough =
-          try_plan_fallthrough(source, steps, dialect, checked, options, helpers)) {
-    return std::move(*fallthrough);
-  }
+    if (auto fallthrough =
+            try_plan_fallthrough(source, steps, dialect, checked, options, helpers)) {
+      return std::move(*fallthrough);
+    }
   }
 
   // Test prefixes from longest to shortest.  A rejected suffix is normal: the
@@ -1089,8 +1132,11 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
                                    steps.end());
     const Pos continuation_pos = remaining.front()->pos;
     const std::string feed = needs_rebind ? source->s : "_INPUT";
-    const NodePtr continuation_ast =
-        helpers.wrap(build_pipeline(var_node(feed, continuation_pos), remaining));
+    // The continuation reads the rows it is fed, under `feed`: never a helper of
+    // that name, which would run again over them.
+    auto input = var_node(feed, continuation_pos);
+    input->binding_read = true;
+    const NodePtr continuation_ast = helpers.wrap(build_pipeline(input, remaining));
     HybridPlan plan;
     plan.continuation_source_var = feed;
     plan.dialect = dialect;
@@ -1114,7 +1160,7 @@ Value Sql::execute_hybrid(const HybridPlan& plan, const DbRunner& db_runner,
     }
     // Never the caller's own context: a helper assignment in the program
     // (`Y = 5; ...`) must not appear in it because nothing was pushed down while
-    // it does not when something was (CPP-C54).
+    // it does not when something was.
     Value copy = isolated_context(context, *plan.continuation_program->ast());
     return plan.continuation_program->run(copy);
   }

@@ -9,8 +9,11 @@
 #define SEL_TEST_HARNESS_HPP
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include "../sel.hpp"
 
 namespace selt {
 

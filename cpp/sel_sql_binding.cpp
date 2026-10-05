@@ -1,4 +1,5 @@
-// See sel_sql_binding.hpp.
+// Binding and Bindings (declared in sel_sql.hpp): the catalogue the translator
+// reads, checked as it is built.
 //
 // The checks are in the bodies rather than in the signatures, deliberately. A
 // C++ overload set would refuse a wrong type at compile time and say nothing an
@@ -9,18 +10,22 @@
 // SqlError is the class an application catches.
 
 #include "sel_sql.hpp"
+#include "sel_ast.hpp"
 
 #include <algorithm>
 
 namespace sel::sql {
 namespace {
 
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+// A column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value. LIST and STATEMENT are
+// what a whole fragment can be; a column declared as one made Fragment::kind
+// answer STATEMENT for a column.
+void check_column_type(SqlKind type) {
+  if (type == SqlKind::List || type == SqlKind::Statement) {
+    refuse("E_SQL_BINDING",
+           "a column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value; it cannot be "
+           "declared as a list or a statement");
   }
-  return out;
 }
 
 // An identifier the application supplied has to survive being quoted.
@@ -30,17 +35,6 @@ std::string ascii_upper(std::string_view s) {
 // libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all four servers
 // rather than a column nobody has. An empty name quotes to "", which PostgreSQL
 // rejects and the other three accept -- a divergence with no upside.
-// A column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value. LIST and STATEMENT are
-// what a whole fragment can be; a column declared as one made Fragment::kind
-// answer STATEMENT for a column (PY-C44).
-void check_column_type(SqlKind type) {
-  if (type == SqlKind::List || type == SqlKind::Statement) {
-    refuse("E_SQL_BINDING",
-           "a column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value; it cannot be "
-           "declared as a list or a statement");
-  }
-}
-
 void check_name(const std::string& what, const std::string& v) {
   if (v.empty()) {
     refuse("E_SQL_BINDING", "a binding has an empty " + what + " name");
@@ -78,7 +72,7 @@ void check_numeric(const std::string& where, const sel::Value& v) {
   // million-digit cap -- so a value that reaches here has already been parsed
   // once without E_RANGE, and parsing is a function of the text. A huge numeral
   // never gets this far: it fails the looks_numeric() test above and is refused
-  // as "is not a number", which is what all four hosts answer for it.
+  // as "is not a number", which is what every host answers for it.
   //
   // An earlier comment here claimed this line deliberately let E_RANGE escape.
   // It cannot, and the measurement that comment cited was of emit's numeric
@@ -96,9 +90,8 @@ void check_numeric(const std::string& where, const sel::Value& v) {
 
 std::optional<std::string> check_prefilter(const std::optional<std::string>& p) {
   if (!p) return std::nullopt;
-  std::string lower;
-  lower.reserve(p->size());
-  for (char c : *p) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+  // An option word an application wrote: ASCII case, never the C locale's.
+  const std::string lower = ascii_lower(*p);
   if (lower == "separate" || lower == "splitsargable" || lower == "split_sargable" || lower == "true") {
     return "separate";
   }
@@ -131,7 +124,7 @@ RelationSpec make_relation(bool from_is_raw, std::string from,
     // ascii_upper, matching PHP's strtoupper: a Unicode upper-caser would fold
     // "ß" to "SS" and change the key's length.
     // SEL identifiers are upper-cased, so two fields differing only by case are
-    // the same name: C++ used to keep the first, Python the last (CPP-C55).
+    // the same name: C++ used to keep the first, Python the last.
     const std::string upper = ascii_upper(name);
     for (const auto& [seen, spec] : r.fields) {
       (void)spec;
