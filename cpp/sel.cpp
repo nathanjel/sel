@@ -7167,6 +7167,124 @@ SortForm sort_form_of(const Args& a) {
   unreachable_arity(a.name());
 }
 
+// FILTER's source, evaluated. Over a join, the conjuncts are offered to the
+// LINK, which tests what it can on the rows it joins (SEL-0052, SEL-0054):
+// this FILTER's first -- it runs before the FILTER that handed the rest down
+// -- then the handed ones. Deep drops, below the join directly under this
+// FILTER, change its keys, so they are allowed only where nothing observes
+// them (`keys_unobserved`, stamped by the physical optimiser). OWN_NODES are
+// this FILTER's conjuncts offered; the join's report is returned, and passed
+// up when this FILTER was itself handed conjuncts.
+std::optional<JoinReport> filter_source(Args& a, Context& ctx, const Node& written,
+                                        std::vector<const Node*>& own_nodes, bool& over_join) {
+  std::optional<JoinPrefilter> handed = std::move(ctx.join_prefilter);
+  ctx.join_prefilter.reset();
+  const Node& src = a.node(0);
+  if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
+    over_join = true;
+    const bool three = a.count() == 3;
+    const std::string binder = three ? a.symbol(1) : std::string("_");
+    std::vector<JoinConjunct> own = leading_field_conjuncts(written, binder);
+    for (const JoinConjunct& c : own) own_nodes.push_back(c.node);
+    // A first conjunct that is neither a field test nor total
+    // ends every walk before it starts: hand nothing, gather
+    // nothing.
+    const bool blocked = !own.empty() && !own.front().field_only && !own.front().has_total;
+    JoinPrefilter pre;
+    if (!blocked) pre.stages.push_back(JoinStage{binder, std::move(own), 0});
+    if (handed && !blocked) {
+      for (JoinStage& stage : handed->stages) pre.stages.push_back(std::move(stage));
+      pre.above = handed->above;
+      pre.obligations = handed->obligations;
+    }
+    pre.deep = handed ? true : written.keys_unobserved;
+    if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
+  }
+  try {
+    (void)a.val(0);
+  } catch (...) {
+    ctx.join_prefilter.reset();
+    throw;
+  }
+  ctx.join_prefilter.reset();
+  // The join's report -- which conjuncts every row that came up
+  // has passed, whether a row was kept on an error, and whether
+  // any row was dropped -- goes up as it is.
+  std::optional<JoinReport> report = std::move(ctx.join_prefilter_report);
+  ctx.join_prefilter_report.reset();
+  if (report && handed) ctx.join_prefilter_report = report;
+  return report;
+}
+
+// The conjuncts of OWN_NODES the join below did not apply, AND-ed in order,
+// non-owning; null when it applied none of them (the body as written stands),
+// and ALL_APPLIED when it applied every one.
+NodePtr filter_rest_body(const std::vector<const Node*>& own_nodes, const JoinReport& report, bool& all_applied) {
+  std::vector<const Node*> rest;
+  for (const Node* n : own_nodes) if (!report.applied.count(n)) rest.push_back(n);
+  if (rest.size() == own_nodes.size()) return nullptr;
+  if (rest.empty()) {
+    all_applied = true;
+    return nullptr;
+  }
+  NodePtr body(std::shared_ptr<const Node>{}, rest.front());   // non-owning
+  for (std::size_t i = 1; i < rest.size(); ++i) {
+    auto node = std::make_shared<Node>();
+    node->t = NT::Bin;
+    node->pos = body->pos;
+    node->s = "AND";
+    node->l = body;
+    node->r = NodePtr(std::shared_ptr<const Node>{}, rest[i]);
+    body = std::move(node);
+  }
+  return body;
+}
+
+Value do_filter(Args& a, Context& ctx) {
+  const Node& written = a.node(a.count() - 1);
+  std::vector<const Node*> own_nodes;
+  bool over_join = false;
+  const std::optional<JoinReport> report = filter_source(a, ctx, written, own_nodes, over_join);
+  const Value& coll = a.val(0);
+  // The conjuncts of this FILTER the join below applied held on
+  // every row it built, unless it kept a row on an error: then
+  // they are TRUE there, raise nowhere, and only the rest is
+  // evaluated, in the source's order (with none left, the
+  // join's list is the FILTER's result as it is).
+  NodePtr override_body;
+  if (over_join && report && !report->errored) {
+    bool all_applied = false;
+    override_body = filter_rest_body(own_nodes, *report, all_applied);
+    if (all_applied) return coll;
+  }
+  // What is kept, with where it stood. A source that is a packed list has
+  // the keys 1..n, so while the kept ones are exactly 1, 2, 3, ... -- nothing
+  // dropped yet, or only from the end -- the result is the packed list of
+  // them and no key is ever spelled; the first gap turns it into the keyed
+  // list it always was (keys are kept: FILTER leaves "2","3", not "1","2").
+  const bool packed_source = coll.is_list() && coll.size() != 0 && !coll.storage().empty();
+  std::vector<Value> kept;
+  std::vector<std::size_t> at;
+  bool sequential = packed_source;
+  walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
+                   const Node& body) -> std::optional<Value> {
+    if (!r.as_bool(body.pos)) return std::nullopt;
+    if (sequential && idx != kept.size()) sequential = false;
+    kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
+                                       : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
+    at.push_back(idx);
+    return std::nullopt;
+  }, override_body.get());
+  if (kept.empty()) return Value::list({});
+  if (sequential) return Value::list(std::move(kept));
+  std::vector<Value::Entry> entries;
+  entries.reserve(kept.size());
+  for (std::size_t n = 0; n < kept.size(); ++n) {
+    entries.emplace_back(collection_key(coll, at[n]), std::move(kept[n]));
+  }
+  return Internals::with_children(Kind::None, std::move(entries), true);
+}
+
 Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   const Value& val = a.val(0);
   // Nothing to sort still means the direction is read and checked (spec §7.4).
@@ -7542,102 +7660,7 @@ void register_aggregates() {
   // The one aggregate that preserves keys — a filtered list should still be
   // addressable the way the original was.
   define(Spec{"FILTER", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                const Node& written = a.node(a.count() - 1);
-                // Over a join, the conjuncts are offered to the LINK, which
-                // tests what it can on the rows it joins (SEL-0052,
-                // SEL-0054): this FILTER's first -- it runs before the FILTER
-                // that handed the rest down -- then the handed ones. Deep
-                // drops, below the join directly under this FILTER, change
-                // its keys, so they are allowed only where nothing observes
-                // them (`keys_unobserved`, stamped by the physical optimiser).
-                std::optional<JoinPrefilter> handed = std::move(ctx.join_prefilter);
-                ctx.join_prefilter.reset();
-                const Node& src = a.node(0);
-                std::vector<const Node*> own_nodes;
-                bool over_join = false;
-                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
-                  over_join = true;
-                  const bool three = a.count() == 3;
-                  const std::string binder = three ? a.symbol(1) : std::string("_");
-                  std::vector<JoinConjunct> own = leading_field_conjuncts(written, binder);
-                  for (const JoinConjunct& c : own) own_nodes.push_back(c.node);
-                  // A first conjunct that is neither a field test nor total
-                  // ends every walk before it starts: hand nothing, gather
-                  // nothing.
-                  const bool blocked = !own.empty() && !own.front().field_only && !own.front().has_total;
-                  JoinPrefilter pre;
-                  if (!blocked) pre.stages.push_back(JoinStage{binder, std::move(own), 0});
-                  if (handed && !blocked) {
-                    for (JoinStage& stage : handed->stages) pre.stages.push_back(std::move(stage));
-                    pre.above = handed->above;
-                    pre.obligations = handed->obligations;
-                  }
-                  pre.deep = handed ? true : written.keys_unobserved;
-                  if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
-                }
-                try {
-                  (void)a.val(0);
-                } catch (...) {
-                  ctx.join_prefilter.reset();
-                  throw;
-                }
-                ctx.join_prefilter.reset();
-                // The join's report -- which conjuncts every row that came up
-                // has passed, whether a row was kept on an error, and whether
-                // any row was dropped -- goes up as it is.
-                std::optional<JoinReport> report = std::move(ctx.join_prefilter_report);
-                ctx.join_prefilter_report.reset();
-                if (report && handed) ctx.join_prefilter_report = report;
-                const Value& coll = a.val(0);
-                // The conjuncts of this FILTER the join below applied held on
-                // every row it built, unless it kept a row on an error: then
-                // they are TRUE there, raise nowhere, and only the rest is
-                // evaluated, in the source's order (with none left, the
-                // join's list is the FILTER's result as it is).
-                NodePtr override_body;
-                if (over_join && report && !report->errored) {
-                  std::vector<const Node*> rest;
-                  for (const Node* n : own_nodes) if (!report->applied.count(n)) rest.push_back(n);
-                  if (rest.size() < own_nodes.size()) {
-                    if (rest.empty()) return coll;
-                    override_body = NodePtr(std::shared_ptr<const Node>{}, rest.front());   // non-owning
-                    for (std::size_t i = 1; i < rest.size(); ++i) {
-                      auto node = std::make_shared<Node>();
-                      node->t = NT::Bin;
-                      node->pos = override_body->pos;
-                      node->s = "AND";
-                      node->l = override_body;
-                      node->r = NodePtr(std::shared_ptr<const Node>{}, rest[i]);
-                      override_body = std::move(node);
-                    }
-                  }
-                }
-                // What is kept, with where it stood. A source that is a packed list has
-                // the keys 1..n, so while the kept ones are exactly 1, 2, 3, ... -- nothing
-                // dropped yet, or only from the end -- the result is the packed list of
-                // them and no key is ever spelled; the first gap turns it into the keyed
-                // list it always was (keys are kept: FILTER leaves "2","3", not "1","2").
-                const bool packed_source = coll.is_list() && coll.size() != 0 && !coll.storage().empty();
-                std::vector<Value> kept;
-                std::vector<std::size_t> at;
-                bool sequential = packed_source;
-                walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
-                                 const Node& body) -> std::optional<Value> {
-                  if (!r.as_bool(body.pos)) return std::nullopt;
-                  if (sequential && idx != kept.size()) sequential = false;
-                  kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
-                                                     : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
-                  at.push_back(idx);
-                  return std::nullopt;
-                }, override_body.get());
-                if (kept.empty()) return Value::list({});
-                if (sequential) return Value::list(std::move(kept));
-                std::vector<Value::Entry> entries;
-                entries.reserve(kept.size());
-                for (std::size_t n = 0; n < kept.size(); ++n) {
-                  entries.emplace_back(collection_key(coll, at[n]), std::move(kept[n]));
-                }
-                return Internals::with_children(Kind::None, std::move(entries), true);
+                return do_filter(a, ctx);
               }});
 
   define(Spec{"SUM", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
