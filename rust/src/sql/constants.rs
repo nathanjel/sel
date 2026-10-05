@@ -39,6 +39,24 @@ pub fn is_binder_name(node: Option<&SNode>) -> bool {
     matches!(node, Some(n) if n.t == SNodeType::Var && !n.grouped)
 }
 
+/// The argument roles of a binding call (a pipeline step, an aggregate), from
+/// the manifest form it takes as written, and the name its element is bound
+/// to; a binder slot that is not a bare name is refused E_SQL_SHAPE there, as
+/// SEL raises E_EXPECT_SYMBOL. The arity rule ran at compile time, so every
+/// accepted count has a form.
+pub fn call_roles(n: &SNode) -> Result<(crate::manifest::ArgRoles, &str), SqlError> {
+    let roles = crate::manifest::arg_roles(&n.str, &n.kids)
+        .unwrap_or_else(|| unreachable!("{}: the manifest's arity rule ran at compile time", n.str));
+    match roles.binder_name(&n.kids) {
+        Ok(binder) => Ok((roles, binder)),
+        Err(i) => refuse(
+            "E_SQL_SHAPE",
+            format!("the binder of {} must be a bare name", n.str),
+            n.kids[i].pos,
+        ),
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct NeededFields {
     pub all: bool,
@@ -265,8 +283,9 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
         }
 
         if name == "BUCKET" {
-            let arg_idx = if n.kids.len() == 4 { 2 } else { 1 };
-            needed = identity_inputs(n.kids.get(arg_idx), 0);
+            // The key: the form's first scoped argument.
+            let key = crate::manifest::arg_roles("BUCKET", &n.kids).and_then(|r| r.body);
+            needed = identity_inputs(key.and_then(|i| n.kids.get(i)), 0);
         }
         if name == "DISTINCT" || name == "DEDUPE" {
             needed = NeededFields { all: true, fields: HashSet::new() };
@@ -277,10 +296,9 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
             && n.kids.len() > 1
             && n.kids[1].t == SNodeType::Var
         {
-            let mut right = n.kids[1].str.clone();
-            if n.kids.len() == 5 {
-                right = n.kids[3].str.clone();
-            }
+            // The right side's name: its explicit binder, else its variable.
+            let right_slot = crate::manifest::arg_roles(name, &n.kids).and_then(|r| r.binder2).unwrap_or(1);
+            let right = n.kids[right_slot].str.clone();
             let right_upper = right.to_ascii_uppercase();
             let mut filtered = HashSet::new();
             for k in needed.fields.into_iter() {
@@ -342,18 +360,10 @@ fn constant_call(n: &SNode, bound: Option<&HashSet<String>>) -> bool {
     // a name, never a read -- so LINK's right source is read where the call
     // stands (const.binding-form.*). A host's own binding function has no
     // manifest form and keeps the generic shape below.
-    use crate::manifest::builtins::{Scope, WhenKind, BINDING_FORMS};
+    use crate::manifest::builtins::Scope;
     let upper = n.str.to_ascii_uppercase();
-    if let Some((_, forms)) = BINDING_FORMS.iter().find(|(k, _)| *k == upper) {
-        let form = forms.iter().find(|f| {
-            f.count == args.len()
-                && match (f.when_arg, f.when_kind) {
-                    (Some(i), WhenKind::Name) => is_binder_name(args.get(i)),
-                    (Some(i), WhenKind::Text) => args.get(i).is_some_and(|a| a.is_written_text()),
-                    _ => true,
-                }
-        });
-        let Some(form) = form else { return false };
+    if let Some(forms) = crate::manifest::forms_of(&upper) {
+        let Some(form) = crate::manifest::form_in(forms, args) else { return false };
         let mut inner = bound.cloned().unwrap_or_default();
         inner.extend(form.binds.iter().map(|s| s.to_string()));
         for (a, scope) in args.iter().zip(form.scopes) {

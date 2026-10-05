@@ -144,6 +144,27 @@ impl Fragment {
         }
     }
 
+    /// `parts` of `kind` in place of this fragment's SQL, keeping its
+    /// parameters, caveats and flags (a cast or collation around it);
+    /// `whole_sum` describes the old SQL only, so it is not kept.
+    pub fn rewrapped(&self, parts: Vec<Part>, kind: SqlKind, dialect: &str) -> Fragment {
+        Fragment {
+            parts,
+            kind,
+            dialect: dialect.to_string(),
+            params: self.params.clone(),
+            param_kinds: self.param_kinds.clone(),
+            caveats: self.caveats.clone(),
+            exact: self.exact,
+            sargable: self.sargable,
+            guard: self.guard,
+            prefilter: self.prefilter.clone(),
+            separate_prefilter: self.separate_prefilter,
+            canonical: self.canonical,
+            whole_sum: false,
+        }
+    }
+
     pub fn is_exact(&self) -> bool {
         self.caveats.is_empty()
     }

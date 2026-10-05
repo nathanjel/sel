@@ -1344,26 +1344,21 @@ impl Translator {
     // A binder position holds a name (the manifest's 'binder' scope). Anything else
     // is refused here, at that expression, whatever the call is later refused for.
     fn require_named_binders(&self, n: &SNode) -> Result<(), SqlError> {
-        let shapes: Vec<Node> = n
-            .kids
-            .iter()
-            .map(|k| {
-                let mut shape = Node::new(k.t.to_node_type().unwrap_or(NodeType::List), k.pos);
-                shape.s = k.str.clone();
-                shape.grouped = k.grouped;
-                shape
-            })
-            .collect();
-        let spec_binds = n.spec.as_ref().is_some_and(|s| s.binds);
-        if let Some(form) = crate::manifest::binding_form(&n.str, &shapes, spec_binds) {
-            for (i, scope) in form.scopes.iter().enumerate() {
-                if *scope == crate::manifest::builtins::Scope::Binder && !is_binder_name(n.kids.get(i)) {
-                    return refuse(
-                        "E_SQL_SHAPE",
-                        format!("the binder of {} must be a bare name, not an expression", n.str),
-                        n.kids[i].pos,
-                    );
-                }
+        // A host's binding function has no manifest form: its generic shapes
+        // take a binder slot only when it holds a name.
+        let Some(form) = crate::manifest::forms_of(&n.str.to_ascii_uppercase())
+            .and_then(|forms| crate::manifest::form_in(forms, &n.kids))
+        else {
+            return Ok(());
+        };
+        let scopes = form.scopes;
+        for (i, scope) in scopes.iter().enumerate() {
+            if *scope == crate::manifest::builtins::Scope::Binder && !is_binder_name(n.kids.get(i)) {
+                return refuse(
+                    "E_SQL_SHAPE",
+                    format!("the binder of {} must be a bare name, not an expression", n.str),
+                    n.kids[i].pos,
+                );
             }
         }
         Ok(())
@@ -3060,18 +3055,11 @@ fn declared_kind(b: &Binding, v: &Value) -> SqlKind {
 }
 
 
+// The binder and body of ALL/ANY/SUM/MAP/FILTER over a source, from the
+// manifest form (constants::call_roles).
 fn agg_shape(n: &SNode) -> Result<(&str, &SNode), SqlError> {
-    if n.kids.len() == 3 {
-        if !is_binder_name(n.kids.get(1)) {
-            return refuse(
-                "E_SQL_SHAPE",
-                format!("the binder of {} must be a bare name", n.str),
-                n.kids[1].pos,
-            );
-        }
-        return Ok((&n.kids[1].str, &n.kids[2]));
-    }
-    Ok(("_", &n.kids[1]))
+    let (roles, binder) = crate::sql::constants::call_roles(n)?;
+    Ok((binder, &n.kids[roles.body.expect("a binding form has a body")]))
 }
 
 fn agg_fold(name: &str) -> &'static str {

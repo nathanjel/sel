@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{Node, NodeType};
 use crate::limits::{MAX_DEPTH, MAX_SQL_NODES};
 use crate::manifest::builtins::Scope;
-use crate::manifest::binding_form;
 use crate::utf8::Pos;
 use crate::value::Value;
 use crate::context::Context;
@@ -160,6 +159,9 @@ impl St<'_> {
     }
 }
 
+// Traversal policy: scope-aware -- a binder slot that captures a name free in
+// some helper is renamed, with every read inside the arguments it scopes.
+// Targets and other children are walked as any child.
 fn rename_binders(node: &Node, captures: &[String], renames: &HashMap<String, String>, counter: &mut usize) -> Node {
     let mut out = node.clone();
     out.math_plan = None;
@@ -170,8 +172,7 @@ fn rename_binders(node: &Node, captures: &[String], renames: &HashMap<String, St
         return out;
     }
     if node.t == NodeType::Call {
-        let binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-        let form = binding_form(&node.s, &node.items, binds);
+        let form = crate::manifest::call_binding_form(node);
         let mut inner = renames.clone();
         if let Some(ref f) = form {
             for name in &f.binds { inner.remove(name); }
@@ -184,7 +185,7 @@ fn rename_binders(node: &Node, captures: &[String], renames: &HashMap<String, St
             }
         }
         out.items = node.items.iter().enumerate().map(|(i, arg)| {
-            match form.as_ref().and_then(|f| f.scopes.get(i)).copied().unwrap_or(Scope::Outer) {
+            match crate::manifest::arg_scope(form.as_ref(), i) {
                 Scope::Binder => {
                     let mut binder = arg.clone();
                     if let Some(name) = inner.get(&arg.s) { binder.s = name.clone(); }
@@ -358,6 +359,10 @@ fn constant_key(idx: &Node) -> Option<String> {
     }
 }
 
+// Stage 1's helper inlining. Traversal policy: scope-aware (a binder slot
+// stays as written; a name the form binds is not a helper inside the
+// arguments it scopes); statements are recorded by record_stmt, so a target
+// is never substituted.
 fn substitute_node(
     node: &Node,
     defs: &HashMap<String, SNode>,
@@ -432,8 +437,7 @@ fn substitute_node(
             Ok((SNode::rewritten(node, items), m))
         }
         NodeType::Call => {
-            let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-            let form = binding_form(&node.s, &node.items, spec_binds);
+            let form = crate::manifest::call_binding_form(node);
             let mut inner = bound.to_vec();
             if let Some(ref f) = form {
                 for b in &f.binds {
@@ -444,15 +448,7 @@ fn substitute_node(
             let mut args = Vec::with_capacity(node.items.len());
             let mut metas = Vec::with_capacity(node.items.len());
             for (i, arg) in node.items.iter().enumerate() {
-                let scope = if let Some(ref f) = form {
-                    if i < f.scopes.len() {
-                        f.scopes[i]
-                    } else {
-                        Scope::Outer
-                    }
-                } else {
-                    Scope::Outer
-                };
+                let scope = crate::manifest::arg_scope(form.as_ref(), i);
 
                 // A binder position is a name, not a read, and stays as written;
                 // one that is not a name is refused by the translator, at the call.

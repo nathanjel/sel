@@ -166,11 +166,33 @@ impl Node {
     }
 }
 
+// Traversal policies. Every walker over this AST answers four questions, and
+// says its answers where it is defined ("Traversal policy:"):
+// - binder scope: whether a call's arguments are walked by the scope the
+//   binding form gives them (binder slots are names, not reads; an inner
+//   argument sees the form's names bound). The one classifier is
+//   manifest::call_binding_form / arg_scope; a scope-blind walker
+//   over-approximates and must be one whose caller can afford that.
+// - assignment targets: whether a target's index expressions are read
+//   (they run before the store, SPEC §5.7) and whether its root is a read
+//   (only a compound `+=` reads it) or a definition.
+// - application calls: a call the manifest does not list, or one registered
+//   as a host function, may do anything (crate::builtins::structure's
+//   may_write); a walker that asks "can this write?" counts it.
+// - builtins are recognised by name (the manifest), never by where their
+//   implementation lives, so a vendored copy of the crate classifies alike.
+// The scope-aware walkers: program::collect_dependencies, sql::hybrid's
+// free_names_seen and inline_literals, sql::normalise's rename_binders and
+// substitute_node, sql::constants::constant_call. The scope-blind ones:
+// Node::children (below) and its users, sql::hybrid's read_names and
+// mentions_key, the optimiser's opt_reads_var and opt_field_refs.
+
 impl Node {
-    /// Every child, in evaluation order: `l`, `r`, then `items`. The walkers
-    /// that treat all children alike use this; one that must not (a binder
-    /// slot, an assignment target, a call's arguments by scope) says so where
-    /// it walks.
+    /// Every child, in evaluation order: `l`, `r`, then `items`.
+    /// Traversal policy: scope-blind, targets included (an assignment's `l`).
+    /// The walkers that treat all children alike use this; one that must not
+    /// (a binder slot, an assignment target, a call's arguments by scope)
+    /// says so where it walks.
     pub(crate) fn children(&self) -> impl Iterator<Item = &Node> {
         self.l.as_deref().into_iter().chain(self.r.as_deref()).chain(self.items.iter())
     }

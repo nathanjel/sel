@@ -21701,6 +21701,22 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
+   :name "plan.pure-memory.tables-read-in-an-assignment-target-index"
+   :at "52-audit-cases.sqlt:456"
+   :dialect "mariadb"
+   :source "A = LIST(0); A[COUNT(ORDERS) - COUNT(ORDERS)] = 1; A"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
    :name "dialect.inherit.offset-only.mariadb-child"
    :at "53-dialect-inheritance.sqlt:9"
    :dialect "mariadb-11.8"

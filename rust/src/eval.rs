@@ -598,19 +598,21 @@ fn source_first_call(node: &Node, spec: &Spec) -> bool {
         return false;
     }
     // These lazy functions validate explicit binders before reading the source.
-    // Leave an invalid binder on the ordinary call path so its error wins.
-    let is_symbol = |i: usize| {
-        node.items
-            .get(i)
-            .is_some_and(|n| n.t == NodeType::Var && !n.grouped)
+    // Leave an invalid binder on the ordinary call path so its error wins. The
+    // binder slots are the manifest form's.
+    use crate::manifest::{forms, FormArg};
+    let call_forms = match node.s.as_str() {
+        "MAP" => const { forms("MAP") },
+        "FILTER" => const { forms("FILTER") },
+        "LINK" => const { forms("LINK") },
+        "LINK_LEFT" => const { forms("LINK_LEFT") },
+        _ => return true,
     };
-    if matches!(node.s.as_str(), "MAP" | "FILTER") && node.items.len() == 3 {
-        return is_symbol(1);
-    }
-    if matches!(node.s.as_str(), "LINK" | "LINK_LEFT") && node.items.len() == 5 {
-        return is_symbol(2) && is_symbol(3);
-    }
-    true
+    let Some(roles) = crate::manifest::roles_in(call_forms, &node.items) else {
+        return true;
+    };
+    let is_symbol = |i: usize| node.items[i].is_bare_name();
+    roles.binder.is_none_or(is_symbol) && roles.binder2.is_none_or(is_symbol)
 }
 
 // A FILTER over a join hands its conjuncts to the LINK before the LINK runs

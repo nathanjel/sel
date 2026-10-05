@@ -41,6 +41,25 @@ pub struct EntryRecord {
     pub builder: Option<BuilderFn>,
 }
 
+impl EntryRecord {
+    /// An entry of `kind` under `key` with every other field empty.
+    pub fn new(key: &str, kind: EntryKind) -> Self {
+        EntryRecord {
+            key: key.to_string(),
+            kind,
+            reason: String::new(),
+            tpl: None,
+            variants: HashMap::new(),
+            ret: String::new(),
+            caveat: String::new(),
+            since: String::new(),
+            arity: None,
+            args: Vec::new(),
+            builder: None,
+        }
+    }
+}
+
 impl std::fmt::Debug for EntryRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EntryRecord")
@@ -256,49 +275,13 @@ fn parse_section_entries(val: Option<&serde_json::Value>) -> HashMap<String, Ent
 
 pub fn to_entry_record(key: &str, v: &serde_json::Value) -> EntryRecord {
     if v.is_null() {
-        return EntryRecord {
-            key: key.to_string(),
-            kind: EntryKind::Refusal,
-            reason: String::new(),
-            tpl: None,
-            variants: HashMap::new(),
-            ret: String::new(),
-            caveat: String::new(),
-            since: String::new(),
-            arity: None,
-            args: Vec::new(),
-            builder: None,
-        };
+        return EntryRecord::new(key, EntryKind::Refusal);
     }
     if let Some(s) = v.as_str() {
-        return EntryRecord {
-            key: key.to_string(),
-            kind: EntryKind::Refusal,
-            reason: s.to_string(),
-            tpl: None,
-            variants: HashMap::new(),
-            ret: String::new(),
-            caveat: String::new(),
-            since: String::new(),
-            arity: None,
-            args: Vec::new(),
-            builder: None,
-        };
+        return EntryRecord { reason: s.to_string(), ..EntryRecord::new(key, EntryKind::Refusal) };
     }
     if let Some(m) = v.as_object() {
-        let mut rec = EntryRecord {
-            key: key.to_string(),
-            kind: EntryKind::Template,
-            reason: String::new(),
-            tpl: None,
-            variants: HashMap::new(),
-            ret: String::new(),
-            caveat: String::new(),
-            since: String::new(),
-            arity: None,
-            args: Vec::new(),
-            builder: None,
-        };
+        let mut rec = EntryRecord::new(key, EntryKind::Template);
         if let Some(tpl_val) = m.get("tpl") {
             if let Some(s) = tpl_val.as_str() {
                 rec.tpl = Some(TemplateValue::Single(s.to_string()));
@@ -347,19 +330,7 @@ pub fn to_entry_record(key: &str, v: &serde_json::Value) -> EntryRecord {
         return rec;
     }
 
-    EntryRecord {
-        key: key.to_string(),
-        kind: EntryKind::Refusal,
-        reason: String::new(),
-        tpl: None,
-        variants: HashMap::new(),
-        ret: String::new(),
-        caveat: String::new(),
-        since: String::new(),
-        arity: None,
-        args: Vec::new(),
-        builder: None,
-    }
+    EntryRecord::new(key, EntryKind::Refusal)
 }
 
 pub fn reset() {
@@ -769,19 +740,7 @@ pub fn define_builder(dialect: &str, section: &str, key: &str, builder: BuilderF
         key.to_string()
     };
 
-    let rec = EntryRecord {
-        key: k.clone(),
-        kind: EntryKind::Builder,
-        reason: String::new(),
-        tpl: None,
-        variants: HashMap::new(),
-        ret: String::new(),
-        caveat: String::new(),
-        since: String::new(),
-        arity: None,
-        args: Vec::new(),
-        builder: Some(builder),
-    };
+    let rec = EntryRecord { builder: Some(builder), ..EntryRecord::new(&k, EntryKind::Builder) };
 
     let mut overlay = overlay_store().write().unwrap();
     let d_map = overlay.entry(dialect.to_string()).or_default();

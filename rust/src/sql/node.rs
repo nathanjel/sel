@@ -245,3 +245,17 @@ impl SNode {
         Some(copy_node)
     }
 }
+
+/// The manifest's form matcher reads the call as written: a text a helper
+/// inlined does not select a text-guarded form (a sort's direction).
+impl crate::manifest::FormArg for SNode {
+    fn is_bare_name(&self) -> bool {
+        self.t == SNodeType::Var && !self.grouped
+    }
+    fn is_form_text(&self) -> bool {
+        self.is_written_text()
+    }
+    fn bare_name(&self) -> &str {
+        &self.str
+    }
+}

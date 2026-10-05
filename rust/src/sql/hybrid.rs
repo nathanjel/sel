@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Node, NodeType};
-use crate::manifest::{binding_form, builtins::Scope};
+use crate::manifest::builtins::Scope;
 use crate::optimizer::{build_pipeline, optimize_ast_logical, unwind_pipeline};
 use crate::program::Program;
 use crate::sql::binding::{Binding, BindingKind, Bindings};
@@ -191,7 +191,9 @@ fn bucket_rows_are_keys(steps: &[Node], count: usize) -> bool {
             if open {
                 return true;
             }
-            open = step.items.len() == 2;
+            // A BUCKET without a projection (the form's second scoped
+            // argument) is open.
+            open = crate::manifest::arg_roles(&step.s, &step.items).is_some_and(|r| r.extra.is_none());
         } else if open && step.s == "MAP" {
             open = false;
         } else if open && step.s != "FILTER" {
@@ -262,6 +264,11 @@ pub(crate) fn free_names(ast: &Node, bound: &[String], out: &mut Vec<String>) {
 
 // `free_names` for a caller collecting over many trees: `found` mirrors `out`
 // and persists between calls, so n helpers cost O(n), not O(n^2).
+// Traversal policy: scope-aware (binder slots are names; inner arguments see
+// the form's names bound). Targets: index expressions, in order, then the
+// right side; the root is a write, bound for the rest of its sequence (no
+// definiteness: a name assigned earlier in a sequence is the helper's, as
+// stage 1 inlines it). Iterative: a tree may be as deep as its source is long.
 pub(crate) fn free_names_seen(ast: &Node, bound: &[String], out: &mut Vec<String>, found: &mut HashSet<String>) {
     enum Task<'a> { Visit(&'a Node), Bind(Vec<String>), Restore(usize) }
     let mut scope = bound.to_vec();
@@ -293,24 +300,30 @@ pub(crate) fn free_names_seen(ast: &Node, bound: &[String], out: &mut Vec<String
                 out.push(node.s.clone());
             }
         } else if node.t == NodeType::Assign {
+            // The target's index expressions, in order, then the right side
+            // (SPEC §5.7); the target's root is a write.
             if let Some(rhs) = node.r.as_deref() { pending.push(Task::Visit(rhs)); }
+            let mut keys = Vec::new();
+            let mut target = node.l.as_deref();
+            while let Some(t) = target.filter(|t| t.t == NodeType::Index) {
+                keys.extend(t.r.as_deref());
+                target = t.l.as_deref();
+            }
+            pending.extend(keys.into_iter().map(Task::Visit));
         } else if node.t == NodeType::Seq {
             pending.push(Task::Restore(scope.len()));
             for item in node.items.iter().rev() {
                 if item.t == NodeType::Assign {
-                    if let Some(target) = &item.l {
-                        if target.t == NodeType::Var {
-                            pending.push(Task::Bind(vec![target.s.clone()]));
-                        }
+                    if let Some(root) = assign_root(item) {
+                        pending.push(Task::Bind(vec![root.s.clone()]));
                     }
                 }
                 pending.push(Task::Visit(item));
             }
         } else if node.t == NodeType::Call {
-            let binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-            let form = binding_form(&node.s, &node.items, binds);
+            let form = crate::manifest::call_binding_form(node);
             for (i, item) in node.items.iter().enumerate().rev() {
-                match form.as_ref().and_then(|f| f.scopes.get(i)).copied().unwrap_or(Scope::Outer) {
+                match crate::manifest::arg_scope(form.as_ref(), i) {
                     Scope::Binder => {},
                     Scope::Inner => {
                         pending.push(Task::Restore(scope.len()));
@@ -354,6 +367,7 @@ fn key_safe_boundary(steps: &[Node], count: usize) -> bool {
     false
 }
 
+// Traversal policy: a raw scan, scope-blind (see key_safe_boundary).
 fn mentions_key(node: &Node) -> bool {
     if node.t == NodeType::Var {
         return node.s == "_K";
@@ -374,16 +388,17 @@ fn statements(ast: &Node) -> (Vec<&Node>, &Node) {
     }
 }
 
-fn assigned_name(statement: &Node) -> String {
-    let mut target = statement.l.as_deref();
-    while let Some(t) = target {
-        if t.t == NodeType::Index {
-            target = t.l.as_deref();
-        } else {
-            break;
-        }
+// The variable an assignment writes: its target's root (`A` in `A["k"] = 1`).
+fn assign_root(statement: &Node) -> Option<&Node> {
+    let mut target = statement.l.as_deref()?;
+    while target.t == NodeType::Index {
+        target = target.l.as_deref()?;
     }
-    target.map(|t| t.s.clone()).unwrap_or_default()
+    Some(target).filter(|t| t.t == NodeType::Var)
+}
+
+fn assigned_name(statement: &Node) -> String {
+    assign_root(statement).map(|t| t.s.clone()).unwrap_or_default()
 }
 
 fn definitions(leading: &[&Node]) -> HashMap<String, Node> {
@@ -409,6 +424,9 @@ fn is_literal_type(t: NodeType) -> bool {
     )
 }
 
+// Traversal policy: scope-aware (binder slots kept; a name the form binds is
+// not a helper inside the arguments it scopes). Targets: only the right side
+// is rewritten -- a target names a variable, it does not read a helper.
 fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[String]) -> Node {
     let t = node.t;
     if t == NodeType::Var {
@@ -456,13 +474,12 @@ fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[Strin
         return cp;
     }
     if t == NodeType::Call {
-        let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-        let form = binding_form(&node.s, &node.items, spec_binds);
+        let form = crate::manifest::call_binding_form(node);
         let mut inner = bound.to_vec();
         if let Some(ref f) = form { inner.extend(f.binds.iter().cloned()); }
         let mut cp = node.clone();
         cp.items = node.items.iter().enumerate().map(|(i, item)| {
-            match form.as_ref().and_then(|f| f.scopes.get(i)).copied().unwrap_or(Scope::Outer) {
+            match crate::manifest::arg_scope(form.as_ref(), i) {
                 Scope::Binder => item.clone(),
                 Scope::Inner => inline_literals(item, literals, &inner),
                 Scope::Outer => inline_literals(item, literals, bound),
@@ -524,6 +541,10 @@ fn unwind_through_helpers(
     (source, steps)
 }
 
+// Every variable `node` mentions, but a read of the binding that unwinding
+// marked (`sql_binding`). Traversal policy: scope-blind, binder slots and
+// targets included -- it picks the helpers a statement may need, where an
+// extra one costs nothing and a missed one is a wrong answer.
 fn read_names(node: &Node, out: &mut HashSet<String>) {
     if node.t == NodeType::Var {
         if !node.sql_binding { out.insert(node.s.clone()); }
@@ -654,24 +675,18 @@ fn try_latest_member(
     }
     let at = steps.iter().position(|s| s.s == "BUCKET")?;
     let revision = &rel.unique_key;
+    // The pattern reads `_`: a BUCKET and a MAP without a binder slot (the
+    // manifest's forms).
     let ba = &steps[at].items;
-    let partition = if ba.len() == 2 || ba.len() == 3 {
-        latest_field_name(&ba[1])?
-    } else {
-        return None;
-    };
+    let bucket = crate::manifest::arg_roles("BUCKET", ba).filter(|r| r.binder.is_none())?;
+    let partition = latest_field_name(&ba[bucket.body?])?;
 
-    let mut body = if ba.len() == 3 {
-        Some(&ba[2])
-    } else {
-        None
-    };
-    if body.is_none()
-        && at + 1 < steps.len()
-        && steps[at + 1].s == "MAP"
-        && steps[at + 1].items.len() == 2
-    {
-        body = Some(&steps[at + 1].items[1]);
+    let mut body = bucket.extra.map(|i| &ba[i]);
+    if body.is_none() && at + 1 < steps.len() && steps[at + 1].s == "MAP" {
+        let map = &steps[at + 1].items;
+        if let Some(roles) = crate::manifest::arg_roles("MAP", map).filter(|r| r.binder.is_none()) {
+            body = roles.body.map(|i| &map[i]);
+        }
     }
     let body = body?;
     let pf = rel.field(&partition)?;
@@ -708,16 +723,19 @@ fn try_latest_member(
     if !has_key {
         return None;
     }
+    // TOP_BY(_, <revision>, "DESC", 1), by the manifest's roles.
     let ta = &top.items;
-    if ta.len() != 4 || ta[0].t != NodeType::Var || ta[0].s != "_" {
+    let roles = crate::manifest::sort_roles("TOP_BY", ta).filter(|r| r.binder.is_none())?;
+    let (key, dir, limit) = (roles.key?, roles.dir?, roles.limit?);
+    if ta[0].t != NodeType::Var || ta[0].s != "_" {
         return None;
     }
-    let lfn = latest_field_name(&ta[1])?;
+    let lfn = latest_field_name(&ta[key])?;
     if lfn != *revision
-        || ta[2].t != NodeType::Text
-        || ta[2].s != "DESC"
-        || ta[3].t != NodeType::Num
-        || ta[3].s != "1"
+        || ta[dir].t != NodeType::Text
+        || ta[dir].s != "DESC"
+        || ta[limit].t != NodeType::Num
+        || ta[limit].s != "1"
     {
         return None;
     }
@@ -727,14 +745,16 @@ fn try_latest_member(
         if s.s == "FILTER" {
             continue;
         }
-        if s.s != "SORT_BY" || (s.items.len() != 2 && s.items.len() != 3) {
+        // SORT_BY(_, <revision> [, "ASC"]): no binder slot.
+        if s.s != "SORT_BY" {
             return None;
         }
-        let slfn = latest_field_name(&s.items[1])?;
+        let roles = crate::manifest::sort_roles("SORT_BY", &s.items).filter(|r| r.binder.is_none())?;
+        let slfn = latest_field_name(&s.items[roles.key?])?;
         if slfn != *revision {
             return None;
         }
-        if s.items.len() == 3 && (s.items[2].t != NodeType::Text || s.items[2].s != "ASC") {
+        if roles.dir.is_some_and(|d| s.items[d].t != NodeType::Text || s.items[d].s != "ASC") {
             return None;
         }
     }
@@ -903,7 +923,8 @@ fn is_own_field_read(key: &Node, val: &Node, binder: &str) -> bool {
 }
 
 struct MapRecordDetails<'a> {
-    explicit: bool,
+    /// The binder argument, kept in the rewritten MAPs.
+    binder_slot: Option<&'a Node>,
     binder: String,
     body: &'a Node,
     pairs: Vec<(&'a Node, &'a Node)>,
@@ -914,19 +935,11 @@ fn get_map_record_details(step: &Node) -> Option<MapRecordDetails<'_>> {
         return None;
     }
     let args = &step.items;
-    let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
-    let binder = if explicit {
-        args[1].s.clone()
-    } else {
-        "_".to_string()
-    };
-    let body = if explicit {
-        &args[2]
-    } else if args.len() == 2 {
-        &args[1]
-    } else {
-        return None;
-    };
+    // The manifest's form; a binder slot that is not a bare name is left to
+    // the evaluator (E_EXPECT_SYMBOL).
+    let roles = crate::manifest::arg_roles(&step.s, args)?;
+    let binder = roles.binder_name(args).ok()?.to_string();
+    let body = &args[roles.body?];
     if body.t != NodeType::Call || body.s != "RECORD" || body.items.len() % 2 != 0 {
         return None;
     }
@@ -941,7 +954,7 @@ fn get_map_record_details(step: &Node) -> Option<MapRecordDetails<'_>> {
         pairs.push((k, &body.items[i + 1]));
     }
     Some(MapRecordDetails {
-        explicit,
+        binder_slot: roles.binder.map(|i| &args[i]),
         binder,
         body,
         pairs,
@@ -1054,8 +1067,8 @@ fn try_plan_fallthrough(
 
     let mut rewritten_map = map_step.clone();
     rewritten_map.items = vec![map_step.items[0].clone()];
-    if details.explicit {
-        rewritten_map.items.push(map_step.items[1].clone());
+    if let Some(binder) = details.binder_slot {
+        rewritten_map.items.push(binder.clone());
     }
     rewritten_map.items.push(rewritten_record);
 
@@ -1086,8 +1099,8 @@ fn try_plan_fallthrough(
 
     let mut continuation_map = map_step.clone();
     continuation_map.items = vec![var_node("_INPUT", map_step.pos)];
-    if details.explicit {
-        continuation_map.items.push(map_step.items[1].clone());
+    if let Some(binder) = details.binder_slot {
+        continuation_map.items.push(binder.clone());
     }
     continuation_map.items.push(continuation_record);
 

@@ -10,6 +10,7 @@ use crate::ast::{Node, NodeType};
 use crate::context::{Context, Frame};
 use crate::dec::{dec_add, dec_cmp, dec_format, Dec};
 use crate::join_plan::{JoinFlatTest, JoinProjector};
+use crate::manifest::{self, builtins::Form, ArgRoles};
 use crate::join_prefilter::{
     join_keys_safe, join_pure_source, join_read_self, join_row_keys, join_stage_walk,
     join_totality, join_truncate_stages, leading_field_conjuncts, new_join_side_facts,
@@ -25,11 +26,43 @@ use crate::value::{ListKeys, Entry, Kind, Value};
 // point -- invoke_call (eval.rs) truncates the frame stack to its own depth
 // after every builtin, error or not, so no early return pops by hand.
 
+// Whether a body mentions `name` (whether to bind `_K` per element).
+// Traversal policy: scope-blind, every child -- an over-approximation, which
+// only costs a frame slot.
 fn node_contains_var(node: &Node, name: &str) -> bool {
     if node.t == NodeType::Var {
         return node.s.eq_ignore_ascii_case(name);
     }
     node.children().any(|child| node_contains_var(child, name))
+}
+
+// The forms of the builtins below that decode their own call
+// (spec/builtins.json `forms`), found at compile time.
+const MAP_FORMS: &[Form] = manifest::forms("MAP");
+const FILTER_FORMS: &[Form] = manifest::forms("FILTER");
+const ALL_FORMS: &[Form] = manifest::forms("ALL");
+const ANY_FORMS: &[Form] = manifest::forms("ANY");
+const SUM_FORMS: &[Form] = manifest::forms("SUM");
+const BUCKET_FORMS: &[Form] = manifest::forms("BUCKET");
+const LINK_FORMS: &[Form] = manifest::forms("LINK");
+const LINK_LEFT_FORMS: &[Form] = manifest::forms("LINK_LEFT");
+
+/// The argument roles of a call, from the manifest form it takes. The arity
+/// was checked at compile time, and every accepted count has a form.
+fn call_roles(forms: &'static [Form], nodes: &[Node]) -> ArgRoles {
+    manifest::roles_in(forms, nodes).expect("every accepted count has a manifest form")
+}
+
+/// The binder of a MAP/FILTER/ALL/ANY/SUM call and the index of its body:
+/// `_` without a binder slot; a slot that is not a plain name is
+/// E_EXPECT_SYMBOL.
+fn binder_and_body(args: &Args, forms: &'static [Form]) -> Result<(String, usize), SelError> {
+    let roles = call_roles(forms, args.nodes);
+    let binder = match roles.binder {
+        Some(i) => args.symbol(i)?,
+        None => "_".to_string(),
+    };
+    Ok((binder, roles.body.expect("a binding form has a body")))
 }
 
 pub fn fn_count(args: &mut Args) -> Result<Value, SelError> {
@@ -208,12 +241,7 @@ pub fn fn_distinct(args: &mut Args) -> Result<Value, SelError> {
 }
 
 pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
-    let count = args.count();
-    let (binder, body_idx) = if count == 3 {
-        (args.symbol(1)?, 2)
-    } else {
-        ("_".to_string(), 1)
-    };
+    let (binder, body_idx) = binder_and_body(args, MAP_FORMS)?;
     let body_node = args.node_at(body_idx).clone();
     let needs_k = node_contains_var(&body_node, "_K");
     // RECORD returns a fresh container with independently copied fields. It
@@ -283,18 +311,13 @@ pub fn fn_filter(args: &mut Args) -> Result<Value, SelError> {
 
 #[inline(never)]
 fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
-    let count = args.count();
     // Over a join, the conjuncts are offered to the LINK, which tests what it
     // can on the rows it joins (spec §7.4): this FILTER's first, then the
     // ones handed down from a FILTER above. Deep drops change this FILTER's
     // keys, so they are allowed only where nothing observes them
     // (`keys_unobserved`, stamped by the physical optimiser).
     let handed = args.ctx.join_prefilter.take();
-    let (binder, body_idx) = if count == 3 {
-        (args.symbol(1)?, 2)
-    } else {
-        ("_".to_string(), 1)
-    };
+    let (binder, body_idx) = binder_and_body(args, FILTER_FORMS)?;
     let nodes: &[Node] = args.nodes;
     let written: &Node = &nodes[body_idx];
     let src = &nodes[0];
@@ -433,12 +456,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
 }
 
 pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
-    let count = args.count();
-    let (binder, body_idx) = if count == 3 {
-        (args.symbol(1)?, 2)
-    } else {
-        ("_".to_string(), 1)
-    };
+    let (binder, body_idx) = binder_and_body(args, ALL_FORMS)?;
     let body_node = args.node_at(body_idx).clone();
     let body_pos = body_node.pos;
     let needs_k = node_contains_var(&body_node, "_K");
@@ -473,12 +491,7 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
 }
 
 pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
-    let count = args.count();
-    let (binder, body_idx) = if count == 3 {
-        (args.symbol(1)?, 2)
-    } else {
-        ("_".to_string(), 1)
-    };
+    let (binder, body_idx) = binder_and_body(args, ANY_FORMS)?;
     let body_node = args.node_at(body_idx).clone();
     let body_pos = body_node.pos;
     let needs_k = node_contains_var(&body_node, "_K");
@@ -513,24 +526,7 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
 }
 
 pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
-    let count = args.count();
-    if count == 1 {
-        let val = args.val(0)?;
-        if val.is_null() {
-            return Ok(Value::int(0));
-        }
-        let mut total = Dec::zero();
-        for item in val.elems().vals {
-            let d = item.as_decimal(args.pos_at(0))?;
-            total = dec_add(&total, &d, args.pos())?;
-        }
-        return Ok(Value::num_trusted(total));
-    }
-    let (binder, body_idx) = if count == 3 {
-        (args.symbol(1)?, 2)
-    } else {
-        ("_".to_string(), 1)
-    };
+    let (binder, body_idx) = binder_and_body(args, SUM_FORMS)?;
     let body_node = args.node_at(body_idx).clone();
     let body_pos = body_node.pos;
     let needs_k = node_contains_var(&body_node, "_K");
@@ -656,11 +652,11 @@ fn prepare_sort_keys(items: &mut [SortItem], pos: Pos) -> Result<(), SelError> {
 /// The argument roles of a SORT/TOP call, from the manifest form it takes
 /// (manifest::sort_roles). The arity was checked at compile time, so every
 /// count has a form.
-fn sort_call_roles(name: &str, nodes: &[Node]) -> crate::manifest::SortRoles {
-    crate::manifest::sort_roles(name, nodes).expect("every accepted SORT/TOP count has a manifest form")
+fn sort_call_roles(forms: &'static [Form], nodes: &[Node]) -> manifest::SortRoles {
+    manifest::sort_roles_in(forms, nodes).expect("every accepted SORT/TOP count has a manifest form")
 }
 
-fn do_sort(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Value, SelError> {
+fn do_sort(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.count();
     // The call's nodes, borrowed apart from `args`: the key is read from
@@ -671,7 +667,7 @@ fn do_sort(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Valu
     // direction even when the second is a bare name (the guarded form comes
     // first), then a bare name second is a binder, else the third is a
     // computed direction.
-    let roles = sort_call_roles(name, nodes);
+    let roles = sort_call_roles(forms, nodes);
     let binder = match roles.binder {
         Some(i) => args.symbol(i)?,
         None => "_".to_string(),
@@ -751,15 +747,15 @@ fn do_sort(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Valu
 }
 
 pub fn fn_sort(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, "SORT", None)
+    do_sort(args, const { manifest::forms("SORT") }, None)
 }
 
 pub fn fn_sort_desc(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, "SORT_DESC", Some("DESC"))
+    do_sort(args, const { manifest::forms("SORT_DESC") }, Some("DESC"))
 }
 
 pub fn fn_sort_by(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, "SORT_BY", None)
+    do_sort(args, const { manifest::forms("SORT_BY") }, None)
 }
 
 #[cfg(test)]
@@ -846,12 +842,12 @@ fn select_top_indices(
     sorted.into_iter().map(|e| e.item_idx).collect()
 }
 
-fn do_top(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Value, SelError> {
+fn do_top(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> Result<Value, SelError> {
     // The call's nodes, borrowed apart from `args`: the key is read from
     // them, never cloned per call.
     let nodes = args.nodes;
     // The manifest's roles, as for do_sort; the count is the last argument.
-    let roles = sort_call_roles(name, nodes);
+    let roles = sort_call_roles(forms, nodes);
     let val = args.val(0)?;
     let limit = args.non_neg_int(roles.limit.expect("a TOP form has a count"))? as usize;
 
@@ -964,15 +960,15 @@ fn do_top(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Value
 
 
 pub fn fn_top(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, "TOP", None)
+    do_top(args, const { manifest::forms("TOP") }, None)
 }
 
 pub fn fn_top_desc(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, "TOP_DESC", Some("DESC"))
+    do_top(args, const { manifest::forms("TOP_DESC") }, Some("DESC"))
 }
 
 pub fn fn_top_by(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, "TOP_BY", None)
+    do_top(args, const { manifest::forms("TOP_BY") }, None)
 }
 
 struct BucketGroup {
@@ -985,7 +981,7 @@ struct BucketGroup {
 /// application's function (the host may do anything) -- one registered as a
 /// host function or not in the builtin manifest -- anywhere inside it. The one
 /// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
-/// the parse depth cap).
+/// the parse depth cap). Traversal policy: scope-blind, every child.
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;
@@ -1013,22 +1009,15 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
         return Ok(Value::list(Vec::new()));
     }
 
-    let count = args.count();
-    let mut binder = "_".to_string();
-    let key_node: Node;
-    let agg_node_opt: Option<Node>;
-
-    if count == 2 {
-        key_node = args.node_at(1).clone();
-        agg_node_opt = None;
-    } else if count == 3 {
-        key_node = args.node_at(1).clone();
-        agg_node_opt = Some(args.node_at(2).clone());
-    } else {
-        binder = args.symbol(1)?;
-        key_node = args.node_at(2).clone();
-        agg_node_opt = Some(args.node_at(3).clone());
-    }
+    // The key and the projection are the form's first and second scoped
+    // arguments.
+    let roles = call_roles(BUCKET_FORMS, args.nodes);
+    let binder = match roles.binder {
+        Some(i) => args.symbol(i)?,
+        None => "_".to_string(),
+    };
+    let key_node: Node = args.node_at(roles.body.expect("a BUCKET form has a key")).clone();
+    let agg_node_opt: Option<Node> = roles.extra.map(|i| args.node_at(i).clone());
 
     let needs_k = node_contains_var(&key_node, "_K");
     let mut frame = Frame::new();
@@ -1521,7 +1510,6 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
     // Taken before anything else is evaluated, so a LINK nested in this one's
     // sources cannot pick it up by accident; it is handed down on purpose.
     let prefilter = args.ctx.join_prefilter.take();
-    let count = args.count();
     let nodes: &'a [Node] = args.nodes;
     let left_node = &nodes[0];
     let right_node = &nodes[1];
@@ -1534,14 +1522,16 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
     if b2.is_empty() {
         b2 = "_2".to_string();
     }
-    let predicate_node: &'a Node;
-    if count == 5 {
-        b1 = args.symbol(2)?;
-        b2 = args.symbol(3)?;
-        predicate_node = &nodes[4];
-    } else {
-        predicate_node = &nodes[2];
+    // Explicit binders name the sides; without them each side is named
+    // after the variable it reads (spec §7.4).
+    let roles = call_roles(if left_join { LINK_LEFT_FORMS } else { LINK_FORMS }, nodes);
+    if let Some(i) = roles.binder {
+        b1 = args.symbol(i)?;
     }
+    if let Some(i) = roles.binder2 {
+        b2 = args.symbol(i)?;
+    }
+    let predicate_node: &'a Node = &nodes[roles.body.expect("a LINK form has a predicate")];
     let b1_names = vec![b1.clone(), "_1".to_string()];
     let b2_names = vec![b2.clone(), "_2".to_string()];
 

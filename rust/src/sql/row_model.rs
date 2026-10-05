@@ -213,10 +213,7 @@ pub fn build_join_rows(plan: &RelationalPlan) -> Result<JoinRows, crate::sql::er
             table: t,
             qualify,
             names,
-            nested: Vec::new(),
-            self_names: Vec::new(),
-            promoted: Vec::new(),
-            dropped: HashSet::new(),
+            ..RowModel::default()
         }
     };
 
@@ -250,17 +247,7 @@ pub fn build_join_rows(plan: &RelationalPlan) -> Result<JoinRows, crate::sql::er
             }
         }
 
-        let mut row = RowModel {
-            side: false,
-            relation: None,
-            table: String::new(),
-            qualify: false,
-            names: Vec::new(),
-            nested: Vec::new(),
-            self_names: Vec::new(),
-            promoted: Vec::new(),
-            dropped: HashSet::new(),
-        };
+        let mut row = RowModel::default();
 
         if !left_el.side {
             row.nested.extend(left_el.nested.clone());

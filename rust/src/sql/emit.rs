@@ -228,21 +228,7 @@ impl Emit {
         };
 
         let parts = self.fill(guard, &[f], pos, None)?;
-        let mut res = Fragment::new(
-            parts,
-            SqlKind::Num,
-            &self.dialect,
-            f.params.clone(),
-            f.param_kinds.clone(),
-            f.caveats.clone(),
-        );
-        res.exact = f.exact;
-        res.sargable = f.sargable;
-        res.guard = f.guard;
-        res.prefilter = f.prefilter.clone();
-        res.separate_prefilter = f.separate_prefilter;
-        res.canonical = f.canonical;
-        Ok(res)
+        Ok(f.rewrapped(parts, SqlKind::Num, &self.dialect))
     }
 
     pub fn text_operand(&self, f: &Fragment) -> Result<Fragment, SqlError> {
@@ -263,21 +249,7 @@ impl Emit {
             parts.push(Part::Sql(collate.to_string()));
         }
 
-        let mut res = Fragment::new(
-            parts,
-            SqlKind::Text,
-            &self.dialect,
-            f.params.clone(),
-            f.param_kinds.clone(),
-            f.caveats.clone(),
-        );
-        res.exact = f.exact;
-        res.sargable = f.sargable;
-        res.guard = f.guard;
-        res.prefilter = f.prefilter.clone();
-        res.separate_prefilter = f.separate_prefilter;
-        res.canonical = f.canonical;
-        Ok(res)
+        Ok(f.rewrapped(parts, SqlKind::Text, &self.dialect))
     }
 
     pub fn ident(&self, name: &str) -> String {

@@ -352,10 +352,7 @@ pub fn join_side_any(side: &JoinSideFacts, name: &str) -> bool {
         return v;
     }
     let ok = side.val.all_children(|row| match row.get(name) {
-        Some(ref v) if !v.is_null() => {
-            let inner = v.0.borrow();
-            !(inner.kind == Kind::None && !inner.is_list && inner.size() > 0)
-        }
+        Some(ref v) if !v.is_null() => !crate::join_plan::is_left_nested(v),
         _ => false,
     });
     side.facts.borrow_mut().insert(id, ok);
