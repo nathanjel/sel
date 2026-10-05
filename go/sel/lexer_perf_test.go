@@ -7,7 +7,7 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-// GO-P6: posAt answers from a cursor on the previous line before it searches; the
+// PosAt answers from a cursor on the previous line before it searches; the
 // answer must be the naive line/column for every offset in any order.
 func TestPosAtCursorMatchesTheNaiveCount(t *testing.T) {
 	src := "ab\n\n  cdé\n😀x\n" + strings.Repeat("line of text\n", 50) + "tail"

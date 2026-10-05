@@ -56,8 +56,8 @@ type Value struct {
 	// Derived caches. strVal and decVal above are fixed when a Value is built;
 	// what a READ derives from them (the text of a number, the number in a
 	// text) is published here through atomic pointers, so goroutines running
-	// programs over one shared read-only context never write a plain field
-	// (GO-C6). A duplicate compute is benign: both results are identical.
+	// programs over one shared read-only context never write a plain field.
+	// A duplicate compute is benign: both results are identical.
 	strCache atomic.Pointer[string]
 	decCache atomic.Pointer[decimal.Dec]
 
@@ -69,7 +69,7 @@ type Value struct {
 	// keyIdx maps each listKeys entry to its slot (first occurrence wins), built
 	// lazily by listKeyPos for a keyed list of keyIndexMin or more children and
 	// published through an atomic pointer so goroutines sharing a read-only value
-	// never write a plain field (GO-C6). listKeys is never mutated in place, only
+	// never write a plain field. listKeys is never mutated in place, only
 	// replaced or dropped, so a published index cannot go stale; it is cleared
 	// together with listKeys.
 	keyIdx atomic.Pointer[map[string]int]
@@ -283,7 +283,7 @@ func (v *Value) Size() int {
 }
 
 // keyIndexMin is the keyed-list size from which Get/Has/Set use a hash index
-// instead of scanning listKeys (GO-P11). Below it the scan is cheaper than
+// instead of scanning listKeys. Below it the scan is cheaper than
 // building the map.
 const keyIndexMin = 16
 
@@ -437,8 +437,8 @@ func (v *Value) rebuildIndex() {
 }
 
 // denseEntries is the entry list of a positional list: key i+1 for child i. The
-// keys of a list past 99 children are strconv.Itoa strings, one allocation each
-// (GO-P12); here they are written once into one blob and sliced out of it, so the
+// keys of a list past 99 children are strconv.Itoa strings, one allocation each;
+// here they are written once into one blob and sliced out of it, so the
 // whole list costs one string allocation. Identical keys, identical order.
 func denseEntries(vals []*Value) []Entry {
 	n := len(vals)
@@ -874,7 +874,7 @@ func (v *Value) structuralHashAt(depth int) uint64 {
 		return h
 	}
 	// The children are read in place: Entries() would build a slice of (key, value)
-	// pairs, and for a dense list a string per key, only to hash them (GO-P26). The
+	// pairs, and for a dense list a string per key, only to hash them. The
 	// combination is the same for every representation, so equal values still hash
 	// equal however they were built.
 	switch {

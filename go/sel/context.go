@@ -12,7 +12,7 @@ type Context struct {
 	joinPrefilter       *joinPrefilter
 	joinPrefilterReport *joinReport
 	// noCopy names the one FILTER call whose kept rows may stay aliased to the
-	// source, because its parent is about to read or copy them itself (GO-REG-1). It
+	// source, because its parent is about to read or copy them itself. It
 	// is set by the parent just before it evaluates that argument and consumed by the
 	// FILTER at once; like the join prefilter state it is cleared when evaluation
 	// unwinds, so nothing else can find it there.

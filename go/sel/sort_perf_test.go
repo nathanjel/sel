@@ -50,7 +50,7 @@ func sgn(x int) int {
 	return 0
 }
 
-// GO-P2: the keys are classified once; the classified order must be the order
+// The keys are classified once; the classified order must be the order
 // compareValues defines, for every pair of a list spanning every kind.
 func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 	var vals []*Value
@@ -79,7 +79,7 @@ func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 	}
 }
 
-// GO-P3: a bounded selection returns what the full sort's prefix returns, ties in
+// A bounded selection returns what the full sort's prefix returns, ties in
 // input order, in both directions, for every limit on both sides of the switch.
 func TestTopSelectionEqualsTheSortedPrefix(t *testing.T) {
 	ctx := func() *Value {

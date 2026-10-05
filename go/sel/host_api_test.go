@@ -7,11 +7,11 @@ import (
 	"github.com/nathanjel/sel/go/internal/manifest"
 )
 
-// T12: host API misuse and process-level guarantees, in this host's own lane. The
+// Host API misuse and process-level guarantees, in this host's own lane. The
 // same contracts are probed on every host by tools/api.* (tools/api-pins.txt); the
 // Go-only mechanics below have no equivalent elsewhere.
 
-// GO-C36: a nil function is refused when it is registered, as an unusable name or
+// A nil function is refused when it is registered, as an unusable name or
 // arity is, and never lands in the table to panic later inside Run.
 func TestRegisterFunctionRefusesNilFunction(t *testing.T) {
 	defer func() {
@@ -25,7 +25,7 @@ func TestRegisterFunctionRefusesNilFunction(t *testing.T) {
 	RegisterFunction("T12_NIL_FN", 0, 1, nil)
 }
 
-// GO-C41: every name in the generated manifest is defined by some module. (The
+// Every name in the generated manifest is defined by some module. (The
 // worklist asks for this to hold at load, as JS's assertManifestCovered does; this
 // is the check the test lane can make today.)
 func TestEveryManifestBuiltinIsDefined(t *testing.T) {
@@ -37,7 +37,7 @@ func TestEveryManifestBuiltinIsDefined(t *testing.T) {
 }
 
 // An argument the call does not have is a SEL error at the call, not an index-out-of-range panic
-// (T12 probe host.fn.arg.out-of-range).
+// (the API probe host.fn.arg.out-of-range).
 func TestHostFunctionReadingAMissingArgumentIsASelError(t *testing.T) {
 	RegisterFunction("T12_OOB", 1, 2, func(a *Args) *Value {
 		if a.Count() > 1 {

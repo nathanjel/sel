@@ -2,7 +2,7 @@ package sel
 
 import "math/big"
 
-// Item 1 (2026-10-01): a math plan keeps its intermediate ADD, SUB and MUL
+// A math plan keeps its intermediate ADD, SUB and MUL
 // results in registers it reuses, instead of a new Dec, big.Int and digit array
 // for every step. A register is a big.Int whose digit array outlives the
 // evaluation, so a warm one allocates nothing.

@@ -14,7 +14,7 @@ func isSelSpace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\r' || r == '\n'
 }
 
-// Code-point indexing without a []rune round trip (GO-P20). Text is valid UTF-8,
+// Code-point indexing without a []rune round trip. Text is valid UTF-8,
 // so a byte offset is found by walking boundaries; ASCII bytes take the one-step
 // branch. A result far smaller than its source is copied, so a one-character LEFT
 // of a huge text does not keep the huge text alive.
@@ -190,7 +190,7 @@ func init() {
 				}
 				from = int(f - 1)
 			}
-			// The search runs on bytes (GO-P15): strings.Index instead of a
+			// The search runs on bytes: strings.Index instead of a
 			// rune-by-rune comparison over two []rune copies. The 1-based start is
 			// a code-point index, so it is walked to a byte offset once, and the
 			// answer is converted back by counting the code points before the hit.

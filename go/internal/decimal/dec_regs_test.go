@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Item 1 lets a math plan keep its intermediates in registers it reuses. Add, Sub
+// A math plan may keep its intermediates in registers it reuses. Add, Sub
 // and Mul -- what every caller outside a plan uses -- must still never write an
 // operand or a shared constant, and must return a magnitude no operand shares.
 func TestOperationsNeverWriteTheirOperands(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// GO-P1: `equality AND residual` hashes on the equality. The reference for every
+// `equality AND residual` hashes on the equality. The reference for every
 // case is the same join with the equality hidden inside IF(…), which makes the
 // leftmost conjunct a call and so keeps the nested loop: the answers (values, key
 // order, and the ERROR raised) must be identical.
@@ -120,7 +120,7 @@ func TestLinkResidualRefusesEffectfulKeys(t *testing.T) {
 	}
 }
 
-// GO-P4: hoisting the right alias records is unobservable (a binder cannot be
+// Hoisting the right alias records is unobservable (a binder cannot be
 // assigned, so nothing can write into the alias record; a host function is treated
 // as possibly impure and keeps the old per-pair records). The reference is the same predicate behind a host function, which
 // is not pure and so keeps the alias record fresh for every pair.

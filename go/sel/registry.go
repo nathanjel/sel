@@ -74,7 +74,7 @@ func stringsJoin(elems []string, sep string) string {
 // module's init. Definition-by-definition mismatches are refused in Define, but a
 // name no module defined would only surface as an unknown function at parse time.
 // So the first lookup, by which every init has run, checks coverage once and keeps
-// refusing if it failed (GO-C41; JS does the same in assertManifestCovered).
+// refusing if it failed (JS does the same in assertManifestCovered).
 var (
 	manifestOnce    sync.Once
 	manifestMissing string

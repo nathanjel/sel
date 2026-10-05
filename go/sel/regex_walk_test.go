@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GO-P5: the byte-offset implementation answers exactly what the retired rune
+// The byte-offset implementation answers exactly what the retired rune
 // implementation answered, for every built-in, with and without the i flag, on
 // subjects that put multi-byte characters, the Kelvin sign and the long s in the way.
 func TestRegexBuiltinsMatchTheRuneReference(t *testing.T) {

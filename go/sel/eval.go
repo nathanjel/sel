@@ -151,7 +151,7 @@ func dispatch(node *Node, ctx *Context) *Value {
 		if !node.Spec.Lazy {
 			if node.shape != nil {
 				// A RECORD whose keys are all text literals: only the values
-				// are evaluated (GO-P14). The keys cannot fail or have effects.
+				// are evaluated. The keys cannot fail or have effects.
 				for i := 1; i < len(node.Items); i += 2 {
 					args.Val(i)
 				}
@@ -224,7 +224,7 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	if op == "??" || op == "???" {
 		var l *Value
 		hasVal := false
-		// GO-P7: a plain path (`R["a"]["b"]`, a variable or literal keys) that is
+		// A plain path (`R["a"]["b"]`, a variable or literal keys) that is
 		// missing is the common case of `??`, and raising E_NO_KEY for it costs a
 		// message, a panic and a recover (~6x a hit). Resolve such a path without
 		// raising; anything else takes the recover path below.
@@ -461,7 +461,7 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		rhs := evalNode(node.R, ctx)
 		if len(path) == 1 && producesFreshValue(node.R) {
 			// A variable takes a result whose every node was built by the call
-			// that returned it (GO-P13): the copy would duplicate what nothing
+			// that returned it: the copy would duplicate what nothing
 			// else can reach. The constructor already checked that its
 			// children fit one level below the list, which for a plain variable
 			// is exactly the depth the assignment would check.
@@ -574,7 +574,7 @@ type mathSlot struct {
 	d   *decimal.Dec
 	v   *Value
 	pos Pos
-	// n is an ADD, SUB or MUL result kept in a register (n.Mag != nil, item 1):
+	// n is an ADD, SUB or MUL result kept in a register (n.Mag != nil, plan_regs.go):
 	// the plan's own magnitude, read by exactly one later ADD, SUB or MUL
 	// (assignRegisters) and never seen by anything else.
 	n decimal.Num
@@ -618,7 +618,7 @@ func init() {
 }
 
 func evalMathPlan(plan *mathPlan, ctx *Context) *Value {
-	// Up to sixteen slots live in the frame (GO-P12; Mandelbrot's
+	// Up to sixteen slots live in the frame (Mandelbrot's
 	// `zr * zr - zi * zi + cr` needs nine), in one of two buffers so that the
 	// common plan of a few operations clears only eight: its scratchpad never
 	// outlives this call.
@@ -745,7 +745,7 @@ func evalMathPlan(plan *mathPlan, ctx *Context) *Value {
 	return NewNum(slots[plan.OutputSlot].dec())
 }
 
-// coalescePathFast switches the GO-P7 walk off, for the test that holds it to the
+// coalescePathFast switches the fast path walk off, for the test that holds it to the
 // raising route it replaces.
 var coalescePathFast = true
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Item 1: AddInto, SubInto and MulInto write a result into a register the caller
+// AddInto, SubInto and MulInto write a result into a register the caller
 // owns and reuses. Against Add, Sub and Mul (the reference: what every caller
 // outside a plan still uses) they must give the same sign, scale and magnitude,
 // raise the same E_RANGE at the same place, never write an operand they do not

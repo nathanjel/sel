@@ -139,7 +139,7 @@ func (s *sNode) ToNode() *sel.Node {
 	}
 	// An SNode is not changed once built, so its evaluable form is built once: the
 	// translator asks for it at every constant node of a chain, each time for the
-	// whole subtree below, which made a chain of n cost n copies of n nodes (GO-P28).
+	// whole subtree below, which made a chain of n cost n copies of n nodes.
 	if s.toNodeDone {
 		return s.toNodeVal
 	}

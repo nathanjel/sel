@@ -632,7 +632,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			if plan.Projections == nil && plan.SelectCols == nil {
 				refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step.Pos)
 			}
-			// DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+			// DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
 			if len(plan.OrderBy) > 0 {
 				refuse("E_SQL_SHAPE", "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory", step.Pos)
 			}
@@ -1310,7 +1310,7 @@ func (t *translator) CompileStatement(plan *relationalPlan) *Fragment {
 
 // relationFieldNames lists a relation's fields in a fixed order: the order the
 // binding declared them in, or sorted names when it declared none. Ranging over
-// the Fields map gave a different select list on different runs (GO-C18).
+// the Fields map gave a different select list on different runs.
 func relationFieldNames(rel *relationSpec) []string {
 	if len(rel.FieldOrder) > 0 {
 		seen := make(map[string]bool, len(rel.FieldOrder))

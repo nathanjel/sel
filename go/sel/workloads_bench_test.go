@@ -1,7 +1,7 @@
 package sel
 
-// Durable benchmark workloads for the Go performance queue (GO-P1 … GO-P10),
-// docs/interim/2026-09-29/worklist/performance/go.md. Every workload uses a fixed
+// Durable benchmark workloads for the Go host: joins, sorts, regexes, the front
+// end and the interpreter's hot paths. Every workload uses a fixed
 // seed and has a semantic checksum (TestWorkloadChecksums) so a speedup that
 // changes an answer fails a test, not a review.
 //
@@ -110,7 +110,7 @@ func joinCtx(n int) func() *Value {
 	return func() *Value { return ctxWith("L", joinRows(n, 10, 1), "R", joinRows(n, 10, 2)) }
 }
 
-// --- GO-P1: equality AND residual (n/2n/4n at 10 distinct keys) ---------------
+// --- equality AND residual (n/2n/4n at 10 distinct keys) ---------------
 
 func BenchmarkP1LinkEqResidual(b *testing.B) {
 	for _, n := range []int{375, 750, 1500} {
@@ -126,7 +126,7 @@ func BenchmarkP1LinkEqResidual(b *testing.B) {
 	}
 }
 
-// --- GO-P2/P3: sorting and TOP ------------------------------------------------
+// --- sorting and TOP ------------------------------------------------
 
 func BenchmarkP2Sort(b *testing.B) {
 	for _, n := range []int{25000, 50000, 100000} {
@@ -152,7 +152,7 @@ func BenchmarkP3Top(b *testing.B) {
 	}
 }
 
-// --- GO-P4: non-equi LINK -----------------------------------------------------
+// --- non-equi LINK -----------------------------------------------------
 
 func BenchmarkP4LinkNonEqui(b *testing.B) {
 	for _, n := range []int{250, 500, 1000} {
@@ -164,7 +164,7 @@ func BenchmarkP4LinkNonEqui(b *testing.B) {
 	}
 }
 
-// --- GO-P5: regex -------------------------------------------------------------
+// --- regex -------------------------------------------------------------
 
 func BenchmarkP5Regex(b *testing.B) {
 	for _, reps := range []int{62500, 125000, 250000} {
@@ -188,7 +188,7 @@ func BenchmarkP5Regex(b *testing.B) {
 	}
 }
 
-// --- GO-P6: front end ---------------------------------------------------------
+// --- front end ---------------------------------------------------------
 
 func bigSource(kb int) string {
 	var sb strings.Builder
@@ -230,7 +230,7 @@ func BenchmarkP6Compile(b *testing.B) {
 	}
 }
 
-// --- GO-P7/P8: interpreter hot path over records -------------------------------
+// --- interpreter hot path over records -------------------------------
 
 func BenchmarkP7P8Interp(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
@@ -247,7 +247,7 @@ func BenchmarkP7P8Interp(b *testing.B) {
 	}
 }
 
-// --- GO-P9: small-number arithmetic end to end ---------------------------------
+// --- small-number arithmetic end to end ---------------------------------
 
 func BenchmarkP9Arith(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
@@ -262,7 +262,7 @@ func BenchmarkP9Arith(b *testing.B) {
 	}
 }
 
-// --- GO-P10: large numeral parse ------------------------------------------------
+// --- large numeral parse ------------------------------------------------
 
 func BenchmarkP10BigNumeral(b *testing.B) {
 	for _, digits := range []int{62500, 250000, 999999} {
@@ -282,8 +282,8 @@ func BenchmarkP10BigNumeral(b *testing.B) {
 
 // --- checksums ------------------------------------------------------------------
 
-// Small-n answers for every workload above, recorded at the baseline (the tree
-// before the GO-P wave). A speedup must not change any of them.
+// Small-n answers for every workload above, recorded before any of the
+// optimisations they measure. A speedup must not change any of them.
 func TestWorkloadChecksums(t *testing.T) {
 	n := 600
 	ctxL := func() *Value { return ctxWith("L", joinRows(n, 10, 1), "R", joinRows(n, 10, 2)) }

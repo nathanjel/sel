@@ -17,7 +17,7 @@ type Args struct {
 	call        *Node
 	vals        []*Value
 	// valsBuf backs vals for a call of up to four arguments, so the Args and its
-	// value slots are one allocation instead of two (GO-P12).
+	// value slots are one allocation instead of two.
 	valsBuf [4]*Value
 }
 

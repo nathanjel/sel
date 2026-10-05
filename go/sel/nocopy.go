@@ -2,7 +2,7 @@ package sel
 
 import "github.com/nathanjel/sel/go/internal/manifest"
 
-// Copy elision for a FILTER that feeds straight into a consumer (GO-REG-1).
+// Copy elision for a FILTER that feeds straight into a consumer.
 //
 // SPEC §3.4: FILTER copies the rows it keeps, so its result shares nothing with its
 // source. That copy is needed when the result can be held, returned or changed. It is

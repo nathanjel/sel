@@ -54,7 +54,7 @@ func (cr *compiledRegex) find(subj string) []int {
 
 // regexKey is the cache key: a struct of a flag and the pattern, so a lookup hashes
 // the pattern in place. The key used to be built with a string concatenation per
-// call (GO-P19), one allocation for every RMATCH of every element.
+// call, one allocation for every RMATCH of every element.
 type regexKey struct {
 	ignoreCase bool
 	pattern    string

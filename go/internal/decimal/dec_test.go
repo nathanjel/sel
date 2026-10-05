@@ -12,7 +12,7 @@ func mustNotFail(t *testing.T) FailFunc {
 	}
 }
 
-// GO-C42: negating math.MinInt64 in int64 wraps to itself, which built a Dec
+// Negating math.MinInt64 in int64 wraps to itself, which built a Dec
 // whose digits were negative and printed as "--9223372036854775808".
 func TestFromIntExtremes(t *testing.T) {
 	cases := map[int64]string{
@@ -57,7 +57,7 @@ func capture(f func(FailFunc)) (got *failure) {
 	return nil
 }
 
-// GO-C12: CEIL and FLOOR carry one into the integer part, so a value with the
+// CEIL and FLOOR carry one into the integer part, so a value with the
 // maximum number of integer digits leaves the cap. Like ROUND they must fail
 // E_RANGE at the call, not return a 1,000,001-digit number.
 func TestCeilFloorCarryPastTheDigitCap(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GO-P9: the word-sized Parse path agrees with the general one on every shape of
+// The word-sized Parse path agrees with the general one on every shape of
 // numeral: leading zeros, a fraction, signs, the 18/19-digit boundary, -0.
 func TestParseWordPathMatchesTheGeneralPath(t *testing.T) {
 	general := func(text string) *Dec {
@@ -110,7 +110,7 @@ func TestNegateAndAbsLeaveTheOperandAlone(t *testing.T) {
 	}
 }
 
-// GO-P10: the divide-and-conquer digit parse equals big.Int.SetString for every
+// The divide-and-conquer digit parse equals big.Int.SetString for every
 // length around the leaf size and the power-of-two split points, including digit
 // strings with zeros at every position a split could fall.
 func TestParseDigitsMatchesSetString(t *testing.T) {

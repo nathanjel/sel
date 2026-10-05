@@ -301,7 +301,7 @@ func (t *translator) dispatch(n *sNode) *Fragment {
 // requireNoNul refuses a text value with a NUL in it, in every render mode. A
 // C-string client API truncates an inline statement at the NUL, and a driver
 // that sends parameters may do the same; SEL text may hold U+0000, SQL text
-// cannot portably (GO-C43).
+// cannot portably.
 func (t *translator) requireNoNul(s string, pos Pos) {
 	if strings.ContainsRune(s, 0) {
 		refuse("E_SQL_UNSUPPORTED", "a text value containing a NUL cannot be sent to a SQL server portably", pos)
@@ -901,7 +901,7 @@ func unify(fs []*Fragment, pos Pos) SqlKind {
 	// UNKNOWN does not unify with anything: a branch nobody vouched for makes the
 	// whole conditional something nobody vouched for, so it keeps its guard (or is
 	// refused where no guard can be written) instead of inheriting the kind of the
-	// branch beside it (GO-C15, JS-C27, PHP-C28, CPP-C29, LISP-C24).
+	// branch beside it.
 	if kind == nil || sawUnknown {
 		return KindUnknown
 	}
@@ -1215,7 +1215,7 @@ func (t *translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragme
 }
 
 // arithmeticOperand: an operand that is a constant TEXT holding a number, in an
-// arithmetic position, is that number (PHP-C33): SEL computes with it exactly, and
+// arithmetic position, is that number: SEL computes with it exactly, and
 // MariaDB and MySQL would read the quoted string as a DOUBLE. It is translated as the
 // numeric literal it stands for. The text was translated first (its SQL kind is only
 // known then), so the slots it bound are taken back, or `params` mode would report a
@@ -1834,7 +1834,7 @@ func (t *translator) call(n *sNode) *Fragment {
 					return t.allOrNothingSum(inner, bodyNode.Pos)
 				}
 				// The body's parts are spliced, slots and all: joining their SQL
-				// text dropped every literal in it (GO-C3).
+				// text dropped every literal in it.
 				parts := []Part{{Sql: "COALESCE(SUM("}}
 				parts = append(parts, inner.Parts...)
 				parts = append(parts, Part{Sql: "), 0)"})
@@ -1870,7 +1870,7 @@ func (t *translator) call(n *sNode) *Fragment {
 	var args []*Fragment
 	for i, arg := range rewritten.Kids {
 		// MIN and MAX compare their arguments as numbers: a numeric text constant is
-		// the number, as in arithmetic (PHP-C33).
+		// the number, as in arithmetic.
 		var f *Fragment
 		if name == "MIN" || name == "MAX" {
 			f = t.arithmeticOperand(arg)
@@ -1899,7 +1899,7 @@ func (t *translator) call(n *sNode) *Fragment {
 // requireBinderName refuses, where it stands, a binding function whose binder
 // position holds something that is not a name. SEL reaches the same program at
 // run time as E_EXPECT_SYMBOL, so it compiles and arrives here; the answer is a
-// refusal at that expression, whatever the statement form around it (GO-C2).
+// refusal at that expression, whatever the statement form around it.
 func (t *translator) requireBinderName(n *sNode) {
 	if n.Origin == nil || n.Spec == nil || !n.Spec.Binds {
 		return
@@ -2274,7 +2274,7 @@ func aggReturns(name string) SqlKind {
 // scope plus the FILTER's binder for the element, and nothing of the aggregate
 // it feeds. Every binder is local to the expression it is written for; folding
 // them all into one frame let a predicate read the body's binder, and the body
-// read the predicate's (LISP-C7, PHP-C30).
+// read the predicate's.
 func (t *translator) filterPredicate(f sourceFilter, binderName string) *Fragment {
 	top := t.frames[len(t.frames)-1]
 	var frame frame
@@ -2529,7 +2529,7 @@ func (t *translator) has(n *sNode) *Fragment {
 
 // requireJoinText: JOIN takes text, under `&`'s rules (spec §5.2/§7.5); a BOOL or
 // a BIN, as an element or as the separator, is E_NOT_TEXT in SEL and refused here
-// rather than concatenated as whatever a server spells it (PY-C19, PHP-C31).
+// rather than concatenated as whatever a server spells it.
 func (t *translator) requireJoinText(f *Fragment, pos Pos, what string) {
 	if f.Kind == KindBool || f.Kind == KindBin {
 		refuse("E_SQL_SHAPE",

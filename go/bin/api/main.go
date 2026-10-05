@@ -130,7 +130,7 @@ func main() {
 	say("program.run.reads.context", eval("TOTAL > 10.00", ctx).Dump())
 	eval("SEEN = TOTAL * 2", ctx)
 	say("program.run.mutates.context", ctx.Get("SEEN").AsText(sel.Pos{}))
-	// A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+	// A BOOL a host hands in is an ordinary value (see tools/api.mjs).
 	{
 		a, bb := sel.NewNone(), sel.NewNone()
 		a.Set("FLAG", sel.NewBool(true))
@@ -386,7 +386,7 @@ func main() {
 		say("host.fn.replace", earlyVal.AsText(sel.Pos{})+" "+eval("HOST_V()").AsText(sel.Pos{}))
 	}
 
-	// --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+	// --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
 	// dependency when some read of it can happen before the program has definitely
 	// assigned it, in evaluation order. Assignments under a condition, a short
 	// circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -419,7 +419,7 @@ func main() {
 	say("program.deps.top-arg-is-not-a-binder-in-the-three-argument-form", deps("L = LIST(1,2); TOP(L, A, (A = 1; 1))"))
 	say("program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection", deps("L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)"))
 
-	// --- T12: a Program is reusable: after a caught error it runs again, and two
+	// --- a Program is reusable: after a caught error it runs again, and two
 	// contexts are independent whatever the interleaving.
 	{
 		divide := sel.MustCompile("A / B")
@@ -457,7 +457,7 @@ func main() {
 		say("program.reuse.two-contexts", r1+" "+r2+" "+r3+" "+r4)
 	}
 
-	// --- T12: input the API cannot take is E_BAD_ARG, never a host panic or a
+	// --- input the API cannot take is E_BAD_ARG, never a host panic or a
 	// different SEL error (spec/SPEC.md §8). This host is statically typed: source
 	// is a string and there is no native conversion, so the first three cannot be
 	// posed; they print n/a with the reason, and tools/check-api.sh leaves an n/a
@@ -512,7 +512,7 @@ func main() {
 		say("host.fn.arg.out-of-range", r)
 	}
 
-	// --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+	// --- a host-supplied value nested past the cap, handed to RECORD beside a
 	// key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
 	// so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
 	// arguments are known good. C++ built the pair in one expression and let the copy run first.

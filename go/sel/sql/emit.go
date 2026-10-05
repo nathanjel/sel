@@ -258,7 +258,7 @@ func (e *Emit) Column(table, column string) string {
 
 func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]bool) []Part {
 	// Sized for what the arguments contribute plus the template's own runs: every
-	// spliced fragment used to grow the slice by doubling (GO-P16).
+	// spliced fragment used to grow the slice by doubling.
 	hint := 4
 	for _, a := range args {
 		if a != nil {
@@ -315,7 +315,7 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 		if tpl[i] != '{' {
 			// The whole run up to the next brace, as bytes: converting one byte
 			// at a time re-encoded every byte of a multi-byte character as if it
-			// were a code point (GO-C24).
+			// were a code point.
 			j := i + 1
 			for j < nTpl && tpl[j] != '{' && tpl[j] != '}' {
 				j++
@@ -341,7 +341,7 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 			frmStr := slot[:len(slot)-1]
 			if frm, ok := slotRegex(frmStr); ok && frm >= 0 {
 				// A tail starting past the last argument is the empty list, and
-				// emits nothing (GO-C39).
+				// emits nothing.
 				if frm > len(args) {
 					frm = len(args)
 				}

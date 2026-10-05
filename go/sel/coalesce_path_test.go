@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// GO-P7: `??` / `???` over a plain path resolves it without raising. The
+// `??` / `???` over a plain path resolves it without raising. The
 // reference for each expression is the same path behind IF(TRUE, …), which is not
 // a plain path and so takes the raising-and-recovering route.
 func TestCoalesceOverAPlainPathMatchesTheRecoverRoute(t *testing.T) {

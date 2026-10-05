@@ -492,7 +492,7 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 		// The keys were evaluated (they must be); there is nothing to select.
 		best = nil
 	} else if limit*topSelectFactor < len(keyed) {
-		// GO-P3: only the `limit` best are wanted. Select them with a bounded
+		// Only the `limit` best are wanted. Select them with a bounded
 		// heap and sort just those: O(n log k) where the full sort was O(n log n).
 		// The comparison includes the input index, so ties resolve to input order
 		// exactly as they do in the full sort.
@@ -671,7 +671,7 @@ func singleRelationName(node *Node) string {
 }
 
 // aliasKey and aliasPlan memoise what ensureRowTableAlias computes for a row of a
-// given shape and table name (GO-P14): the target shape is a pure function of the
+// given shape and table name: the target shape is a pure function of the
 // two, and recomputing it built a keys slice, a set and a signature for every row
 // of every LINK. Bounded; reset when full (like the shape cache it feeds on).
 type aliasKey struct {
@@ -1056,7 +1056,7 @@ func coerceJoinOperand(numeric bool, v *Value, node *Node) {
 	}
 }
 
-// GO-P1: `equality AND residual…` used to fall back to the O(n*m) nested loop
+// `equality AND residual…` used to fall back to the O(n*m) nested loop
 // because extractJoinEqui wants the whole predicate to be one `==`. A LEADING
 // equality conjunct can be the hash key instead, with the remaining conjuncts
 // evaluated per bucket pair: AND short-circuits left to right, so a pair whose
@@ -1699,7 +1699,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 	}
 
-	// GO-P1: a leading equality conjunct is the hash key (see extractJoinEquiResidual).
+	// A leading equality conjunct is the hash key (see extractJoinEquiResidual).
 	if resEqui, residual := extractJoinEquiResidual(predicate, b1, b2); resEqui != nil {
 		lrows := make([]*Value, len(leftEnts))
 		lkeys := make([]joinKey, len(leftEnts))
@@ -1763,7 +1763,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		frame[lowerB2] = nil
 	}
 
-	// GO-P4: the right rows' alias records are built once, not once per (left,
+	// The right rows' alias records are built once, not once per (left,
 	// right) pair, and the binder's lower-cased spelling once, not per pair.
 	// Only for a predicate that cannot write: an assignment into Y acts on the
 	// alias record, and a shared record would carry it from one pair to the next.

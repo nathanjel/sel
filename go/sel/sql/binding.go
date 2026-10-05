@@ -122,7 +122,7 @@ func checkNumeric(where string, v *sel.Value) {
 // columnFlags folds what the application may say about a column's comparison:
 // a collation spelling into the exact/sargable flags, a split-sargable request
 // into the `separate` prefilter, and validates the spellings, as the dynamic
-// hosts' bindings do (GO-C19). Before this the typed constructors stored all of
+// hosts' bindings do. Before this the typed constructors stored all of
 // it raw: `collation="sargable"` did nothing and `prefilter="bogus"` was accepted.
 func columnFlags(exact, sargable bool, collation, prefilter string, splitSargable bool) (bool, bool, string) {
 	if collation != "" {

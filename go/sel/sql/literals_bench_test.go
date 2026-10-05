@@ -1,6 +1,6 @@
 package sql
 
-// Round-3 SQL workloads (GO-P28), docs/interim/2026-09-29/worklist/performance/go.md.
+// SQL workloads for text literals, constant chains and hybrid planning.
 // TestLiteralWorkloadChecksums pins a digest of every rendered output and plan, recorded at
 // the baseline, so a speedup that changes a byte fails a test.
 

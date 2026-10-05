@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// T12 (Go lane): flow-sensitive dependencies() (SPEC 8), the manifest coverage check at
-// load (GO-C41), and the argument reader's refusal of an argument the call does not have
+// Flow-sensitive dependencies() (SPEC 8), the manifest coverage check at
+// load, and the argument reader's refusal of an argument the call does not have
 // (SPEC 8.1). The shared contract is also probed on every host by tools/api.* and pinned
 // in tools/api-pins.txt.
 
@@ -70,7 +70,7 @@ func TestDependenciesKeepTheDepthCap(t *testing.T) {
 	}
 }
 
-// GO-C41: a manifest name no module defined is refused on first use, not found later
+// A manifest name no module defined is refused on first use, not found later
 // as an unknown-function error at parse time.
 func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	registryMu.Lock()

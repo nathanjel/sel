@@ -97,7 +97,7 @@ func recordStmt(s *sel.Node, defs map[string]*sNode, constNames map[string]bool,
 }
 
 // constantKey is the key a constant index spells, and whether the index is one:
-// the empty text `""` is a constant key like any other (GO-C40), so "no key" is a
+// the empty text `""` is a constant key like any other, so "no key" is a
 // separate result and not the empty string.
 func constantKey(idx *sel.Node) (string, bool) {
 	if idx.T == sel.NodeNum || idx.T == sel.NodeText {
@@ -183,7 +183,7 @@ func substituteNode(node *sel.Node, defs map[string]*sNode, bound []string, dept
 				// A bare name stays as written. Anything else is kept whole, so
 				// the translator can refuse it where it stands: a child-less copy
 				// of an index or call reached the translator as a node with no
-				// parts and crashed it (GO-C2).
+				// parts and crashed it.
 				if arg.T == sel.NodeVar {
 					args = append(args, leaf(arg))
 				} else {
@@ -220,8 +220,8 @@ func flattenNodes(items []*sel.Node, defs map[string]*sNode, bound []string, dep
 
 // snapshot is what reading a helper yields. An indexed assignment appends to
 // the list it names in place, so a read that kept the pointer would see writes
-// made after it; SEL's assignment copies (spec §3.4/§5.7), and so does this
-// (GO-C4). The entries are values nobody mutates, so the copy is one level.
+// made after it; SEL's assignment copies (spec §3.4/§5.7), and so does this.
+// The entries are values nobody mutates, so the copy is one level.
 func snapshot(def *sNode) *sNode {
 	if def == nil || def.T != sNodeCList {
 		return def

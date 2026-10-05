@@ -11,7 +11,7 @@ import (
 	"github.com/nathanjel/sel/go/internal/decimal"
 )
 
-// ---- plain tree versus optimised tree (T00-B) -------------------------------
+// ---- plain tree versus optimised tree -------------------------------------
 
 type selCase struct {
 	file, name, setup, source string

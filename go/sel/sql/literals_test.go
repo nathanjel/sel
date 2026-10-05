@@ -9,7 +9,7 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-// refTextLiteral is TextLiteral as it was before GO-P28: the escape keys sorted
+// refTextLiteral is TextLiteral as it was before the escaper memo: the escape keys sorted
 // longest first on every call, a prefix test per key at every byte.
 func refTextLiteral(dialect, text string) string {
 	quote := "'"
@@ -111,7 +111,7 @@ func TestTextLiteralSeesARegistrationAtOnce(t *testing.T) {
 	}
 }
 
-// GO-P28: ToNode is built once per SNode and is stable — the same tree every time,
+// ToNode is built once per SNode and is stable — the same tree every time,
 // and asking a parent first does not change what a child answers.
 func TestToNodeIsBuiltOnceAndStable(t *testing.T) {
 	prog := sel.MustCompile(`1 + 2 * 3 - 4`)

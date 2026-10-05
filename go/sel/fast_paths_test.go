@@ -1,6 +1,7 @@
 package sel
 
-// Unit tests for the round-2 performance changes (GO-P11 … GO-P20): each pins the
+// Unit tests for the collection and interpreter fast paths (keyed-list index,
+// dense keys, embedded argument slots, math-plan scratchpads, ...): each pins the
 // behaviour the optimisation must not change, on shapes the workloads do not hit.
 
 import (
@@ -11,7 +12,7 @@ import (
 	"testing"
 )
 
-// GO-P11: a keyed list of keyIndexMin+ children answers Get/Has/Set through a
+// A keyed list of keyIndexMin+ children answers Get/Has/Set through a
 // lazily built index; the answers equal the linear scan's, including duplicate
 // keys (first wins), a write through the index, and a clone.
 func TestKeyedListIndexMatchesTheScan(t *testing.T) {
@@ -99,7 +100,7 @@ func TestKeyedListIndexIsSafeToBuildConcurrently(t *testing.T) {
 	wg.Wait()
 }
 
-// GO-P12: the blob-built positional keys equal strconv.Itoa(i+1) for every size,
+// The blob-built positional keys equal strconv.Itoa(i+1) for every size,
 // around each digit-count boundary.
 func TestDenseEntriesKeysEqualItoa(t *testing.T) {
 	for _, n := range []int{0, 1, 9, 10, 98, 99, 100, 101, 999, 1000, 1001, 9999, 10000, 10001, 12345} {
@@ -125,7 +126,7 @@ func TestDenseEntriesKeysEqualItoa(t *testing.T) {
 	}
 }
 
-// GO-P12: Args of up to four arguments share one allocation with their value
+// Args of up to four arguments share one allocation with their value
 // slots; larger calls still get a slice of the right length. A program calling
 // functions of every small arity returns the same answers as before.
 func TestArgsEmbeddedSlotsKeepArities(t *testing.T) {
@@ -144,7 +145,7 @@ func TestArgsEmbeddedSlotsKeepArities(t *testing.T) {
 	}
 }
 
-// GO-P12: a math plan with more slots than the stack buffer holds still works.
+// A math plan with more slots than the stack buffer holds still works.
 func TestWideMathPlanBeyondTheStackScratchpad(t *testing.T) {
 	src := `X = 1; X + X * 2 - X / 4 + X * 3 - X * 5 + X * 7 - X * 11 + X * 13 - X * 17 + X * 19 - X * 23 + X * 29`
 	v, err := MustCompile(src).Run(NewNone())
@@ -157,7 +158,7 @@ func TestWideMathPlanBeyondTheStackScratchpad(t *testing.T) {
 	}
 }
 
-// GO-P13: a variable takes the result of MAP/FILTER/SORT*/TOP*/BUCKET/LIST/RECORD
+// A variable takes the result of MAP/FILTER/SORT*/TOP*/BUCKET/LIST/RECORD
 // without the assignment's own copy. That is only sound if no node of such a
 // result is reachable from its input — checked here by pointer identity over
 // every shape of input, for every function in freshResultFuncs.
@@ -227,7 +228,7 @@ func TestFreshResultFunctionsShareNothingWithTheirInput(t *testing.T) {
 	}
 }
 
-// GO-P13 semantics: assigning a fresh result and then writing through the
+// Fresh-assignment semantics: assigning a fresh result and then writing through the
 // variable leaves the source untouched; an indexed target still checks depth
 // and copies.
 func TestAssigningAFreshResultDoesNotAliasTheSource(t *testing.T) {
@@ -245,7 +246,7 @@ func TestAssigningAFreshResultDoesNotAliasTheSource(t *testing.T) {
 	}
 }
 
-// GO-P14: UniqueRecordShape answers from the cache when it can, never wrongly: a
+// UniqueRecordShape answers from the cache when it can, never wrongly: a
 // cached shape that was built from repeated keys (internRecordShape is also called
 // directly) must not stand in for "unique".
 func TestUniqueRecordShapeSeesRepeatsWhateverIsCached(t *testing.T) {
@@ -282,7 +283,7 @@ func TestUniqueRecordShapeSeesRepeatsWhateverIsCached(t *testing.T) {
 	}
 }
 
-// GO-P14: RECORD with literal keys evaluates only its values, in order, and keeps
+// RECORD with literal keys evaluates only its values, in order, and keeps
 // every observable: errors, positions, copying, duplicate keys falling back.
 func TestRecordLiteralKeyFastPath(t *testing.T) {
 	cases := []struct{ src, want string }{
@@ -310,7 +311,7 @@ func TestRecordLiteralKeyFastPath(t *testing.T) {
 	}
 }
 
-// GO-P14: the LINK row alias memo gives the answers the per-row computation gave:
+// The LINK row alias memo gives the answers the per-row computation gave:
 // upper-case binder names also expose their lower-case alias, and a row that
 // already carries the name is left alone.
 func TestRowTableAliasMemoMatchesTheDirectComputation(t *testing.T) {
@@ -337,7 +338,7 @@ func TestRowTableAliasMemoMatchesTheDirectComputation(t *testing.T) {
 	}
 }
 
-// GO-P15: FIND on bytes equals the rune-by-rune search it replaced, over random
+// FIND on bytes equals the rune-by-rune search it replaced, over random
 // text with multi-byte characters, every start, and the edges.
 func refFind(needleS, hayS string, from int) int {
 	needle, hay := []rune(needleS), []rune(hayS)
@@ -396,7 +397,7 @@ func TestFindOnBytesEqualsTheRuneSearch(t *testing.T) {
 	}
 }
 
-// GO-P20: the byte-offset text builtins equal the []rune implementations they
+// The byte-offset text builtins equal the []rune implementations they
 // replaced, over random text with multi-byte characters and whitespace, for every
 // count around the text's length and a saturating one.
 func refTrim(s string, l, r bool) string {
@@ -546,7 +547,7 @@ func MustCompileRunText(t *testing.T, src string, s *Value) string {
 	return v.Scalar()
 }
 
-// GO-P19: the regex cache key is (ignoreCase, pattern): one pattern with and without
+// The regex cache key is (ignoreCase, pattern): one pattern with and without
 // `i` is two entries and two answers, in either order of first use, and the cache
 // stays bounded under distinct computed patterns.
 func TestRegexCacheKeysByFlagAndPattern(t *testing.T) {

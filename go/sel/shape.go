@@ -16,7 +16,7 @@ type RecordShape struct {
 	size   int
 
 	// keyHashes[i] is fnvHash(Keys[i]), built on the first structural hash of a
-	// record of this shape and then shared by every such record (GO-P26).
+	// record of this shape and then shared by every such record.
 	keyHashes atomic.Pointer[[]uint64]
 }
 
@@ -122,7 +122,7 @@ func internRecordShape(keys []string) *RecordShape {
 }
 
 // uniqueRecordShape is the shape of keys, or nil when a key repeats. The cache is
-// asked first (GO-P14): a hit whose map has as many entries as it has keys was
+// asked first: a hit whose map has as many entries as it has keys was
 // built from distinct keys, which answers the uniqueness question without the
 // per-call set. A miss checks for a repeat — pairwise for a short key list, with a
 // set beyond that — and only then builds and caches the shape.

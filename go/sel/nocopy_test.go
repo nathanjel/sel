@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GO-REG-1: a FILTER whose parent only reads or itself copies its rows keeps them
+// A FILTER whose parent only reads or itself copies its rows keeps them
 // aliased. These tests hold the elision to "cannot be told apart": every program gives
 // the same outcome with it on and off, it is declined wherever a value could change
 // while the rows are read, and it still refuses the rows the copy would have refused.

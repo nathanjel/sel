@@ -364,14 +364,14 @@ func requireTarget(dialect string, pos Pos) {
 	}
 }
 
-// chainMemo caches each dialect's inheritance chain (GO-P16): Chain ran for every
+// chainMemo caches each dialect's inheritance chain: Chain ran for every
 // identifier, literal, placeholder and template slot, each time allocating a set
 // and a slice and taking the lock. The chain is a function of the registered
 // dialects only, so it is cleared whenever extra changes (Reset, DefineDialect and
 // its rollback). Guarded by mapMu; the slices in it are never handed out.
 var chainMemo = make(map[string][]string)
 
-// escaperMemo caches each dialect's text quote and compiled escape replacer (GO-P28:
+// escaperMemo caches each dialect's text quote and compiled escape replacer (without it,
 // TextLiteral sorted the escape keys and scanned with a prefix test per key on every
 // literal). Like chainMemo it is a function of the registered dialects only, so it
 // is cleared wherever chainMemo is. Guarded by mapMu.
@@ -588,7 +588,7 @@ func defineDialectLocked(name string, spec map[string]interface{}) (*dialectReco
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		panic(fmt.Sprintf("SQL dialect %s declares %s, which a dialect declaration does not carry; ops, funcs and skel entries are defined one at a time with define()", name, strings.Join(unknown, ", ")))
+		panic(fmt.Sprintf("SQL dialect %s declares %s, which a dialect declaration does not carry; ops, funcs and skel entries are defined one at a time with Define", name, strings.Join(unknown, ", ")))
 	}
 
 	if _, ok := spec["extends"]; !ok {
@@ -815,7 +815,7 @@ func checkNumericGuard(dialect string) {
 		panic(fmt.Sprintf("SQL dialect %s declares a numericGuard that does not carry %s, which its funcs.ISNUM tests; they ask the same question, and a guard that asks a different one answers for rows SEL refuses", dialect, strings.Join(missing, ", ")))
 	}
 	// Marked only once it has passed: a dialect that fails the check fails it on
-	// every use, not just the first (JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42).
+	// every use, not just the first.
 	markGuardChecked(dialect)
 }
 
@@ -882,7 +882,7 @@ func checkKey(section, key string) {
 		_, isSelFunc := shippedRules.FuncArity[upper]
 		_, _, isHostFunc := sel.HostArity(key)
 		if !isSelFunc && !isHostFunc {
-			panic(fmt.Sprintf("%s is neither a SEL function this layer maps nor a registered host function. A host function is registered (registerFunction) before it is given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never reach the funcs table", key))
+			panic(fmt.Sprintf("%s is neither a SEL function this layer maps nor a registered host function. A host function is registered (sel.RegisterFunction) before it is given a SQL spelling; the aggregates and IF/COND/COUNT/HAS/INDEXES/ABORT are lowered by stage 2 and never reach the funcs table", key))
 		}
 	} else if section == "skel" {
 		if _, ok := shippedRules.SkelSlots[key]; !ok {
@@ -952,7 +952,7 @@ func checkEntry(section, key string, e interface{}) {
 	if bVal, ok := m["builder"]; ok && bVal != nil {
 		if _, ok := bVal.(BuilderFn); !ok {
 			if _, ok2 := bVal.(func(*Emit, []*Fragment, Pos) *Fragment); !ok2 {
-				panic(fmt.Sprintf("%s has a builder that is not callable; use map.defineBuilder()", where))
+				panic(fmt.Sprintf("%s has a builder that is not callable; use DefineBuilder", where))
 			}
 		}
 		return

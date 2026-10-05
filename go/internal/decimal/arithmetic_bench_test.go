@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// GO-P9 / GO-P10 micro-benchmarks (the end-to-end workloads are in go/sel/workloads_bench_test.go).
+// Arithmetic and numeral-parse micro-benchmarks (the end-to-end workloads are in go/sel/workloads_bench_test.go).
 
 var sinkDec *Dec
 
@@ -48,7 +48,7 @@ func BenchmarkP9(b *testing.B) {
 	}
 }
 
-// GO-P10: a large numeral.
+// A large numeral.
 func BenchmarkP10Parse(b *testing.B) {
 	for _, n := range []int{10000, 100000, 250000, 999999} {
 		s := strings.Repeat("7", n)

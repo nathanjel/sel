@@ -1,7 +1,7 @@
 package sql
 
-// Round-2 SQL workloads (GO-P16 … GO-P18), docs/interim/2026-09-29/worklist/
-// performance/go.md. Fixed inputs; TestTranslateWorkloadChecksums pins a hash of every
+// SQL workloads for translation and rendering, IN-list folding and hybrid
+// execution. Fixed inputs; TestTranslateWorkloadChecksums pins a hash of every
 // rendered output so a speedup that changes a byte fails a test.
 
 import (
@@ -22,7 +22,7 @@ func perfBindings() *Bindings {
 	})
 }
 
-// predicates builds the GO-P16 rule: n conjuncts mixing arithmetic, text
+// predicates builds the translated rule: n conjuncts mixing arithmetic, text
 // comparison with a quote in the literal, and LEN.
 func predicates(n int) string {
 	parts := make([]string, n)

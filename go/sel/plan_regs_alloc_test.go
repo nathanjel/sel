@@ -2,7 +2,7 @@ package sel
 
 import "testing"
 
-// Item 1: what one evaluation of a math plan allocates, warm, on operands of at
+// What one evaluation of a math plan allocates, warm, on operands of at
 // most 60 digits (math/big takes no pooled Karatsuba stack at these sizes, so the
 // counts are deterministic, -race included). Lower these when the code gets
 // cheaper; never raise them.

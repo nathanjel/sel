@@ -1,6 +1,6 @@
 package sel
 
-// The pre-GO-P5 regex walk (rune slices, a per-byte offset table, a folded copy of
+// The earlier regex walk (rune slices, a per-byte offset table, a folded copy of
 // the subject), kept as the reference the byte-offset implementation is held to.
 
 import (
@@ -188,7 +188,7 @@ func refRReplace(cr *compiledRegex, repl, subj string, ic bool) string {
 	return out.String()
 }
 
-// BenchmarkP5Reference is the BEFORE of GO-P5: the retired rune walk on the same
+// BenchmarkP5Reference is the before of the byte-offset walk: the retired rune walk on the same
 // subjects as BenchmarkP5Regex (which measures the built-ins as they are now).
 func BenchmarkP5Reference(b *testing.B) {
 	for _, reps := range []int{62500, 125000, 250000} {

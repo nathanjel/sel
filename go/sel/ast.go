@@ -29,7 +29,7 @@ type slotCache struct {
 	Shape *RecordShape
 	Slot  int
 	// Misses counts how many times this site replaced its entry because the row had
-	// another shape; a site that keeps alternating stops storing (GO-P25).
+	// another shape; a site that keeps alternating stops storing.
 	Misses int32
 }
 
@@ -69,7 +69,7 @@ type mathStep struct {
 	Src1 uint16
 	Src2 uint16
 	// Reg is where an ADD, SUB or MUL result lives: 0 for a fresh Dec, i for
-	// register i of the evaluation's register file (assignRegisters, item 1).
+	// register i of the evaluation's register file (assignRegisters).
 	Reg      uint16
 	Pos      Pos
 	AuxPos   Pos

@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// Semantic checksums for the round-3 workloads (GO-P22 … GO-P27), recorded at the
-// baseline before any round-3 change. A speedup that changes an answer fails here.
+// Semantic checksums for the workloads of keys_parsing_bench_test.go, recorded
+// before the optimisations they measure. A speedup that changes an answer fails here.
 var perf3Checksums = map[string]string{
 	"p23 replace":              "t\"axx😀bxx||XcXX|aébé\"",
 	"p23 replace_empty_needle": "!E_BAD_ARG@1:9",
@@ -191,7 +191,7 @@ func TestStructuralHashIsRepresentationIndependent(t *testing.T) {
 	}
 }
 
-// GO-P23: BTL shares one immutable decimal per byte value and one slab of Values;
+// BTL shares one immutable decimal per byte value and one slab of Values;
 // elements must still behave as independent values, and base64 keeps its strictness.
 func TestBtlElementsStayIndependent(t *testing.T) {
 	for src, want := range map[string]string{
@@ -220,7 +220,7 @@ func TestBase64DecodeTableIsStrict(t *testing.T) {
 	}
 }
 
-// GO-P24: a one-shot Eval that skips the planner gives the answer (or the error code
+// A one-shot Eval that skips the planner gives the answer (or the error code
 // and position) of the planned run, for programs on both sides of plansPay.
 func TestEvalMatchesThePlannedRun(t *testing.T) {
 	ctx := func() *Value { return ctxWith("A", NewInt(7), "B", NewInt(3), "L", intList(20, 3)) }
@@ -247,7 +247,7 @@ func TestEvalMatchesThePlannedRun(t *testing.T) {
 	}
 }
 
-// GO-P25: a site that meets more shapes than the miss limit stops storing, and every
+// A site that meets more shapes than the miss limit stops storing, and every
 // row still resolves to its own value.
 func TestSlotCacheStopsStoringWhenPolymorphic(t *testing.T) {
 	shapes := [][]string{{"a", "x"}, {"x", "a"}, {"a"}, {"y", "a"}, {"a", "y", "x"}, {"z", "a"}, {"q", "a"}, {"a", "q"}, {"r", "a"}, {"a", "r"}, {"s", "a"}, {"a", "s"}}

@@ -1,9 +1,9 @@
 package sel
 
-// Round-3 workloads for the Go performance queue (GO-P21 … GO-P29),
-// docs/interim/2026-09-29/worklist/performance/go.md. Same conventions as the earlier
-// rounds: fixed seeds, n/2n/4n, semantic checksums in TestKeysAndParsingWorkloadChecksums
-// (keys_parsing_checksums_test.go). GO-P21's decimal workloads are in
+// Workloads for key scans, text/binary builtins, one-shot Eval, polymorphic index
+// sites, hashing and the parser. Same conventions as workloads_bench_test.go:
+// fixed seeds, n/2n/4n, semantic checksums in TestKeysAndParsingWorkloadChecksums
+// (keys_parsing_checksums_test.go). The decimal workloads of the same kind are in
 // go/internal/decimal/digit_bounds_bench_test.go and the SQL ones in go/sel/sql/literals_bench_test.go.
 
 import (
@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// --- GO-P22: nodeContainsVar on every aggregate call --------------------------------
+// --- nodeContainsVar on every aggregate call --------------------------------
 
 func BenchmarkP22KeyScan(b *testing.B) {
 	bigBody := `SUM(LN, l, ((l["q"] + 1) * 2 - l["p"] + (l["q"] * 3) - (l["p"] + 7) + l["q"] * l["p"] - 11 + (l["p"] * 5) + (l["q"] - 2) * 4))`
@@ -31,7 +31,7 @@ func BenchmarkP22KeyScan(b *testing.B) {
 	}
 }
 
-// --- GO-P23: text/binary builtins ----------------------------------------------------
+// --- text/binary builtins ----------------------------------------------------
 
 func binOf(n int) *Value {
 	buf := make([]byte, n)
@@ -66,7 +66,7 @@ func BenchmarkP23TextBinary(b *testing.B) {
 	}
 }
 
-// --- GO-P24: one-shot Eval ------------------------------------------------------------
+// --- one-shot Eval ------------------------------------------------------------
 
 func BenchmarkP24OneShot(b *testing.B) {
 	ctx := ctxWith("X", NewInt(41), "A", NewInt(3), "B", NewInt(10), "C", NewInt(4), "L", intList(20, 3))
@@ -88,7 +88,7 @@ func BenchmarkP24OneShot(b *testing.B) {
 	}
 }
 
-// --- GO-P25: polymorphic index sites --------------------------------------------------
+// --- polymorphic index sites --------------------------------------------------
 
 func polymorphicRows(n, shapes int) *Value {
 	items := make([]*Value, n)
@@ -117,7 +117,7 @@ func BenchmarkP25SlotCache(b *testing.B) {
 	}
 }
 
-// --- GO-P26: DISTINCT/BUCKET hashing ---------------------------------------------------
+// --- DISTINCT/BUCKET hashing ---------------------------------------------------
 
 func BenchmarkP26Hash(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
@@ -133,7 +133,7 @@ func BenchmarkP26Hash(b *testing.B) {
 	}
 }
 
-// --- GO-P27: parser hot loop and numeric literals ---------------------------------------
+// --- parser hot loop and numeric literals ---------------------------------------
 
 func BenchmarkP27Parse(b *testing.B) {
 	for _, n := range []int{100000, 200000, 400000} {

@@ -32,7 +32,7 @@ func main() {
 
 	var failures []string
 	mismatches := 0
-	// Item 1: + - * are also run through registers the way a math plan runs them
+	// + - * are also run through registers the way a math plan runs them
 	// -- one long-lived result register and one scratch, each record's result
 	// written over the last -- so the oracle grades that path too.
 	reg, scratch := new(big.Int), new(big.Int)

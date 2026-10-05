@@ -147,7 +147,7 @@ func newLexer(source string) *lexer {
 
 // posAt resolves a code point offset to line and column. Tokens are asked for in
 // nearly increasing order, so the line of the previous answer (and the next few)
-// are tried before the binary search (GO-P6).
+// are tried before the binary search.
 func (l *lexer) posAt(offset int) Pos {
 	ls := l.lineStarts
 	cur := l.lineCursor
@@ -347,7 +347,7 @@ func (l *lexer) emitPart(task lexTask, out *[]token, stack []lexTask) []lexTask 
 }
 
 // Every operator is ASCII, so it is compared byte against code point, with no
-// []rune(op) conversion per probe (GO-P6).
+// []rune(op) conversion per probe.
 func (l *lexer) matchOperator(i, to int) (string, bool) {
 	for _, op := range operators {
 		if i+len(op) > to {

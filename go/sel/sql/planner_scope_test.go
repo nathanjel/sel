@@ -9,7 +9,7 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-// Unit tests for the T08-T11 wave (SQL scope, kinds, rendering, hybrid parity).
+// Unit tests for SQL scope, kinds, rendering and hybrid parity.
 // The .sqlt corpus pins the bytes; these pin the mechanisms behind them, in the
 // Go host's own API, so a regression names the rule and not just a golden.
 
@@ -60,7 +60,7 @@ func wantCode(t *testing.T, got, code string) {
 	}
 }
 
-// --- T08: lexical scope -------------------------------------------------------
+// --- lexical scope -------------------------------------------------------
 
 func TestInnerBinderDoesNotCaptureAHelpersFreeNames(t *testing.T) {
 	b := map[string]*Binding{"Y": colNum("y")}
@@ -197,7 +197,7 @@ func TestReadingTheBindingBeforeTheHelperThatRebindsIt(t *testing.T) {
 	}
 }
 
-// --- T09: kinds ---------------------------------------------------------------
+// --- kinds ---------------------------------------------------------------
 
 func TestUnknownDoesNotUnifyWithAnyKind(t *testing.T) {
 	b := map[string]*Binding{"F": ColumnBinding("f", "t", KindBool, false, false, false, "", "", false), "U": colUnknown("u")}
@@ -311,7 +311,7 @@ func TestLongUnrollsFoldBalancedAboveTwoFiftySix(t *testing.T) {
 	}
 }
 
-// --- T10: rendering, registration, names --------------------------------------
+// --- rendering, registration, names --------------------------------------
 
 func TestSuppliedCorrelateIsParenthesised(t *testing.T) {
 	b := map[string]*Binding{
@@ -441,7 +441,7 @@ func TestModeParamsLeavesNoOrphanSlotAfterAPrefixCheck(t *testing.T) {
 	}
 }
 
-// --- T11: hybrid parity -------------------------------------------------------
+// --- hybrid parity -------------------------------------------------------
 
 func ordersAndCustomers() *Bindings {
 	return NewBindings(map[string]*Binding{

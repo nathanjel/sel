@@ -356,8 +356,7 @@ func runCase(c SqlCase, dialect string) (problem string, sErr error) {
 	// the same SQL, or the same refusal at the same place, or a startup error
 	// again. A translator that keeps state between calls -- a dialect marked as
 	// checked before it was checked, a map iterated in a different order each
-	// time, a parameter list that grows -- passes one translation and fails here
-	// (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+	// time, a parameter list that grows -- passes one translation and fails here.
 	if prog != nil && binds != nil {
 		describe := func(sqlText string, e *sql.SqlError, thrown string, sqlOK bool) string {
 			switch {

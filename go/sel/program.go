@@ -295,7 +295,7 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 // Eval compiles and runs a program once. Planning (the logical rewrites, constant
 // folding and the math plan) costs about a quarter of a run-once total and only pays
 // off when the program runs again or walks a collection, so a one-shot program that
-// has neither an aggregate nor a pipeline stage is evaluated as written (GO-P24). The
+// has neither an aggregate nor a pipeline stage is evaluated as written. The
 // physical tree is a function of the AST alone and is held to the plain tree's answer
 // (SPEC 6.4), so this changes timing and nothing else.
 func Eval(source string, ctx *Value) (*Value, error) {

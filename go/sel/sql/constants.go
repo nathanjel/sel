@@ -489,7 +489,7 @@ func requireNumericNode(n *sNode, root *sel.Value) {
 
 // numericTextConstant is the canonical spelling of a constant that is TEXT holding a
 // number, and "" with false when it is anything else (or SEL refuses it: the operand's
-// own translation reports that). PHP-C33: in arithmetic SEL computes with such a text
+// own translation reports that). In arithmetic SEL computes with such a text
 // exactly, and MariaDB and MySQL would convert the quoted string to DOUBLE
 // (`'0.1' + '0.2' = 0.3` is false there), so the translator spells it as the exact
 // numeric literal it stands for.

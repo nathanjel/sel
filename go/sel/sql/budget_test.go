@@ -7,7 +7,7 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-// GO-C11: a constant the evaluator refuses for size is E_SQL_INVALID, not a
+// A constant the evaluator refuses for size is E_SQL_INVALID, not a
 // panic out of the translator.
 func TestTranslateRefusesAnOverSizedConstant(t *testing.T) {
 	p, err := sel.Compile(`PADL("7", 318446744073709551616, "0") $== NAME`)

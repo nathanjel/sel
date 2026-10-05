@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Semantic checksums for the round-2 workloads (GO-P11 … GO-P20), recorded at the
-// baseline before any round-2 change. A speedup that changes an answer fails here.
+// Semantic checksums for the workloads of collections_bench_test.go, recorded
+// before the optimisations they measure. A speedup that changes an answer fails here.
 var perf2Checksums = map[string]string{
 	"p11 get":        "t\"1225396064\"",
 	"p11 has":        "t\"1754\"",

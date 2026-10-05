@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Item 1: math plan registers belong to one evaluation of one Context. One
+// Math plan registers belong to one evaluation of one Context. One
 // Program with big constants and plans, run on eight goroutines at once, must
 // give every goroutine the answer it gives alone (run under -race).
 func TestPlanRegistersAreNotSharedBetweenRuns(t *testing.T) {

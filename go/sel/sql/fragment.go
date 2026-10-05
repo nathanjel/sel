@@ -86,14 +86,14 @@ func (f *Fragment) AsValue(mode Mode) string {
 		refuse("E_SQL_SHAPE", "this expression yields a list, and a SQL expression is a scalar", Pos{})
 	}
 	if f.Kind == KindStatement {
-		refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use asStatement()", Pos{})
+		refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use AsStatement", Pos{})
 	}
 	return f.Join(mode)
 }
 
 func (f *Fragment) AsStatement(mode Mode) string {
 	if f.Kind != KindStatement {
-		refuse("E_SQL_SHAPE", fmt.Sprintf("expected STATEMENT fragment, got %s; use asValue() or asCondition()", f.Kind), Pos{})
+		refuse("E_SQL_SHAPE", fmt.Sprintf("expected STATEMENT fragment, got %s; use AsValue or AsCondition", f.Kind), Pos{})
 	}
 	return f.Join(mode)
 }

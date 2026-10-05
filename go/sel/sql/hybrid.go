@@ -73,8 +73,7 @@ func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel
 }
 
 // containsUnsupportedMemo remembers each helper's verdict: a helper read twice
-// by the next one (`H1 = H0 + H0`) was walked twice per level, 2^n in all
-// (GO-C21).
+// by the next one (`H1 = H0 + H0`) was walked twice per level, 2^n in all.
 func containsUnsupportedMemo(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool, memo map[string]bool) bool {
 	if node == nil {
 		return false
@@ -457,7 +456,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		// Scopes come from the binding form, so a binder in any spelling (the
 		// four- and five-argument forms too) is left as the name it is, and what
 		// it binds is in scope in the body: a literal helper named like a binder
-		// was inlined into the binder slot (PY-C24, LISP-C28).
+		// was inlined into the binder slot.
 		form := sel.BindingForm(node.S, node.Items, node.Spec)
 		inner := append([]string{}, bound...)
 		if form != nil {
@@ -546,7 +545,7 @@ func readNames(node *sel.Node, out map[string]bool) {
 // referencedAssignments keeps the assignments the node reads, and those they
 // read in turn, in the order the program wrote them. A worklist over the names,
 // each assignment's reads taken once: the fixed-point loop it replaced went round
-// once per link of a helper chain, and a chain of 20,000 was quadratic (GO-C21).
+// once per link of a helper chain, and a chain of 20,000 was quadratic.
 func referencedAssignments(leading []*sel.Node, node *sel.Node) []*sel.Node {
 	byName := make(map[string][]*sel.Node)
 	for _, s := range leading {
@@ -1150,8 +1149,8 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 			continue
 		}
 		// A 3-argument LINK names the left side of its joined row after the variable
-		// the pipeline started from, wherever in the continuation it falls (spec 7.4,
-		// GO-C22), so the rows are bound to that name first. A step that also READS the
+		// the pipeline started from, wherever in the continuation it falls (spec 7.4),
+		// so the rows are bound to that name first. A step that also READS the
 		// name (a self-join) would find the truncated rows where run() finds the whole
 		// relation: that split is not made. The same rule in every host; a LINK in the
 		// prefix has already named its sides.
@@ -1184,7 +1183,7 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		continuationAst := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", remaining[0].Pos), remaining))
 		if needsRebind {
 			// A joined row names its left side after the relation it came from
-			// (ORDERS, orders), never after `_INPUT` (spec §7.4, GO-C22): the
+			// (ORDERS, orders), never after `_INPUT` (spec §7.4): the
 			// rows are bound to that name for the continuation, which reads it
 			// from nothing else (checked above).
 			bind := sel.NewNode(sel.NodeAssign, remaining[0].Pos)
@@ -1327,8 +1326,8 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 		return nil, fmt.Errorf("hybrid plan has no continuation program")
 	}
 	// IsNone is the kind of every list and record too; the test for "no value" is
-	// IsNull, and using the wrong one threw away every variable the caller held
-	// (GO-C5). privateContext keeps that test.
+	// IsNull, and using the wrong one threw away every variable the caller held.
+	// privateContext keeps that test.
 	continuationContext := privateContext(plan, context)
 	continuationContext.Set(plan.ContinuationSourceVar, rows)
 	return plan.ContinuationProgram.Run(continuationContext)

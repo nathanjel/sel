@@ -1,4 +1,4 @@
-// The Go side of the hybrid-parity lane (T11): a line-oriented JSON driver.
+// The Go side of the hybrid-parity lane: a line-oriented JSON driver.
 //
 // Go has no SQLite driver in its standard library, so tools/check-hybrid-parity-go.py
 // owns the database: it asks this process to PLAN a program, executes the prefix
