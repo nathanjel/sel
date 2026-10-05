@@ -438,13 +438,6 @@ std::string_view section_name(Section s) {
   return "";
 }
 
-std::optional<Section> section_from_name(std::string_view name) {
-  if (name == "ops") return Section::Ops;
-  if (name == "funcs") return Section::Funcs;
-  if (name == "skel") return Section::Skel;
-  return std::nullopt;
-}
-
 // --- registration ------------------------------------------------------------
 
 void Map::define_dialect(const std::string& name, const DialectSpec& spec) {

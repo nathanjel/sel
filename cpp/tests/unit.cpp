@@ -1013,11 +1013,13 @@ void test_value() {
   independent.set("label", Value::text("separate"));
   selt::eq(scalar.get("label")->scalar(), std::string("shared"), "clone owns independent collection state");
   Value numeric_alias = scalar;
-  scalar.set_dec_val(nullptr);
-  selt::ok(!numeric_alias.has_dec() && independent.has_dec(), "decimal reset aliases but clone owns its cache");
+  Internals::set_dec(scalar, dec_from_int(18));
+  selt::ok(numeric_alias.dec_val() && dec_to_int(*numeric_alias.dec_val()) == 18 &&
+               independent.dec_val() && dec_to_int(*independent.dec_val()) == 17,
+           "a decimal cache write aliases but clone owns its cache");
   Value lazy = Value::integer(42);
   Value lazy_copy = lazy.clone();
-  lazy.set_dec(dec_from_int(43));
+  Internals::set_dec(lazy, dec_from_int(43));
   selt::eq(lazy_copy.scalar(), std::string("42"), "unformatted clone owns independent decimal state");
   Value leaf = Value::boolean(true);
   selt::ok(leaf.get("missing") == nullptr && leaf.size() == 0 && leaf.entries().empty(),
@@ -1074,6 +1076,43 @@ void test_value() {
   selt::raises("E_NULL", [] { Value::none().as_text(); }, "no scalar and no children is null");
   selt::raises("E_NO_SCALAR", [] { Value::list({}).as_text(); }, "empty list has no scalar");
   selt::raises("E_NOT_BOOL", [] { Value::text("TRUE").as_bool(); }, "there is no truthiness");
+}
+
+// The Value members an embedder may call, and the ones it may not. The
+// decimal-cache writers and the list flag bypass every check the constructors
+// make (a TEXT given a decimal it does not spell, a record told it is a list
+// losing its fields), so they are private; these concepts fail to compile the
+// moment one becomes reachable again. Templates, because an inaccessible
+// member is only a substitution failure inside one.
+template <class V> concept can_set_dec = requires(const V& v, const Dec& d) { v.set_dec(d); };
+template <class V> concept can_set_dec_val =
+    requires(const V& v) { v.set_dec_val(std::shared_ptr<const Dec>{}); };
+template <class V> concept can_set_is_list = requires(V& v) { v.set_is_list(true); };
+template <class V> concept can_read_dec_ref = requires(const V& v) { v.dec_ref(); };
+template <class V> concept can_name_impl = requires { sizeof(typename V::Impl); };
+template <class V> concept can_name_collection = requires { sizeof(typename V::Collection); };
+template <class V> concept can_num_shared_dec =
+    requires { V::num(std::shared_ptr<const Dec>{}); };
+static_assert(!can_set_dec<Value> && !can_set_dec_val<Value> && !can_set_is_list<Value>);
+static_assert(!can_read_dec_ref<Value> && !can_name_impl<Value> && !can_name_collection<Value>);
+static_assert(!can_num_shared_dec<Value>);
+
+void test_public_value_api() {
+  selt::section("public Value API");
+
+  // The retained constructors that only host code calls.
+  const std::vector<std::uint8_t> raw{0x00, 0xff, 0x41};
+  selt::eq(Value::bin(raw).dump(), std::string("b00ff41"), "bin from a byte vector");
+  selt::ok(Value::bin(raw).eql(Value::bin(std::string("\x00\xff\x41", 3))),
+           "both bin constructors build the same value");
+  selt::ok(Value::null().eql(Value::none()) && Value::null().is_none() && Value::null().is_null(),
+           "null() is none()");
+
+  // dec_val() reads the cache and never parses.
+  selt::ok(Value::text("2.50").dec_val() == nullptr, "dec_val: an unread text holds no decimal");
+  selt::ok(Value::boolean(true).dec_val() == nullptr, "dec_val: a bool holds no decimal");
+  const Value n = Value::num("2.50");
+  selt::ok(n.dec_val() && n.dec_val()->scale == 2 && !n.dec_val()->neg, "dec_val: a number's decimal");
 }
 
 void test_host_api() {
@@ -2315,6 +2354,7 @@ int main() {
   test_round3_fast_paths();
   test_collector_copies_and_depth();
   test_value();
+  test_public_value_api();
   test_host_api();
   test_evaluation_order();
   test_relational_optimizations();

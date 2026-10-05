@@ -2150,6 +2150,45 @@ struct Internals {
       }
     }
   }
+
+  // Containers have one allocation for their header and payload. Scalars retain
+  // the small header and can still acquire a separate payload through an alias.
+  // Here rather than at namespace scope because Value::Impl is private to Value.
+  struct CollectionImpl : Value::Impl {
+    Value::Collection payload;
+    CollectionImpl() {
+      inline_collection = true;
+      collection.reset(&payload);
+    }
+    // The derived object owns this payload. Release the base's pointer before
+    // member destruction so it cannot delete the embedded Collection a second time.
+    ~CollectionImpl() { collection.release(); }
+  };
+
+  static void delete_impl(Value::Impl* impl) {
+    if (impl->inline_collection) delete static_cast<CollectionImpl*>(impl);
+    else delete impl;
+  }
+
+  struct ImplFreelist {
+    Value::Impl* head = nullptr;
+    std::size_t count = 0;
+    static constexpr std::size_t MAX_CACHED = 2048;
+    ~ImplFreelist() {
+      while (head) {
+        Value::Impl* next = head->next_free;
+        ::operator delete(head);
+        head = next;
+      }
+    }
+  };
+
+  // The decimal cache (Value::dec_val's writer side). Private on Value because
+  // it trusts its caller: the interpreter stores only the decimal it has just
+  // parsed from, or computed for, the value's own scalar.
+  static bool has_dec(const Value& v) { return v.has_dec(); }
+  static const Dec& dec_ref(const Value& v) { return v.dec_ref(); }
+  static void set_dec(const Value& v, const Dec& d) { v.set_dec(d); }
 };
 
 namespace {
@@ -2210,37 +2249,7 @@ Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std
 }  // namespace
 
 namespace {
-// Containers have one allocation for their header and payload. Scalars retain
-// the small header and can still acquire a separate payload through an alias.
-struct CollectionImpl : Value::Impl {
-  Value::Collection payload;
-  CollectionImpl() {
-    inline_collection = true;
-    collection.reset(&payload);
-  }
-  // The derived object owns this payload. Release the base's pointer before
-  // member destruction so it cannot delete the embedded Collection a second time.
-  ~CollectionImpl() { collection.release(); }
-};
-
-void delete_impl(Value::Impl* impl) {
-  if (impl->inline_collection) delete static_cast<CollectionImpl*>(impl);
-  else delete impl;
-}
-
-struct ImplFreelist {
-  Value::Impl* head = nullptr;
-  std::size_t count = 0;
-  static constexpr std::size_t MAX_CACHED = 2048;
-  ~ImplFreelist() {
-    while (head) {
-      Value::Impl* next = head->next_free;
-      ::operator delete(head);
-      head = next;
-    }
-  }
-};
-thread_local ImplFreelist tl_impl_freelist;
+thread_local Internals::ImplFreelist tl_impl_freelist;
 }  // namespace
 
 void* Value::Impl::operator new(std::size_t size) {
@@ -2254,7 +2263,7 @@ void* Value::Impl::operator new(std::size_t size) {
 }
 
 void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
-  if (size == sizeof(Value::Impl) && ptr && tl_impl_freelist.count < ImplFreelist::MAX_CACHED) {
+  if (size == sizeof(Value::Impl) && ptr && tl_impl_freelist.count < Internals::ImplFreelist::MAX_CACHED) {
     Value::Impl* p = static_cast<Value::Impl*>(ptr);
     p->next_free = tl_impl_freelist.head;
     tl_impl_freelist.head = p;
@@ -2266,7 +2275,7 @@ void Value::Impl::operator delete(void* ptr, std::size_t size) noexcept {
 
 Value::Value() : p_(new Impl()) {}
 
-Value::Impl* Value::make_collection_impl() { return new CollectionImpl(); }
+Value::Impl* Value::make_collection_impl() { return new Internals::CollectionImpl(); }
 
 Kind Value::kind() const {
   return p_ ? p_->kind : Kind::None;
@@ -2278,18 +2287,6 @@ bool Value::is_bin() const { return p_ && kind() == Kind::Bin; }
 bool Value::is_bool() const { return p_ && kind() == Kind::Bool; }
 bool Value::is_list() const {
   return p_ && p_->is_list;
-}
-void Value::set_is_list(bool b) {
-  if (!p_) return;
-  if (!b && p_->is_list && !p_->coll().storage.empty()) {
-    ensure_children();
-    p_->mutable_coll().storage.clear();
-  }
-  p_->is_list = b;
-  if (b) {
-    p_->mutable_coll().shape.reset();
-    p_->mutable_coll().storage.clear();
-  }
 }
 
 // The deep copy. Recursive, because children are handles too: copying the
@@ -2382,12 +2379,12 @@ void Value::destroy(Impl* p) {
   };
 
   steal(p);
-  delete_impl(p);
+  Internals::delete_impl(p);
   while (!pending.empty()) {
     Impl* curr = pending.back();
     pending.pop_back();
     steal(curr);
-    delete_impl(curr);
+    Internals::delete_impl(curr);
   }
 }
 
@@ -2425,11 +2422,6 @@ Value Value::num(const Dec& d) {
   return Internals::from_dec(dec_guard(dec_make(d.neg, std::move(digits), d.scale), Pos{}));
 }
 
-Value Value::num(std::shared_ptr<const Dec> d) {
-  if (!d) return Value::none();
-  return Value::num(*d);
-}
-
 namespace {
 
 Value make_text(std::string utf8) { return Internals::raw(Kind::Text, std::move(utf8), false); }
@@ -2448,7 +2440,7 @@ Value make_int(long long n) {
 
 Value Value::none() { return Internals::raw(Kind::None, "", false); }
 
-Value Value::null() { return Internals::raw(Kind::None, "", false, false); }
+Value Value::null() { return none(); }
 
 Value Value::text(std::string utf8) {
   if (!sel::is_valid_utf8(utf8)) {
@@ -4312,7 +4304,6 @@ class Args {
   Pos pos_of(int i) const { return nodes_[i]->pos; }
   Pos pos() const { return pos_; }
   const std::string& name() const { return name_; }
-  Context& ctx() { return ctx_; }
 
   // The argument's value, moved out: for built-ins that read each argument once
   // and keep it (LIST, RECORD), so a fresh temporary can be adopted without a copy.
@@ -4335,7 +4326,7 @@ class Args {
 
   Dec dec(int i) {
     const Value& v = val(i).scalar_source(pos_of(i));
-    if (v.has_dec()) return v.dec_ref();
+    if (Internals::has_dec(v)) return Internals::dec_ref(v);
     if (v.kind() != Kind::Text) {
       fail("E_NOT_NUM",
            std::string("expected a number, got ") +
@@ -4346,7 +4337,7 @@ class Args {
     if (!dec_parse(v.scalar(), d, pos_of(i))) {
       fail("E_NOT_NUM", "not a number: \"" + v.scalar() + "\"", pos_of(i));
     }
-    v.set_dec(d);
+    Internals::set_dec(v, d);
     return d;
   }
 
@@ -4518,8 +4509,8 @@ const Dec& as_dec_ref(const Value& v, Pos pos);
 
 Dec as_dec(const Value& v, Pos pos) {
   const Value& src = v.scalar_source(pos);
-  if (src.has_dec()) {
-    return src.dec_ref();
+  if (Internals::has_dec(src)) {
+    return Internals::dec_ref(src);
   }
   if (src.kind() != Kind::Text) {
     fail("E_NOT_NUM",
@@ -4529,13 +4520,13 @@ Dec as_dec(const Value& v, Pos pos) {
   }
   Dec d;
   if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
-  src.set_dec(d);
+  Internals::set_dec(src, d);
   return d;
 }
 
 const Dec& as_dec_ref(const Value& v, Pos pos) {
   const Value& src = v.scalar_source(pos);
-  if (!src.has_dec()) {
+  if (!Internals::has_dec(src)) {
     if (src.kind() != Kind::Text) {
       fail("E_NOT_NUM",
            std::string("expected a number, got ") +
@@ -4544,9 +4535,9 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
     }
     Dec d;
     if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
-    src.set_dec(std::move(d));
+    Internals::set_dec(src, std::move(d));
   }
-  return src.dec_ref();
+  return Internals::dec_ref(src);
 }
 
 Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
@@ -7609,11 +7600,7 @@ void register_aggregates() {
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
-                if (kept.empty()) {
-                  Value out = Value::none();
-                  out.set_is_list(true);
-                  return out;
-                }
+                if (kept.empty()) return Value::list({});
                 if (sequential) return Value::list(std::move(kept));
                 std::vector<Value::Entry> entries;
                 entries.reserve(kept.size());

@@ -154,6 +154,8 @@ class Value {
   ~Value();
 
   static Value none();
+  // The same value as none(): SEL has one empty value (spec/SPEC.md §3.1), and
+  // NULL is its literal spelling. Both names are kept for embedders.
   static Value null();
   static Value text(std::string utf8);        // E_UTF8 if not valid UTF-8
   static Value bin(std::string bytes);
@@ -163,7 +165,6 @@ class Value {
   // text is not a number in the sense of spec/SPEC.md §4.
   static Value num(const std::string& decimal);
   static Value num(const Dec& d);
-  static Value num(std::shared_ptr<const Dec> d);
   static Value integer(long long n);
   // A list keyed "1".."n", as `,` builds.
   static Value list(std::vector<Value> values);
@@ -187,7 +188,6 @@ class Value {
   bool is_bin() const;
   bool is_bool() const;
   bool is_list() const;
-  void set_is_list(bool b);
 
   // --- children. Insertion-ordered; re-assigning a key keeps its position.
   std::size_t size() const;
@@ -248,11 +248,20 @@ class Value {
   // reported at `pos`, the node that would build the too-deep value.
   Value clone_below(int levels, Pos pos = {}) const;
 
+  // The parsed decimal this value already holds, or null when it holds none
+  // (a TEXT nobody has read as a number yet, a BOOL, a list). A read of a cache:
+  // it never parses and never throws. Valid while this value is.
+  const Dec* dec_val() const;
+
+ private:
+  friend struct Internals;
+
+  // The decimal cache. Private: writing one skips every check Value::num(const
+  // Dec&) makes, and a TEXT given a decimal it does not spell stops being the
+  // text it shows. The interpreter fills it through Internals.
   bool has_dec() const;
   const Dec& dec_ref() const;
   void set_dec(const Dec& d) const;
-  const Dec* dec_val() const;
-  void set_dec_val(std::shared_ptr<const Dec> d) const;
 
   // Optional state belongs to the shared implementation, not to a handle:
   // allocating it through any alias must remain visible through every alias.
@@ -289,9 +298,6 @@ class Value {
     static void* operator new(std::size_t size);
     static void operator delete(void* ptr, std::size_t size) noexcept;
   };
-
- private:
-  friend struct Internals;
 
   explicit Value(Impl* impl) : p_(impl) {}
   static Impl* make_collection_impl();
@@ -360,10 +366,6 @@ inline void Value::set_dec(const Dec& d) const {
 }
 inline const Dec* Value::dec_val() const {
   return p_ ? p_->decimal.get() : nullptr;
-}
-inline void Value::set_dec_val(std::shared_ptr<const Dec> d) const {
-  if (d) set_dec(*d);
-  else if (p_) p_->decimal.reset();
 }
 
 // --- programs ---------------------------------------------------------------

@@ -32,9 +32,9 @@ int main(int argc, char** argv) {
   values.clear();
   const auto end = Clock::now();
   const auto released = bytes();
-  std::cout << "{\"mode\":\"" << mode << "\",\"header_bytes\":"
-            << sizeof(sel::Value::Impl) << ",\"collection_bytes\":"
-            << sizeof(sel::Value::Collection) << ",\"live_bytes\":"
+  // Value's implementation types are private, so the probe reports what the
+  // allocator saw rather than their sizes.
+  std::cout << "{\"mode\":\"" << mode << "\",\"live_bytes\":"
             << live - initial << ",\"after_clear_bytes\":" << released - initial
             << ",\"build_ms\":"
             << std::chrono::duration<double, std::milli>(built - start).count()

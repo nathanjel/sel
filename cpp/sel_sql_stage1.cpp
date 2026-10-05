@@ -524,7 +524,7 @@ std::int32_t constant_scale(const SNode& n, sel::Value& root) {
     // require_number is the operators' own coercion, and it leaves the parsed
     // decimal on the scalar it read -- which is where the scale is.
     require_number(v, n.pos());
-    return v.scalar_source(n.pos()).dec_ref().scale;
+    return v.scalar_source(n.pos()).dec_val()->scale;
   } catch (const SelError& e) {
     refuse_as_sel(e, n);
   }

@@ -238,9 +238,6 @@ const Rules& shipped_rules();
 enum class Section { Ops, Funcs, Skel };
 
 std::string_view section_name(Section s);
-// For a caller reading a section out of text -- a .sqlt register block, a
-// config file. Nullopt for anything that is not a section name.
-std::optional<Section> section_from_name(std::string_view name);
 
 // --- writing -----------------------------------------------------------------
 
