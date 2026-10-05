@@ -28,13 +28,21 @@ namespace sel::sql {
 namespace {
 
 constexpr std::string_view SQL_SPECIAL_CALLS[] = {
-    "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD", "LIST"};
+    "IF", "COND", "COALESCE", "COUNT", "SUM", "MIN", "MAX", "RECORD", "LIST"};
 
-// Root variable names the program assigns to, anywhere (helper statements, aggregate
-// bodies, index targets `A[k] = x` which write into A). Iterative: a flat chain of
-// 400k operators is one tree as deep as the source is long.
-std::set<std::string> assigned_roots(const Node& root) {
-  std::set<std::string> names;
+// What running a continuation can do to the context it is given: the root names
+// it assigns to, anywhere (helper statements, aggregate bodies, index targets
+// `A[k] = x` which write into A), and whether it calls an application's own
+// function, which is handed values and may change them through its argument --
+// directly, inside IF, inside an aggregate body. Iterative: a flat chain of 400k
+// operators is one tree as deep as the source is long.
+struct ContinuationEffects {
+  std::set<std::string> assigned_roots;
+  bool calls_application_function = false;
+};
+
+ContinuationEffects continuation_effects(const Node& root) {
+  ContinuationEffects out;
   std::vector<const Node*> stack{&root};
   while (!stack.empty()) {
     const Node* n = stack.back();
@@ -42,26 +50,31 @@ std::set<std::string> assigned_roots(const Node& root) {
     if (n->t == NT::Assign) {
       const Node* target = n->l.get();
       while (target && target->t == NT::Index) target = target->l.get();
-      if (target && target->t == NT::Var) names.insert(target->s);
+      if (target && target->t == NT::Var) out.assigned_roots.insert(target->s);
     }
+    if (n->t == NT::Call && n->spec && n->spec->host) out.calls_application_function = true;
     if (n->l) stack.push_back(n->l.get());
     if (n->r) stack.push_back(n->r.get());
     for (const auto& item : n->items) if (item) stack.push_back(item.get());
   }
-  return names;
+  return out;
 }
 
-// A context the program may write to without the caller seeing it (CPP-C54), built
-// without deep-copying what the program never assigns (CPP-P24): entries it does not
-// assign to are shared with the caller's context (nothing writes to them), entries it
-// assigns to are cloned. A context that is not a plain variable map (a scalar, a list)
-// keeps the whole-value clone.
+// A context the program may write to without the caller seeing it (CPP-C54): the
+// caller's context is never written, whatever the plan. Built without deep-copying
+// what the program cannot change (CPP-P24): entries it does not assign to are
+// shared with the caller's context, entries it assigns to are cloned. Two cases
+// keep the whole-value clone: a context that is not a plain variable map (a
+// scalar, a list), and a continuation that calls an application function, which
+// may write into any value it is handed.
 Value isolated_context(const Value& context, const Node& ast) {
   if (!context.is_none() || context.is_list()) return context.clone();
-  const std::set<std::string> roots = assigned_roots(ast);
+  const ContinuationEffects effects = continuation_effects(ast);
+  if (effects.calls_application_function) return context.clone();
   Value out = Value::none();
   for (const auto& entry : context.entries()) {
-    out.set(entry.first, roots.count(entry.first) ? entry.second.clone() : entry.second);
+    out.set(entry.first,
+            effects.assigned_roots.count(entry.first) ? entry.second.clone() : entry.second);
   }
   return out;
 }
@@ -316,7 +329,7 @@ std::optional<MapRecordDetails> map_record_details(const NodePtr& step) {
   return out;
 }
 
-NodePtr var_node(std::string name, Pos pos) {
+std::shared_ptr<Node> var_node(std::string name, Pos pos) {
   auto node = std::make_shared<Node>();
   node->t = NT::Var;
   node->s = std::move(name);
@@ -546,13 +559,14 @@ Definitions literal_helpers(const std::vector<NodePtr>& leading) {
 // The pipeline the planner probes: the result unwound, and where its source
 // is a helper, that helper's definition unwound in turn.
 //
-// `rebound` collects the helpers whose definition was unwound INTO the steps and
-// whose own name is the source that is left: `ORDERS = ORDERS .> DROP(2)` reads
-// the ORDERS binding once, so what is left is that binding and the helper's
-// assignment must not be carried along a second time (PHP-C34).
+// When the source that is left has a helper's name -- `ORDERS = ORDERS .> DROP(2)`
+// unwinds to the ORDERS binding with the DROP among the steps -- it is marked as a
+// read of the binding (Node::binding_read), so wrapping a tree in its helpers again
+// does not inline the helper into the very read that was its own definition (DROP
+// twice), while a later step that reads ORDERS as a value still gets the helper
+// and sees the reassigned rows, as run() does (hybrid.reread-reassigned-source).
 std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
-    const NodePtr& result, const Definitions& defs, const Definitions& literals,
-    std::set<std::string>* rebound = nullptr) {
+    const NodePtr& result, const Definitions& defs, const Definitions& literals) {
   auto [source, steps] = unwind_pipeline(inline_literals(result, literals));
   std::set<std::string> seen;
   while (source && source->t == NT::Var && defs.count(source->s) != 0 &&
@@ -562,8 +576,10 @@ std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
     source = inner.first;
     steps.insert(steps.begin(), inner.second.begin(), inner.second.end());
   }
-  if (rebound && source && source->t == NT::Var && seen.count(source->s) != 0) {
-    rebound->insert(source->s);
+  if (source && source->t == NT::Var && defs.count(source->s) != 0) {
+    auto marked = copy_node(source);
+    marked->binding_read = true;
+    source = marked;
   }
   return {source, steps};
 }
@@ -573,7 +589,8 @@ std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
 void read_names(const NodePtr& node, std::set<std::string>& out) {
   if (!node) return;
   if (node->t == NT::Var) {
-    out.insert(node->s);
+    // A marked read of the binding is not a read of the same-named helper.
+    if (!node->binding_read) out.insert(node->s);
     return;
   }
   read_names(node->l, out);
@@ -609,24 +626,7 @@ std::vector<NodePtr> referenced_assignments(const std::vector<NodePtr>& leading,
 // `node` behind the assignments it depends on, as the program wrote them -- a
 // seq the translator's stage 1 inlines and the evaluator runs in order -- or
 // `node` itself when it depends on none.
-std::size_t count_reads(const NodePtr& node, const std::string& name) {
-  if (!node) return 0;
-  std::size_t n = node->t == NT::Var && node->s == name ? 1 : 0;
-  n += count_reads(node->l, name) + count_reads(node->r, name);
-  for (const NodePtr& item : node->items) n += count_reads(item, name);
-  return n;
-}
-
-NodePtr with_helpers(const std::vector<NodePtr>& leading_all, const NodePtr& node,
-                     const std::set<std::string>& rebound = {}) {
-  // A rebound helper (see unwind_through_helpers) is already IN the steps: its
-  // assignment is dropped when the tree reads its name only as the source.
-  std::vector<NodePtr> leading;
-  leading.reserve(leading_all.size());
-  for (const NodePtr& s : leading_all) {
-    if (rebound.count(assigned_name(s)) != 0 && count_reads(node, assigned_name(s)) <= 1) continue;
-    leading.push_back(s);
-  }
+NodePtr with_helpers(const std::vector<NodePtr>& leading, const NodePtr& node) {
   const std::vector<NodePtr> kept = referenced_assignments(leading, node);
   if (kept.empty()) return node;
   auto seq = std::make_shared<Node>();
@@ -646,9 +646,8 @@ struct Helpers {
   const Definitions& defs;
   const Bindings& bindings;
   ConstScope& scope;
-  std::set<std::string> rebound = {};
 
-  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node, rebound); }
+  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node); }
 
   // The physical sources of a wrapped tree are read off what the translator
   // renders: stage 1's tree, where an assignment a binder shadows is gone.
@@ -994,8 +993,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     return node && node->t == NT::Var && checked.has(node->s) &&
            checked.get(node->s, node->pos).kind() == Binding::Kind::Relation;
   };
-  std::set<std::string> rebound;
-  const auto unwound = unwind_through_helpers(parts.result, defs, literals, &rebound);
+  const auto unwound = unwind_through_helpers(parts.result, defs, literals);
   if (unwound.second.empty() || !is_relation(unwound.first)) {
     return pure_memory_plan(program, dialect, checked);
   }
@@ -1009,7 +1007,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   auto [source, steps] = unwind_pipeline(optimized);
   if (steps.empty() || !is_relation(source)) return pure_memory_plan(program, dialect, checked);
 
-  const Helpers helpers{parts.leading, defs, checked, scope, rebound};
+  const Helpers helpers{parts.leading, defs, checked, scope};
 
   // The whole pipeline, unless its rows would be a bucket's keys: the
   // translator renders a bare bucket as its keys, and a plan that pushes the
@@ -1089,8 +1087,11 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
                                    steps.end());
     const Pos continuation_pos = remaining.front()->pos;
     const std::string feed = needs_rebind ? source->s : "_INPUT";
-    const NodePtr continuation_ast =
-        helpers.wrap(build_pipeline(var_node(feed, continuation_pos), remaining));
+    // The continuation reads the rows it is fed, under `feed`: never a helper of
+    // that name, which would run again over them.
+    auto input = var_node(feed, continuation_pos);
+    input->binding_read = true;
+    const NodePtr continuation_ast = helpers.wrap(build_pipeline(input, remaining));
     HybridPlan plan;
     plan.continuation_source_var = feed;
     plan.dialect = dialect;

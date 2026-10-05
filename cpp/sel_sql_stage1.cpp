@@ -82,6 +82,9 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
   }
   switch (node->t) {
     case NT::Var: {
+      // A read the hybrid planner marked as the catalogue's binding is never a
+      // read of a same-named helper (see Node::binding_read).
+      if (node->binding_read) return SNode::leaf(node);
       // `bound` before `defs`: an aggregate binder SHADOWS a same-named helper.
       // `B = 7; ALL((1,2), B, B > 0)` translates to (1 > 0) AND (2 > 0) -- the
       // helper is never inlined into the body.

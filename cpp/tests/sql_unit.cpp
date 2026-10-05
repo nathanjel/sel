@@ -551,6 +551,77 @@ int main() {
       odd.set("A", sel::Value::num("1"));
       check("a context with a scalar is cloned whole", run("A + 1", odd), "t\"2\"");
     }
+    // Hybrid isolation from application functions: a host function is handed
+    // values and may change them, so a continuation that calls one runs on a copy
+    // of the whole context -- direct, inside IF, inside an aggregate body, and in
+    // the continuation of a real hybrid split. The caller's A.k stays "1".
+    {
+      sel::register_function("POKE", 1, 1, [](sel::HostArgs& args) {
+        sel::Value target = args.val(0);   // a handle: set() writes the shared value
+        target.set("k", sel::Value::text("9"));
+        return sel::Value::text("poked");
+      });
+      const Bindings rb({{"ORDERS", orders()}});
+      const auto fresh = [] {
+        sel::Value context = sel::Value::none();
+        sel::Value a = sel::Value::none();
+        a.set("k", sel::Value::text("1"));
+        context.set("A", a);
+        context.set("ORDERS", sel::evaluate("LIST(RECORD('ID', '1'), RECORD('ID', '2'))"));
+        return context;
+      };
+      const auto in_memory = [](const sel::sql::HybridPlan& plan) {
+        return [&plan](const std::string&, const std::vector<sel::Value>&) {
+          sel::Value c = sel::Value::none();
+          c.set("ORDERS", sel::evaluate("LIST(RECORD('ID', '1'), RECORD('ID', '2'))"));
+          return sel::Program("", plan.sql_prefix_ast).run(c);
+        };
+      };
+      for (const char* source : {"POKE(A)", "IF(TRUE, POKE(A), 0)", "MAP(LIST(1), POKE(A))",
+                                 "ORDERS .> FILTER(_[\"ID\"] > 1) .> MAP(RECORD(\"p\", POKE(A), \"r\", REPEAT(\"x\", 2)))"}) {
+        const auto plan = Sql::plan_hybrid(sel::compile(source), "sqlite", rb);
+        sel::Value context = fresh();
+        (void)Sql::execute_hybrid(plan, in_memory(plan), context);
+        check(std::string("a host function cannot write the caller's context: ") + source,
+              context.get("A")->get("k")->scalar(), "1");
+      }
+    }
+    // A continuation that reads the reassigned source as a value sees the
+    // reassigned value, as run() does: n is 4 (six rows, two dropped), three rows,
+    // and the SQL prefix is LIMIT 3 OFFSET 2.
+    {
+      sel::register_function("HOSTF", 1, 1, [](sel::HostArgs& args) { return args.val(0); });
+      const Bindings rb({{"ORDERS", Binding::relation(
+          "orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}})}});
+      const sel::Value rows = sel::evaluate(
+          "LIST(RECORD('ID', '1'), RECORD('ID', '2'), RECORD('ID', '3'), RECORD('ID', '4'), "
+          "RECORD('ID', '5'), RECORD('ID', '6'))");
+      const sel::Program program = sel::compile(
+          "ORDERS = ORDERS .> DROP(2); "
+          "ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"x\", HOSTF(_[\"ID\"])))");
+      const auto plan = Sql::plan_hybrid(program, "sqlite", rb);
+      const auto context = [&] {
+        sel::Value c = sel::Value::none();
+        c.set("ORDERS", rows);
+        return c;
+      };
+      const auto prefix_in_memory = [&](const std::string&, const std::vector<sel::Value>&) {
+        sel::Value c = context();
+        return sel::Program("", plan.sql_prefix_ast).run(c);
+      };
+      sel::Value direct_context = context();
+      const std::string want = program.run(direct_context).dump();
+      const std::string got = Sql::execute_hybrid(plan, prefix_in_memory, context()).dump();
+      check("a reread of the reassigned source agrees with run()", got, want);
+      check("...which is n=4 over three rows",
+            want, "-{\"1\"=-{\"n\"=t\"4\", \"x\"=t\"3\"}, \"2\"=-{\"n\"=t\"4\", \"x\"=t\"4\"}, "
+                  "\"3\"=-{\"n\"=t\"4\", \"x\"=t\"5\"}}");
+      check("...and the prefix is LIMIT 3 OFFSET 2",
+            plan.sql_statement ? std::to_string(plan.sql_statement->as_statement().find("LIMIT 3 OFFSET 2") !=
+                                                std::string::npos)
+                               : std::string("no SQL"),
+            "1");
+    }
     // CPP-C35: a FILTER is not hoisted above a SORT_BY whose key can raise.
     {
       const Bindings rb({{"ORDERS", orders()}});

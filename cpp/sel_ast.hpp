@@ -73,6 +73,13 @@ struct Node {
   // (a MAP or a FILTER) write nothing, so no kept element can change before the
   // next step has copied what it keeps (CPP-REG-1, the Rust host's borrowed_filter).
   bool borrow_rows = false;
+  // On a Var, set by the hybrid planner only: this read is of the catalogue's
+  // binding, not of a same-named helper. `ORDERS = ORDERS .> DROP(2); ORDERS .> ...`
+  // unwinds to the binding ORDERS with the DROP among the steps; the source read
+  // so marked is not a read of the helper ORDERS (which must not be inlined into
+  // it a second time), while another read of ORDERS in a later step still is.
+  // The evaluator ignores it.
+  bool binding_read = false;
   // Bin: the operator resolved once, at parse time, to a BinOp code (0 = not yet
   // resolved; eval_binary then derives it from `s`). Set only where `s` is, and
   // `s` of a Bin node never changes afterwards.
