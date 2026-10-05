@@ -141,6 +141,32 @@ X + 1
 --- error
 E_SQL_BINDING
 ===
+### name: bind.value.num-declared-bool-is-a-binding-error
+--- note
+A value binding declaring type NUM must hold a number. A BOOL is refused as a malformed
+binding (E_SQL_BINDING), in every host: Go raised the value accessor's own E_NOT_TEXT, as a
+host panic, before its BOOL test could run.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": true, "type": "NUM"}}
+--- source
+X + 1
+--- error
+E_SQL_BINDING
+===
+### name: bind.value.num-declared-bin-is-a-binding-error
+--- note
+The same for a BIN: JS, Python and Go raised SEL's E_NOT_TEXT from the value accessor.
+--- dialect
+mariadb
+--- bindings
+{"X": {"kind": "value", "value": {"bin": "6162"}, "type": "NUM"}}
+--- source
+X + 1
+--- error
+E_SQL_BINDING
+===
 ### name: bind.value.untyped-non-canonical-is-fine
 --- note
 Without `type: NUM` the value is text, goes out quoted, and the characters the

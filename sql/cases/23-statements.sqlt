@@ -361,6 +361,36 @@ ITEMS .> TAKE(-1)
 E_RANGE 1:15
 ===
 
+### name: stmt.refusal.take-text-is-sels-not-num
+--- note
+SEL's own code at SEL's position (sql/errors.md: statement counts).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE("x")
+--- error
+E_NOT_NUM 1:15
+===
+
+### name: stmt.refusal.take-none-is-sels-null
+--- note
+SEL raises E_NULL for a NULL count, not E_NOT_NUM; six translators answered E_NOT_NUM.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(NULL)
+--- error
+E_NULL 1:15
+===
+
 ### name: stmt.refusal.take-float
 --- dialect
 mariadb
@@ -442,7 +472,9 @@ The three-argument SORT_BY resolves like the evaluator's (spec §7.3): a text
 literal third is the direction, otherwise a bare name second is the binder.
 Neither here, so the third argument is a direction SQL cannot read -- the
 same refusal, at the same slot, as the four-argument form gives. Three hosts
-raised a host TypeError here; the fourth refused at the key.
+raised a host TypeError here; the fourth refused at the key. E_SQL_SHAPE, not
+E_BAD_ARG: SEL evaluates this program (the direction is "DESC"), and the layer
+raises a SEL code only where SEL itself raises it (sql/errors.md).
 --- dialect
 mariadb
 --- bindings
@@ -452,7 +484,7 @@ statement
 --- source
 ITEMS .> SORT_BY(_["qty"], IF(TRUE, "DESC", "ASC"))
 --- error
-E_BAD_ARG 1:28
+E_SQL_SHAPE 1:28
 ===
 
 ### name: stmt.order-by.helper-in-the-key-slot-is-a-key-not-a-direction
@@ -488,7 +520,41 @@ D = "DESC"; ITEMS .> TOP_BY(r, D, 2)
 SELECT * FROM `items` ORDER BY CAST('DESC' AS CHAR) COLLATE utf8mb4_nopad_bin ASC LIMIT 2
 ===
 
+### name: stmt.order-by.helper-in-the-direction-slot-is-a-direction
+--- note
+The companion of helper-in-the-key-slot: here the second slot is not a bare name, so the
+call as written takes the third slot for a direction, and the helper D supplies it.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+D = "DESC"; ITEMS .> SORT_BY(_["qty"], D)
+--- expect
+SELECT * FROM `items` ORDER BY `qty` DESC
+===
+
+### name: stmt.order-by.helper-as-a-four-argument-direction
+--- note
+In the four-argument form the last slot is the direction whatever it holds, so a helper's
+text there is one (SEL sorts DESC).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+D = "DESC"; ITEMS .> SORT_BY(r, r["qty"], D)
+--- expect
+SELECT * FROM `items` ORDER BY `qty` DESC
+===
+
 ### name: stmt.order-by.four-argument-direction-that-is-not-a-literal-is-refused
+--- note
+E_SQL_SHAPE: SEL evaluates this program, so its own E_BAD_ARG would be false here.
 --- dialect
 mariadb
 --- bindings
@@ -498,7 +564,55 @@ statement
 --- source
 ITEMS .> SORT_BY(r, r["qty"], IF(TRUE, "DESC", "ASC"))
 --- error
-E_BAD_ARG 1:31
+E_SQL_SHAPE 1:31
+===
+
+### name: stmt.order-by.a-literal-direction-sel-refuses-keeps-sels-code
+--- note
+A text literal that is neither ASC nor DESC is SEL's own E_BAD_ARG, at the same slot
+(sql/errors.md: the layer raises a SEL code exactly where SEL raises it).
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["qty"], "UP")
+--- error
+E_BAD_ARG 1:28
+===
+
+### name: stmt.refusal.computed-record-key-is-a-shape-refusal
+--- note
+A RECORD key the planner cannot read as a column alias. SEL evaluates the program (the
+key is each row's name), so the refusal is E_SQL_SHAPE at the key, not SEL's E_BAD_ARG.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"NAME": {"kind": "column", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD(_["name"], 1))
+--- error
+E_SQL_SHAPE 1:22
+===
+
+### name: stmt.refusal.computed-select-cols-name-is-a-shape-refusal
+--- note
+SEL evaluates SELECT_COLS with a computed name; the statement needs a literal one, so the
+refusal is E_SQL_SHAPE at the name, not SEL's E_BAD_ARG.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "fields": {"QTY": {"kind": "column", "column": "qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("q" & "ty")
+--- error
+E_SQL_SHAPE 1:26
 ===
 
 ### name: stmt.order-by.binder-form-with-a-computed-key

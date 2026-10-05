@@ -54,8 +54,13 @@ def run(ast: Node, const_names: dict[str, bool] | None = None, ctx=None) -> Any:
     # before either guard looks, which is why they must be charged up front.
     base = 1 if ast.t == 'seq' else 0
     sizes: dict[str, int] = {}
+    # The names a statement may read as constants: the value bindings, then each
+    # whole definition recorded as constant. Constant statements run in scratch,
+    # a copy of the value bindings, as SEL runs them (see _record).
+    constant = dict(const_names or {})
+    scratch = _constants.Context(ctx.root.clone() if ctx is not None else None)
     for s in stmts:
-        _record(s, defs, const_names or {}, ctx, base + 1, sizes)
+        _record(s, defs, constant, scratch, base + 1, sizes)
     _check_size(result, sizes, result.pos)
     return _substitute(result, defs, [], base)
 
@@ -63,11 +68,12 @@ def run(ast: Node, const_names: dict[str, bool] | None = None, ctx=None) -> Any:
 # Stage 1 may refuse a program for its size before the translator's own count
 # (MAX_SQL_NODES, charged at dispatch) would: inlining shares the definition's
 # node, so `X1 = X0 + X0; X2 = X1 + X1; ...` is a small DAG, and everything that
-# walks it as the tree it renders -- the constant validation below, the
-# evaluator -- is exponential in the number of statements. The bound here is a
-# multiple of the limit, so a program the translator would answer or refuse by its
-# own precise count never gets this far; only one so large that walking it is the
-# cost is stopped, with the same code.
+# walks the RESULT as the tree it renders is exponential in the number of
+# statements. The bound here is a multiple of the limit, so a program the
+# translator would answer or refuse by its own precise count never gets this far;
+# only one so large that walking it is the cost is stopped, with the same code.
+# Only the result is checked: a definition is charged where it is read
+# (docs/internals/sql-translation.md §7.4), and one nothing reads is free.
 EARLY_SIZE = 2 * MAX_SQL_NODES
 
 
@@ -109,7 +115,7 @@ def _check_size(node: Any, sizes: dict[str, int], pos: Pos) -> int:
 
 
 def _record(s: Node, defs: dict[str, Any],
-            const_names: dict[str, bool], ctx, depth: int = 0,
+            constant: dict[str, bool], scratch, depth: int = 0,
             sizes: dict[str, int] | None = None) -> None:
     """Fold one leading statement into ``defs``, or refuse it. ``depth`` is
     where the evaluator's count stands at the assignment's right-hand side."""
@@ -141,7 +147,7 @@ def _record(s: Node, defs: dict[str, Any],
 
     if sizes is None:
         sizes = {}
-    size = _check_size(s.value, sizes, s.pos)
+    size = _tree_size(s.value, sizes)
     value = _substitute(s.value, defs, [], depth)
 
     # Validated here, and only here, because after this the subtree may be gone:
@@ -152,8 +158,20 @@ def _record(s: Node, defs: dict[str, Any],
     # §11.4's fourth bullet says a constant subtree is checked wherever it
     # appears; these were the two places it did not appear by the time anything
     # looked.
-    if _constants.is_constant(value, const_names):
-        _constants.validate(value, ctx)
+    #
+    # Every constant definition, whatever its expanded size: its size is charged
+    # only where it is read (§7.4), but SEL's verdict on it is the program's. So
+    # the statement is asked AS WRITTEN, run in scratch, where every earlier
+    # constant definition already holds its value: SEL reads a helper, it does
+    # not re-expand it, so this is linear where evaluating the inlined tree is
+    # exponential in a doubling chain (norm.size.unread-definition-past-the-budget-*).
+    is_const = _constants.is_constant(s.value, constant)
+    if is_const:
+        _constants.validate_statement(s, scratch)
+    if not keys and is_const:
+        constant[name] = True
+    else:
+        constant.pop(name, None)
 
     if not keys:
         if name in defs:

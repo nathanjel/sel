@@ -169,7 +169,8 @@ impl Translator {
             return refuse(
                 "E_SQL_SIZE",
                 format!("this program expands to more than {} nodes once every helper read and every unrolled element is counted, and the translation stops there", MAX_SQL_NODES),
-                n.pos,
+                // No position: it blames the whole rule (sql/errors.md).
+                Pos::default(),
             );
         }
         self.depth += 1;
@@ -2559,7 +2560,7 @@ impl Translator {
             return refuse(
                 "E_SQL_SIZE",
                 format!("this program expands to more than {} nodes once every helper read and every unrolled element is counted, and the translation stops there", MAX_SQL_NODES),
-                pos,
+                Pos::default(),
             );
         }
         self.fold_parts(op, parts, pos)

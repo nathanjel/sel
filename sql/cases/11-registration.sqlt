@@ -175,6 +175,45 @@ UPPER("a")
 --- expect
 NEW_UPPER('a')
 ===
+### name: register.since.compares-dotted-numerically
+--- note
+A registered, versioned dialect and an entry gated on it. 10.10 is above 10.9 as dotted
+numbers and below it as text: the comparison is numeric, field by field (sql/MAP.md §4.5).
+--- dialect
+since-numeric
+--- register
+[{"dialect": "since-numeric", "extends": "mariadb", "version": "10.10", "target": true},
+ {"define": ["since-numeric", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "10.9"}]}]
+--- source
+UPPER("a")
+--- expect
+NEW_UPPER('a')
+===
+### name: register.since.the-version-itself-is-enough
+--- dialect
+since-equal
+--- register
+[{"dialect": "since-equal", "extends": "mariadb", "version": "10.6.2", "target": true},
+ {"define": ["since-equal", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "10.6.2"}]}]
+--- source
+UPPER("a")
+--- expect
+NEW_UPPER('a')
+===
+### name: register.since.a-registered-version-below-it-is-refused
+--- note
+The registered leaf declares 10.6.1 and its own entry needs 10.6.2: E_SQL_DIALECT at the call,
+though the entry is the leaf's own and every base below it would have answered.
+--- dialect
+since-older
+--- register
+[{"dialect": "since-older", "extends": "mariadb", "version": "10.6.1", "target": true},
+ {"define": ["since-older", "funcs", "UPPER", {"tpl": "NEW_UPPER({0})", "ret": "TEXT", "since": "10.6.2"}]}]
+--- source
+"x" & UPPER("a")
+--- error
+E_SQL_DIALECT 1:7
+===
 ### name: register.dialect.inherits-everything-else
 --- dialect
 mariadb-11.8

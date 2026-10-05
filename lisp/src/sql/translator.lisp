@@ -2444,7 +2444,11 @@ SQL counterpart" (snode-pos e)))
     (refuse "E_SQL_SHAPE" (format nil "~a count cannot contain dynamic lists" op) (snode-pos n)))
   (let ((val (handler-case (sel:run (sel::%make-program "" n) (translator-const-root tr))
                (sel:sel-error (e) (refuse-as-sel e n)))))
-    (unless (and (sel:looks-numeric val) (not (sel:value-null-p val)))
+    ;; SEL's own codes at the count (sql/errors.md): E_NULL for a NULL,
+    ;; E_NOT_NUM for anything else that is not a number.
+    (when (sel:value-null-p val)
+      (refuse "E_NULL" (format nil "~a count must not be NULL" op) (snode-pos n)))
+    (unless (sel:looks-numeric val)
       (refuse "E_NOT_NUM" (format nil "~a count must be a number" op) (snode-pos n)))
     (let ((d (handler-case (sel::as-dec val (snode-pos n))
                (sel:sel-error (e) (refuse-as-sel e n)))))
@@ -2532,8 +2536,12 @@ SQL counterpart" (snode-pos e)))
                  key (nth k args))
            (if d
                (let ((dn (nth d args)))
+                 ;; A direction the evaluator would compute is one SQL cannot
+                 ;; (E_SQL_SHAPE); a literal that is neither ASC nor DESC is SEL's
+                 ;; own E_BAD_ARG, below.
                  (unless (and (not (clist-p dn)) (eq (snode-kind dn) :text))
-                   (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos dn)))
+                   (refuse "E_SQL_SHAPE" "a sort direction must be a text literal here: ~
+SQL cannot compute one" (snode-pos dn)))
                  (setf dir (sel::ascii-upcase (sel::node-s dn))
                        dir-pos (snode-pos dn)))
                (setf dir "ASC" dir-pos (snode-pos key))))
@@ -2702,17 +2710,17 @@ truncates both to one name"
               (push (cons prefix name) seen))))))))
 
 (defun record-fields (tr node)
-  "The (name . value) pairs of a RECORD(k, v, ...) call, refusing what the
-evaluator would: an odd count at the call, a name that is not a text literal at
-the name. The planner reads RECORD in three places -- a bucket's projection, a
-bucket's key, a MAP's projection -- and each used to walk the pairs itself."
+  "The (name . value) pairs of a RECORD(k, v, ...) call (compile has refused an
+odd count), refusing a name that is not a text literal at the name: SEL computes
+such a key, a statement cannot alias one, so it is E_SQL_SHAPE. The planner reads
+RECORD in three places -- a bucket's projection, a bucket's key, a MAP's
+projection -- and each used to walk the pairs itself."
   (let ((args (sel::node-items node)))
-    (unless (evenp (length args))
-      (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos node)))
     (let ((fields
             (loop for (k-node v-node) on args by #'cddr
                   do (unless (eq (snode-kind k-node) :text)
-                       (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+                       (refuse "E_SQL_SHAPE" "RECORD field names must be text literals here: ~
+a statement cannot compute a column alias" (snode-pos k-node)))
                      (check-alias-name (sel::node-s k-node) (snode-pos k-node))
                   collect (cons (sel::node-s k-node) v-node))))
       (check-alias-collisions
@@ -3135,7 +3143,8 @@ this statement already uses; bind the relation a second time under another alias
                           (cols '()))
                      (dolist (item items)
                        (unless (eq (snode-kind item) :text)
-                         (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
+                         (refuse "E_SQL_SHAPE" "SELECT_COLS column names must be text literals here: ~
+a statement cannot compute a column name" (snode-pos item)))
                        (check-alias-name (sel::node-s item) (snode-pos item))
                        (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
                                              (getf (relational-plan-source-relation plan) :fields)

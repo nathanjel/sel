@@ -6,7 +6,9 @@ use crate::manifest::builtins::Scope;
 use crate::manifest::binding_form;
 use crate::utf8::Pos;
 use crate::value::Value;
-use crate::sql::constants::{is_constant, validate};
+use crate::context::Context;
+use crate::program::Program;
+use crate::sql::constants::{is_constant, refuse_as_sel};
 use crate::sql::errors::{refuse, SqlError};
 use crate::sql::node::{SNode, SNodeType};
 
@@ -48,14 +50,26 @@ pub fn normalise(
     let mut sizes: HashMap<String, Meas> = HashMap::new();
     let base = if ast.t == NodeType::Seq { 1 } else { 0 };
 
+    // The names a statement may read as constants (the value bindings, then each
+    // whole definition recorded as constant), the context constant statements
+    // run in (a copy of the value bindings), and the definitions too large to
+    // build, which are charged only where they are read.
+    let mut run = Run {
+        constant: const_names.cloned().unwrap_or_default(),
+        scratch: Context::new(match root {
+            Some(r) => r.deep_copy(0, Pos::default()).unwrap_or_else(|_| r.clone()),
+            None => Value::none(),
+        }),
+        oversized: HashSet::new(),
+    };
     for s in stmts {
-        record_stmt(s, &mut defs, &mut sizes, const_names, root, base + 1)?;
+        record_stmt(s, &mut defs, &mut sizes, &mut run, base + 1)?;
     }
 
     // The result expression is not measured here: the translator charges what it
     // walks (E_SQL_SIZE at the node it reached). Only the memory the inlined
     // copies take is capped (see St::charge).
-    let mut st = St { measure: false, total: 0, sizes: &sizes };
+    let mut st = St { measure: false, build: true, total: 0, sizes: &sizes, oversized: &run.oversized };
     Ok(substitute_node(result, &defs, &[], base, &mut st)?.0)
 }
 
@@ -113,20 +127,33 @@ fn measure_tree(node: &SNode) -> Meas {
 // never copy it.
 struct St<'a> {
     measure: bool,
+    // False for the dry run that measures a definition and makes its refusals
+    // without copying any helper it reads: a read stays the bare name.
+    build: bool,
     total: usize,
     sizes: &'a HashMap<String, Meas>,
+    // Definitions past the budget, never built: reading one is E_SQL_SIZE.
+    oversized: &'a HashSet<String>,
+}
+
+// Stage 1's state across the leading statements.
+struct Run {
+    constant: HashSet<String>,
+    scratch: Context,
+    oversized: HashSet<String>,
 }
 
 const COPY_CAP: usize = 4 * MAX_SQL_NODES;
 
 impl St<'_> {
-    fn charge(&mut self, n: usize, pos: Pos) -> Result<(), SqlError> {
+    fn charge(&mut self, n: usize) -> Result<(), SqlError> {
         self.total = self.total.saturating_add(n);
         if self.total > COPY_CAP {
             return refuse(
                 "E_SQL_SIZE",
                 format!("this expression expands to more than {} nodes once every read of a helper is counted", MAX_SQL_NODES),
-                pos,
+                // No position: it blames the whole rule (sql/errors.md).
+                Pos::default(),
             );
         }
         Ok(())
@@ -179,8 +206,7 @@ fn record_stmt(
     s: &Node,
     defs: &mut HashMap<String, SNode>,
     sizes: &mut HashMap<String, Meas>,
-    const_names: Option<&HashSet<String>>,
-    root: Option<&Value>,
+    run: &mut Run,
     depth: usize,
 ) -> Result<(), SqlError> {
     if s.t != NodeType::Assign {
@@ -220,26 +246,54 @@ fn record_stmt(
     }
     let name = t.s.clone();
 
-    let mut st = St { measure: true, total: 0, sizes };
-    let substituted = substitute_node(s.r.as_deref().unwrap(), defs, &[], depth, &mut st);
-    let (value, meas) = match substituted {
-        Ok(v) => v,
-        // Past the copy cap the definition is past the budget as well.
-        Err(e) if e.code == "E_SQL_SIZE" => return refuse(e.code, e.message, s.pos),
-        Err(e) => return Err(e),
+    // The dry run first: the statement as written, every refusal substitution
+    // makes, and the size and height its expansion would have, without copying
+    // a helper. A definition's SIZE is charged only where it is read
+    // (docs/internals/sql-translation.md §7.4): one past the budget is not built
+    // and is free unless something reads it. Its height is refused here, as the
+    // other hosts do, before anything walks it.
+    let (written, meas) = {
+        let mut st = St { measure: true, build: false, total: 0, sizes, oversized: &run.oversized };
+        substitute_node(s.r.as_deref().unwrap(), defs, &[], depth, &mut st)?
     };
-    if let Some(code) = meas.fail {
-        let message = if code == "E_SQL_DEPTH" {
-            format!("this expression nests deeper than SEL will evaluate ({}), so there is nothing to translate; the evaluator answers E_DEPTH for it", MAX_DEPTH)
-        } else {
-            format!("this definition expands to more than {} nodes once every read of a helper is counted", MAX_SQL_NODES)
-        };
-        return refuse(code, message, s.pos);
+    if meas.fail == Some("E_SQL_DEPTH") {
+        return refuse(
+            "E_SQL_DEPTH",
+            format!("this expression nests deeper than SEL will evaluate ({}), so there is nothing to translate; the evaluator answers E_DEPTH for it", MAX_DEPTH),
+            s.pos,
+        );
+    }
+    let oversized = meas.size > MAX_SQL_NODES;
+
+    // Validated here, and only here, because after this the subtree may be gone:
+    // a definition nothing reads is dropped, so `A = 1 / 0; TRUE` would translate
+    // to TRUE where SEL raises E_DIV_ZERO. Every constant definition, whatever its
+    // size (§11.4): the statement is asked AS WRITTEN, run in scratch, where every
+    // earlier constant definition already holds its value -- SEL reads a helper,
+    // it does not re-expand it, so this is linear where evaluating the inlined
+    // tree is exponential in a doubling chain
+    // (norm.size.unread-definition-past-the-budget-*).
+    let is_const = is_constant(Some(&written), Some(&run.constant));
+    if is_const {
+        if let Err(err) = Program::new("", s.clone()).run_with_context(&mut run.scratch) {
+            return refuse_as_sel(&err, &written);
+        }
+    }
+    if keys.is_empty() && is_const {
+        run.constant.insert(name.clone());
+    } else {
+        run.constant.remove(&name);
     }
 
-    if is_constant(Some(&value), const_names) {
-        validate(&value, root)?;
-    }
+    let value = if oversized {
+        // An indexed entry this large marks its whole list: reading the list
+        // would expand it.
+        run.oversized.insert(name.clone());
+        SNode::leaf(t)
+    } else {
+        let mut st = St { measure: true, build: true, total: 0, sizes, oversized: &run.oversized };
+        substitute_node(s.r.as_deref().unwrap(), defs, &[], depth, &mut st)?.0
+    };
 
     if keys.is_empty() {
         if defs.contains_key(&name) {
@@ -329,10 +383,21 @@ fn substitute_node(
                 return Ok((SNode::leaf(node), Meas::LEAF));
             }
             if let Some(def) = defs.get(&node.s) {
+                let meas = st.sizes.get(&node.s).copied().unwrap_or(Meas::LEAF);
+                // A list is spliced where it is read, so the dry run needs its kids.
+                if !st.build && def.t != SNodeType::List && def.t != SNodeType::CList {
+                    return Ok((SNode::leaf(node), Meas { fail: None, ..meas }));
+                }
+                if st.oversized.contains(&node.s) {
+                    return refuse(
+                        "E_SQL_SIZE",
+                        format!("{} expands to more than {} nodes once every read of a helper is counted", node.s, MAX_SQL_NODES),
+                        Pos::default(),
+                    );
+                }
                 // The variable is replaced, not wrapped; the copy is charged before
                 // it is made.
-                let meas = st.sizes.get(&node.s).copied().unwrap_or(Meas::LEAF);
-                st.charge(meas.size, node.pos)?;
+                st.charge(meas.size)?;
                 let mut copy = def.clone();
                 copy.inlined = true;
                 return Ok((copy, Meas { fail: None, ..meas }));
@@ -467,11 +532,11 @@ mod tests {
 
     #[test]
     fn expanded_depth_is_checked_before_constant_evaluation() {
-        // A constant chain past the evaluator's depth is refused when its
-        // definition is validated; a column chain is left to the translator's own
-        // depth guard, and a definition past four times that depth is refused at
-        // the assignment, whatever it reads.
-        for (base, links, stage1) in [("1", 250, true), ("N", 250, false), ("N", 900, true)] {
+        // A chain past the evaluator's depth, constant or not, is left to the
+        // translator's own depth guard: a constant definition is validated as
+        // written, which SEL evaluates without nesting it. A definition past four
+        // times that depth is refused at the assignment, whatever it reads.
+        for (base, links, stage1) in [("1", 250, false), ("N", 250, false), ("N", 900, true)] {
             let mut source = format!("X0 = {base}; ");
             for i in 1..links {
                 source.push_str(&format!("X{i} = X{} + 1; ", i-1));

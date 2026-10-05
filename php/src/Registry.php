@@ -109,9 +109,11 @@ final class Registry
             if (count($scopes) !== $count) continue;
             if ($when !== null) {
                 $a = $args[$when[0]];
+                // A text literal stage 1 inlined from a helper ('inl') was not
+                // written there: the form is the call's as written (SPEC 7.3).
                 $ok = $when[1] === 'name'
                     ? ($a['t'] === 'var' && empty($a['grouped']))
-                    : $a['t'] === 'text';
+                    : $a['t'] === 'text' && empty($a['inl']);
                 if (!$ok) continue;
             }
             foreach ($scopes as $i => $scope) {

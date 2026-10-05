@@ -11,8 +11,10 @@ declare(strict_types=1);
 namespace Sel\Sql;
 
 use Sel\Context;
+use Sel\Evaluator;
 use Sel\Limits;
 use Sel\Registry;
+use Sel\SelError;
 
 final class Normalise
 {
@@ -24,19 +26,34 @@ final class Normalise
      * anything (the constant test, the validator) visits the expansion. PHP arrays
      * share the subtree, which is why stage 1 itself stays cheap.
      */
-    private static int $size = 0;
+    private int $size = 0;
     /** Whether an over-limit count refuses now (the result) or is only recorded (a definition). */
-    private static bool $refusing = true;
+    private bool $refusing = true;
     /** @var array<string,int> expanded size of each definition, by name */
-    private static array $defSizes = [];
+    private array $defSizes = [];
     /** @var array<string,bool> whether each definition is a constant expression, by name */
-    private static array $defConst = [];
+    private array $defConst = [];
+    /**
+     * The names a statement may read as constants: the value bindings, then each
+     * whole definition recorded as constant (and not one recorded otherwise).
+     * @var array<string,bool>
+     */
+    private array $constant;
+    /** Where constant statements run, as SEL runs them: a copy of the value bindings. */
+    private Context $scratch;
 
-    private static function charge(int $nodes): void
+    /** @param array<string,bool> $constNames */
+    private function __construct(array $constNames, ?Context $ctx)
+    {
+        $this->constant = $constNames;
+        $this->scratch = new Context($ctx !== null ? $ctx->root->copy() : null);
+    }
+
+    private function charge(int $nodes): void
     {
         // Saturating: a chain of a hundred doublings must not overflow the counter.
-        self::$size = min(self::$size + $nodes, 1 << 40);
-        if (self::$refusing && self::$size > Limits::MAX_SQL_NODES) {
+        $this->size = min($this->size + $nodes, 1 << 40);
+        if ($this->refusing && $this->size > Limits::MAX_SQL_NODES) {
             refuse('E_SQL_SIZE',
                 'the expression this rule would translate to has more than '
                 . Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
@@ -63,16 +80,17 @@ final class Normalise
         // Stage 1 removes both wrappers before either guard looks, which is
         // why they must be charged up front.
         $base = $ast['t'] === 'seq' ? 1 : 0;
-        self::$defSizes = [];
-        self::$defConst = [];
+        // One instance per run: the counters and the scratch context are this
+        // program's, never shared with another translation.
+        $run = new self($constNames, $ctx);
         foreach ($stmts as $s) {
-            self::record($s, $defs, $constNames, $ctx, $base + 1);
+            $run->record($s, $defs, $base + 1);
         }
         // Only what is READ is translated: a definition nothing reads is dropped, so
         // its own size is not the rule's. The result's count is the rule's.
-        self::$size = 0;
-        self::$refusing = true;
-        return self::substitute($result, $defs, [], $base);
+        $run->size = 0;
+        $run->refusing = true;
+        return $run->substitute($result, $defs, [], $base);
     }
 
     /**
@@ -81,10 +99,8 @@ final class Normalise
      *
      * @param array<string,mixed> $s
      * @param array<string, array<string,mixed>> $defs
-     * @param array<string,bool> $constNames
      */
-    private static function record(array $s, array &$defs, array $constNames,
-                                   ?Context $ctx, int $depth): void
+    private function record(array $s, array &$defs, int $depth): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',
@@ -120,11 +136,11 @@ final class Normalise
         // A definition's expanded size is recorded, not refused: it only matters if
         // something reads it (the result's count refuses then), and the constant test
         // below must not walk an expansion past the limit.
-        self::$size = 0;
-        self::$refusing = false;
-        $value = self::substitute($s['value'], $defs, [], $depth);
-        self::$refusing = true;
-        $valueSize = self::$size;
+        $this->size = 0;
+        $this->refusing = false;
+        $value = $this->substitute($s['value'], $defs, [], $depth);
+        $this->refusing = true;
+        $valueSize = $this->size;
 
         // Validated here, and only here, because after this the subtree may be
         // gone: a definition nothing reads is dropped, so `A = 1 / 0; TRUE`
@@ -134,9 +150,30 @@ final class Normalise
         // `R[1] = 1 / 0; COUNT(R)` was `1`. §11.4's fourth bullet says a
         // constant subtree is checked wherever it appears; these were the two
         // places it did not appear by the time anything looked.
-        $isConstant = Constants::isConstant($value, $constNames);
-        if ($valueSize <= Limits::MAX_SQL_NODES && $isConstant) {
-            Constants::validate($value, $ctx);
+        //
+        // Every constant definition, whatever its expanded size: its size is
+        // charged only where it is read (§7.4), but SEL's verdict on it is the
+        // program's. So the statement is asked AS WRITTEN, run in a scratch
+        // context that holds the value bindings and every earlier constant
+        // definition -- SEL reads a helper's value, it does not re-expand it, so
+        // this is linear where evaluating the inlined tree is exponential in a
+        // doubling chain (norm.size.unread-definition-past-the-budget-*).
+        $isConstant = Constants::isConstant($s['value'], $this->constant);
+        if ($isConstant) {
+            try {
+                Evaluator::evalNode($s, $this->scratch);
+            } catch (SelError $e) {
+                Constants::refuseAsSel($e, $s['value']);
+            }
+        }
+        if ($keys === []) {
+            if ($isConstant) {
+                $this->constant[$name] = true;
+            } else {
+                unset($this->constant[$name]);
+            }
+        } else {
+            unset($this->constant[$name]);
         }
 
         if ($keys === []) {
@@ -147,8 +184,8 @@ final class Normalise
                     $s['pos']);
             }
             $defs[$name] = $value;
-            self::$defSizes[$name] = $valueSize;
-            self::$defConst[$name] = $isConstant;
+            $this->defSizes[$name] = $valueSize;
+            $this->defConst[$name] = $isConstant;
             return;
         }
 
@@ -179,7 +216,7 @@ final class Normalise
             }
         }
         $defs[$name]['entries'][] = [$key, $value];
-        self::$defSizes[$name] = (self::$defSizes[$name] ?? 1) + $valueSize;
+        $this->defSizes[$name] = ($this->defSizes[$name] ?? 1) + $valueSize;
     }
 
     /** The literal key an index expression names, or null when it is not one. */
@@ -231,7 +268,7 @@ final class Normalise
      * @param list<string> $bound aggregate binders, which shadow a definition
      * @return array<string,mixed>
      */
-    private static function substitute(array $node, array $defs, array $bound,
+    private function substitute(array $node, array $defs, array $bound,
                                        int $depth = 0): array
     {
         // Stage 1 walks the tree before the translator's own guard can, so the
@@ -245,7 +282,7 @@ final class Normalise
                 . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $node['pos']);
         }
-        self::charge(1);
+        $this->charge(1);
         switch ($node['t']) {
             case 'var':
                 if (in_array($node['name'], $bound, true)) {
@@ -253,14 +290,14 @@ final class Normalise
                 }
                 if (isset($defs[$node['name']])) {
                     // The node counted above is replaced by the whole definition.
-                    self::charge(max(0, (self::$defSizes[$node['name']] ?? 1) - 1));
+                    $this->charge(max(0, ($this->defSizes[$node['name']] ?? 1) - 1));
                     // Marked as inlined: the definition was written at the top of the
                     // rule, outside every binder, so its free names must not be
                     // captured by a binder of the same name where it is used.
                     $inlined = $defs[$node['name']];
                     $inlined['inl'] = true;
-                    if (isset(self::$defConst[$node['name']])) {
-                        $inlined['k'] = self::$defConst[$node['name']];
+                    if (isset($this->defConst[$node['name']])) {
+                        $inlined['k'] = $this->defConst[$node['name']];
                     }
                     return $inlined;
                 }
@@ -282,33 +319,33 @@ final class Normalise
                     . 'SQL expression cannot do', $node['pos']);
 
             case 'un':
-                $node['x'] = self::substitute($node['x'], $defs, $bound, $depth);
+                $node['x'] = $this->substitute($node['x'], $defs, $bound, $depth);
                 return $node;
 
             case 'bin':
-                $node['l'] = self::substitute($node['l'], $defs, $bound, $depth);
-                $node['r'] = self::substitute($node['r'], $defs, $bound, $depth);
+                $node['l'] = $this->substitute($node['l'], $defs, $bound, $depth);
+                $node['r'] = $this->substitute($node['r'], $defs, $bound, $depth);
                 return $node;
 
             case 'index':
-                $node['obj'] = self::substitute($node['obj'], $defs, $bound, $depth);
-                $node['idx'] = self::substitute($node['idx'], $defs, $bound, $depth);
+                $node['obj'] = $this->substitute($node['obj'], $defs, $bound, $depth);
+                $node['idx'] = $this->substitute($node['idx'], $defs, $bound, $depth);
                 return $node;
 
             case 'list':
-                $node['items'] = self::flatten($node['items'], $defs, $bound, $depth);
+                $node['items'] = $this->flatten($node['items'], $defs, $bound, $depth);
                 return $node;
 
             case 'clist':
                 foreach ($node['entries'] as $i => [$k, $v]) {
-                    $node['entries'][$i] = [$k, self::substitute($v, $defs, $bound, $depth)];
+                    $node['entries'][$i] = [$k, $this->substitute($v, $defs, $bound, $depth)];
                 }
                 return $node;
 
             case 'call':
                 foreach (self::argScopes($node, $bound) as $i => $sees) {
                     if ($sees !== null) {
-                        $node['args'][$i] = self::substitute($node['args'][$i], $defs, $sees, $depth);
+                        $node['args'][$i] = $this->substitute($node['args'][$i], $defs, $sees, $depth);
                     }
                 }
                 return $node;
@@ -345,12 +382,12 @@ final class Normalise
      * @param list<string> $bound
      * @return list<array<string,mixed>>
      */
-    private static function flatten(array $items, array $defs, array $bound,
+    private function flatten(array $items, array $defs, array $bound,
                                     int $depth = 0): array
     {
         $out = [];
         foreach ($items as $item) {
-            $s = self::substitute($item, $defs, $bound, $depth);
+            $s = $this->substitute($item, $defs, $bound, $depth);
             if ($s['t'] === 'list') {
                 foreach ($s['items'] as $child) {
                     $out[] = $child;

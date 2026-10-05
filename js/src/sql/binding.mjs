@@ -236,10 +236,13 @@ function checkNumeric(where, v) {
   }
   if (v.isNone()) return;
   if (!v.isText() || !v.looksNumeric()) {
-    const shown = v.isBool() ? (v.asBool() ? 'TRUE' : 'FALSE') : v.asText();
+    // Named, not read as text: a BIN's bytes are not text, and reading them as
+    // text raised SEL's E_NOT_TEXT here instead of this binding error.
+    const shown = v.isBool() ? quoteDump(v.asBool() ? 'TRUE' : 'FALSE')
+      : v.isBin() ? 'binary data' : quoteDump(v.asText());
     throw new SqlError('E_SQL_BINDING',
       `${where} declares type NUM, which asks for it to be emitted unquoted, but `
-      + `${quoteDump(shown)} is not a number`);
+      + `${shown} is not a number`);
   }
   // looksNumeric is broader than canonical, and emit's numericLiteral emits
   // decimal.format's output rather than the caller's characters — correct for the

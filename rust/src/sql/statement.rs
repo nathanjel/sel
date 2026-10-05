@@ -62,15 +62,18 @@ pub fn joined_row_fields(plan: &RelationalPlan) -> Result<Vec<JoinedRowField>, S
 
 pub fn record_fields(node: &SNode, dialect: &str) -> Result<Vec<(String, SNode)>, SqlError> {
     let args = &node.kids;
-    if args.len() % 2 != 0 {
-        return refuse("E_ARITY", "RECORD takes an even number of arguments", node.pos);
-    }
+    // An even count: RECORD's arity rule ran at compile time.
     let mut fields = Vec::with_capacity(args.len() / 2);
     let postgres = chain(dialect).iter().any(|d| d == "postgresql");
     let mut prefixes = std::collections::HashMap::new();
     for i in (0..args.len()).step_by(2) {
         if args[i].t != SNodeType::Text {
-            return refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i].pos);
+            // SEL computes such a key; a statement cannot alias one.
+            return refuse(
+                "E_SQL_SHAPE",
+                "RECORD field names must be text literals here: a statement cannot compute a column alias",
+                args[i].pos,
+            );
         }
         check_program_identifier(&args[i])?;
         if postgres {
@@ -411,11 +414,7 @@ impl Translator {
         let args = &step.kids;
         let top = name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
         if top && args.is_empty() {
-            return refuse(
-                "E_ARITY",
-                format!("{} has an invalid sort form", name),
-                step.pos,
-            );
+            unreachable!("{}: the manifest's arity rule ran at compile time", name);
         }
         let count = if top { args.len() - 1 } else { args.len() };
 
@@ -505,11 +504,7 @@ impl Translator {
                     over_groups: false,
                 });
             } else {
-                return refuse(
-                    "E_ARITY",
-                    format!("{} takes 1 to 3 arguments", name),
-                    step.pos,
-                );
+                unreachable!("{}: the manifest's arity rule ran at compile time", name);
             }
             return Ok(());
         }
@@ -528,8 +523,12 @@ impl Translator {
         } else if count == 3 {
             // Decided off the call as written: a helper inlined into the third
             // slot is that slot's name, so the second is the binder and the
-            // helper the key (stmt.order-by.helper-in-the-key-slot-...).
-            if args[2].is_written_text() {
+            // helper the key (stmt.order-by.helper-in-the-key-slot-...). With no
+            // name there, a helper's text is the direction, as written
+            // (stmt.order-by.helper-in-the-direction-slot-is-a-direction).
+            if args[2].is_written_text()
+                || (args[2].t == SNodeType::Text && !is_binder_name(Some(&args[1])))
+            {
                 binder = "_";
                 key = &args[1];
                 if args[2].str.eq_ignore_ascii_case("ASC") {
@@ -544,9 +543,10 @@ impl Translator {
                 key = &args[2];
                 dir = SortDirection::Asc;
             } else {
+                // A direction the evaluator would compute is one SQL cannot.
                 return refuse(
-                    "E_BAD_ARG",
-                    "sort direction must be 'ASC' or 'DESC'",
+                    "E_SQL_SHAPE",
+                    "a sort direction must be a text literal here: SQL cannot compute one",
                     args[2].pos,
                 );
             }
@@ -560,10 +560,12 @@ impl Translator {
             }
             binder = &args[1].str;
             key = &args[2];
-            if !args[3].is_written_text() {
+            // A helper's text in the direction slot is a direction: the four-
+            // argument form does not depend on it.
+            if args[3].t != SNodeType::Text {
                 return refuse(
-                    "E_BAD_ARG",
-                    "sort direction must be 'ASC' or 'DESC'",
+                    "E_SQL_SHAPE",
+                    "a sort direction must be a text literal here: SQL cannot compute one",
                     args[3].pos,
                 );
             }
@@ -579,7 +581,7 @@ impl Translator {
                 );
             }
         } else {
-            return refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.pos);
+            unreachable!("{}: the manifest's arity rule ran at compile time", name);
         }
 
         plan.order_by.push(RelationalOrder {
@@ -686,7 +688,7 @@ impl Translator {
                         binder = &args[1].str;
                         pred = &args[2];
                     } else {
-                        return refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step.pos);
+                        unreachable!("FILTER: the manifest's arity rule ran at compile time");
                     }
 
                     if plan.group_by.is_some() {
@@ -748,7 +750,7 @@ impl Translator {
                         key_node = &args[2];
                         agg_node = Some(&args[3]);
                     } else {
-                        return refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step.pos);
+                        unreachable!("BUCKET: the manifest's arity rule ran at compile time");
                     }
 
                     let several_keys = (key_node.t == SNodeType::Call
@@ -816,8 +818,8 @@ impl Translator {
                     for item in items {
                         if item.t != SNodeType::Text {
                             return refuse(
-                                "E_BAD_ARG",
-                                "SELECT_COLS column names must be string literals",
+                                "E_SQL_SHAPE",
+                                "SELECT_COLS column names must be text literals here: a statement cannot compute a column name",
                                 item.pos,
                             );
                         }
@@ -904,7 +906,7 @@ impl Translator {
                         binder = &args[1].str;
                         expr = &args[2];
                     } else {
-                        return refuse("E_ARITY", "MAP takes 2 or 3 arguments", step.pos);
+                        unreachable!("MAP: the manifest's arity rule ran at compile time");
                     }
 
                     if plan.bucket == BucketState::Open {
@@ -961,18 +963,12 @@ impl Translator {
                     plan.distinct = true;
                 }
                 "TAKE" => {
-                    if args.len() != 2 {
-                        return refuse("E_ARITY", "TAKE takes 2 arguments", step.pos);
-                    }
                     let lim = self.eval_int_param(&args[1], "TAKE")?;
                     if plan.limit.is_none() || lim < plan.limit.unwrap() {
                         plan.limit = Some(lim);
                     }
                 }
                 "DROP" => {
-                    if args.len() != 2 {
-                        return refuse("E_ARITY", "DROP takes 2 arguments", step.pos);
-                    }
                     let off = self.eval_int_param(&args[1], "DROP")?;
                     let mut skipped = off;
                     if let Some(l) = plan.limit {
@@ -1045,13 +1041,6 @@ impl Translator {
                     let need_derived = self.plan_has_rows_above(&plan);
                     plan = self.ensure_derived(plan, need_derived)?;
 
-                    if args.len() != 3 && args.len() != 5 {
-                        return refuse(
-                            "E_ARITY",
-                            format!("{} takes 3 or 5 arguments", name),
-                            step.pos,
-                        );
-                    }
                     let right_node = &args[1];
                     if right_node.t != SNodeType::Var || !self.bindings.has(&right_node.str) {
                         return refuse(

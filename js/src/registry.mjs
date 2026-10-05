@@ -43,7 +43,9 @@ function matchForm(name, args, spec) {
     if (form.scopes.length !== args.length) continue;
     if (form.when) {
       const a = args[form.when.arg];
-      const ok = form.when.is === 'name' ? (a.t === 'var' && !a.grouped) : a.t === 'text';
+      // A text literal stage 1 inlined from a helper (`inlined`) was not written
+      // there: the form is the call's as written (spec §7.3).
+      const ok = form.when.is === 'name' ? (a.t === 'var' && !a.grouped) : (a.t === 'text' && !a.inlined);
       if (!ok) continue;
     }
     return form;

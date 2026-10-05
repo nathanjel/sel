@@ -765,3 +765,47 @@ sqlite
 (CAST(('1.10' + '2') AS NUMERIC) > CAST('3' AS NUMERIC))
 ===
 
+
+### name: const.binding-form.link-right-source-is-read-where-the-call-stands
+--- note
+Whether a binding call is constant is read off the manifest's form for its argument count
+(spec/builtins.json), as stage 1 and the dependency walk read it. LINK's second argument is
+its right SOURCE, not a binder: ORDERS is a relation, so the definition is not constant, is
+not validated, and -- read by nothing -- is dropped. A host that took the generic shape
+(three arguments: the second is the binder) asked SEL to evaluate it without ORDERS and
+refused with E_SQL_INVALID.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+X = COUNT(LINK(LIST(1), ORDERS, TRUE)); TRUE
+--- expect
+TRUE
+===
+
+### name: const.binding-form.a-three-argument-top-by-has-no-binder
+--- note
+TOP_BY's three-argument form is (source, key, count): ORDERS is the KEY, read per element, and
+names a relation, so nothing here is constant.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+X = TOP_BY(LIST(1), ORDERS, 1); TRUE
+--- expect
+TRUE
+===
+
+### name: const.binding-form.the-body-sees-the-key
+--- note
+The form binds _K as well as _ in the body, so the definition is constant and SEL's verdict on
+it, E_DIV_ZERO at the division, is the translation's.
+--- dialect
+mariadb
+--- source
+X = MAP(LIST(1, 2), _K / 0); TRUE
+--- error
+E_SQL_INVALID 1:24
+===

@@ -31,6 +31,7 @@ namespace Sel\Sql;
 use Sel\Context;
 use Sel\Evaluator;
 use Sel\Limits;
+use Sel\Registry;
 use Sel\SelError;
 use Sel\Utf8;
 use Sel\Value;
@@ -312,7 +313,12 @@ final class Constants
      * `MAP(list, X, X + 1)` names its binder in argument 1 and uses it in
      * argument 2; the two-argument form binds `_` implicitly. Neither name is a
      * free variable, so neither disqualifies the call — but the *source* still
-     * has to be constant, or the body has nothing to iterate.
+     * has to be constant, or the body has nothing to iterate. Which argument is
+     * which is the manifest's form (Registry::bindingForm), as for stage 1 and the
+     * dependency walk: an outer argument is constant in $bound, an inner one with
+     * the form's names bound too, and a binder slot is a name, never a read -- so
+     * LINK's right source is read where the call stands, not taken for a binder
+     * (`COUNT(LINK(LIST(1), ORDERS, TRUE))` is not constant).
      *
      * @param array<string,mixed> $n
      * @param array<string,bool>  $bound
@@ -328,24 +334,30 @@ final class Constants
             }
             return true;
         }
-
-        if (!self::isConstant($args[0], $bound)) {
-            return false;
+        $form = Registry::bindingForm($n['name'], $args);
+        if ($form === null) {
+            return false;                   // no form takes this count: refused elsewhere
         }
-        $inner = $bound;
-        $body = 1;
-        if (count($args) >= 3) {
-            // Malformed; not constant, and aggShape refuses it for real.
-            if (!self::isBinderName($args[1])) {
-                return false;
+        $inner = null;
+        foreach ($args as $i => $a) {
+            $scope = $form['scopes'][$i];
+            if ($scope === 'binder') {
+                if (!self::isBinderName($a)) {
+                    return false;           // malformed; aggShape refuses it for real
+                }
+                continue;
             }
-            $inner[$args[1]['name']] = true;
-            $body = 2;
-        } else {
-            $inner['_'] = true;
-        }
-        for ($i = $body; $i < count($args); $i++) {
-            if (!self::isConstant($args[$i], $inner)) {
+            if ($scope === 'inner') {
+                if ($inner === null) {
+                    $inner = $bound;
+                    foreach ($form['binds'] as $name) {
+                        $inner[$name] = true;
+                    }
+                }
+                if (!self::isConstant($a, $inner)) {
+                    return false;
+                }
+            } elseif (!self::isConstant($a, $bound)) {
                 return false;
             }
         }

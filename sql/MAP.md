@@ -532,7 +532,10 @@ exercises it against a real server. It is documented here as the answer for olde
 servers rather than as something in use: `mysql.json` notes that a MySQL 5.7 leaf
 would need most of the regex family gated or refused, and writing that leaf is
 what would first make `since` live data. Treat the example below as a shape, not
-as a citation.
+as a citation. The cases `register.since.*` and
+`register.dialect.a-newer-version-passes-the-same-gate` (`sql/cases/11-registration.sqlt`)
+hold every host to the gate through runtime registration: a refusal below the
+version, acceptance at it and above it, and a dotted-numeric comparison.
 
 Below that version, `E_SQL_DIALECT`. Comparison is dotted-numeric and nothing
 cleverer. The version compared is always the **target's**, never a base's, so a

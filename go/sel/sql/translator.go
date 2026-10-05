@@ -228,7 +228,7 @@ func (t *translator) node(n *sNode) *Fragment {
 	if t.nodes > limits.MAX_SQL_NODES {
 		refuse("E_SQL_SIZE",
 			fmt.Sprintf("this rule expands to more than %d nodes once its helpers are inlined and its lists unrolled; SEL evaluates it in a fraction of that, but the SQL would be the size of what it expands to", limits.MAX_SQL_NODES),
-			n.Pos)
+			Pos{}) // no position: it blames the whole rule (sql/errors.md)
 	}
 	t.depth++
 	if t.depth > limits.MAX_DEPTH {

@@ -159,7 +159,9 @@ final class Translator
         for ($i = 0; $i < count($node['args']); $i += 2) {
             $key = $node['args'][$i];
             if ($key['t'] !== 'text') {
-                refuse('E_BAD_ARG', 'RECORD field names must be string literals', $key['pos']);
+                // SEL computes such a key; a statement cannot alias one.
+                refuse('E_SQL_SHAPE', 'RECORD field names must be text literals here: a '
+                    . 'statement cannot compute a column alias', $key['pos']);
             }
             $fields[] = [$key['v'], $node['args'][$i + 1]];
         }
@@ -3911,7 +3913,8 @@ final class Translator
         $cols = [];
         foreach ($items as $item) {
             if ($item['t'] !== 'text') {
-                refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
+                refuse('E_SQL_SHAPE', 'SELECT_COLS column names must be text literals here: '
+                    . 'a statement cannot compute a column name', $item['pos']);
             }
             $col = $item['v'];
             $this->checkAliasName($col, $item['pos']);
@@ -4185,7 +4188,12 @@ final class Translator
         } catch (SelError $e) {
             Constants::refuseAsSel($e, $n);
         }
-        if (!$val->looksNumeric() || $val->isNull()) {
+        // SEL's own codes at the count (sql/errors.md): E_NULL for a NULL,
+        // E_NOT_NUM for anything else that is not a number.
+        if ($val->isNull()) {
+            refuse('E_NULL', "{$op} count must not be NULL", $n['pos']);
+        }
+        if (!$val->looksNumeric()) {
             refuse('E_NOT_NUM', "{$op} count must be a number", $n['pos']);
         }
         $d = $val->asDecimal($n['pos']);
@@ -4277,7 +4285,13 @@ final class Translator
             $key = $args[1];
             $dir = 'ASC';
         } elseif ($count === 3) {
-            if ($args[2]['t'] === 'text') {
+            // The form is the call's as written (SPEC 7.3): a text literal
+            // stage 1 inlined from a helper ('inl') does not make the third slot
+            // a direction when the second is a bare name -- that name is the
+            // binder and the helper the key
+            // (stmt.order-by.helper-in-the-key-slot-is-a-key-not-a-direction).
+            if ($args[2]['t'] === 'text'
+                && (empty($args[2]['inl']) || !Constants::isBinderName($args[1]))) {
                 $binder = '_';
                 $key = $args[1];
                 $dir = Utf8::upper($args[2]['v']);
@@ -4288,8 +4302,10 @@ final class Translator
             } else {
                 // Neither form: the third slot is a direction the evaluator
                 // would compute, and SQL cannot -- the four-argument form's
-                // refusal.
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[2]['pos']);
+                // refusal. E_SQL_SHAPE: SEL computes it, so its E_BAD_ARG would
+                // be false.
+                refuse('E_SQL_SHAPE', 'a sort direction must be a text literal here: SQL '
+                    . 'cannot compute one', $args[2]['pos']);
             }
         } else {                                // 4: the manifest's arity
             if (!Constants::isBinderName($args[1])) {
@@ -4298,12 +4314,13 @@ final class Translator
             $binder = $args[1]['name'];
             $key = $args[2];
             if ($args[3]['t'] !== 'text') {
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
+                refuse('E_SQL_SHAPE', 'a sort direction must be a text literal here: SQL '
+                    . 'cannot compute one', $args[3]['pos']);
             }
             $dir = Utf8::upper($args[3]['v']);
         }
 
-        if ($dir !== 'ASC' && $dir !== 'DESC') {
+        if ($dir !== 'ASC' && $dir !== 'DESC') {       // SEL's own E_BAD_ARG
             $dirPos = $count === 4 ? $args[3]['pos'] : $args[2]['pos'];
             refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $dirPos);
         }

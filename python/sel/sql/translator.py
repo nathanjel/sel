@@ -230,7 +230,9 @@ class Translator:
         for i in range(0, len(node.args), 2):
             key = node.args[i]
             if key.t != 'text':
-                refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos)
+                # SEL computes such a key; a statement cannot alias one.
+                refuse('E_SQL_SHAPE', 'RECORD field names must be text literals here: a '
+                       'statement cannot compute a column alias', key.pos)
             self._check_alias(key.v, key.pos, seen)
             fields.append((key.v, node.args[i + 1]))
         return fields
@@ -2497,7 +2499,11 @@ class Translator:
             val = eval_node(n, self.const_ctx or Context())
         except SelError as e:
             _constants.refuse_as_sel(e, n)
-        if not val.looks_numeric() or val.is_null():
+        # SEL's own codes at the count (sql/errors.md): E_NULL for a NULL,
+        # E_NOT_NUM for anything else that is not a number.
+        if val.is_null():
+            refuse('E_NULL', f'{op} count must not be NULL', n.pos)
+        if not val.looks_numeric():
             refuse('E_NOT_NUM', f'{op} count must be a number', n.pos)
         d = val.as_decimal(n.pos)
         # A count written with a scale is a whole number when its fractional
@@ -2692,7 +2698,8 @@ class Translator:
                 seen_names: dict[bytes, str] = {}
                 for item in items:
                     if item.t != 'text':
-                        refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos)
+                        refuse('E_SQL_SHAPE', 'SELECT_COLS column names must be text literals '
+                               'here: a statement cannot compute a column name', item.pos)
                     column = item.v
                     self._check_alias(column, item.pos, seen_names)
                     field_name = ascii_upper(column)
@@ -2911,9 +2918,14 @@ class Translator:
         if dir_at is None:
             direction = 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC'
         else:
-            # A direction the evaluator would compute is one SQL cannot.
+            # A direction the evaluator would compute is one SQL cannot
+            # (E_SQL_SHAPE); a literal that is neither ASC nor DESC is SEL's own
+            # E_BAD_ARG.
             d = args[dir_at]
-            direction = ascii_upper(d.v) if d.t == 'text' else None
+            if d.t != 'text':
+                refuse('E_SQL_SHAPE', 'a sort direction must be a text literal here: SQL '
+                       'cannot compute one', d.pos)
+            direction = ascii_upper(d.v)
             if direction not in ('ASC', 'DESC'):
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", d.pos)
         plan.order_by.append({'binder': binder, 'node': args[key_at],

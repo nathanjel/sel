@@ -78,25 +78,26 @@ its shape is the translator's business, not the evaluator's."
 X + 1) names its binder in argument 1 and uses it in argument 2; the two-argument
 form binds `_` implicitly. Neither name is a free variable, so neither
 disqualifies the call -- but the SOURCE still has to be constant, or the body has
-nothing to iterate."
+nothing to iterate. Which argument is which is the manifest's form
+(SEL::BINDING-FORM), as for stage 1 and the dependency walk: an outer argument is
+constant in BOUND, an inner one with the form's names (binders, `_`, `_K`) bound
+too, and a binder slot is a name, never a read -- so LINK's right source is read
+where the call stands (const.binding-form.*)."
   (let ((args (sel::node-items n))
         (spec (sel::node-spec n)))
     (if (not (and spec (sel::spec-binds spec)))
         (every (lambda (a) (is-constant a bound)) args)
-        (and args
-             (is-constant (first args) bound)
-             (let ((inner (copy-list bound))
-                   (body 1))
-               (if (>= (length args) 3)
-                   (progn
-                     ;; Malformed; not constant, and the aggregate refuses it for
-                     ;; real.
-                     (unless (is-binder-name (second args)) (return-from constant-call-p nil))
-                     (push (sel::node-s (second args)) inner)
-                     (setf body 2))
-                   (push "_" inner))
-               (loop for i from body below (length args)
-                     always (is-constant (nth i args) inner)))))))
+        (multiple-value-bind (scopes binds) (sel::binding-form (sel::node-s n) args spec)
+          (and scopes
+               (let ((inner (append binds bound)))
+                 (loop for a in args
+                       for scope in scopes
+                       always (case scope
+                                ;; Malformed; not constant, and the aggregate
+                                ;; refuses it for real.
+                                (:binder (is-binder-name a))
+                                (:inner (is-constant a inner))
+                                (t (is-constant a bound))))))))))
 
 (defun is-constant (n bound)
   "Whether every leaf under N is a literal. A binder an aggregate introduces
@@ -373,15 +374,17 @@ NAME is not a node the walk visits and is not counted (it is not a read)."
          (when *metrics* (setf (gethash n *metrics*) m))
          m)))))
 
-(defun check-expansion (n)
+(defun check-expansion (n &key (size t))
   "Refuse, before anything walks or evaluates it, a tree whose expansion cannot
 be translated: past MAX_SQL_NODES nodes (E_SQL_SIZE) or absurdly deep (E_SQL_DEPTH).
 Without this a doubling chain `X1 = X0 + X0; X2 = X1 + X1; ...` cost the time of
-the expansion in the constant validation of stage 1, before the translator's own
-counter ever ran. The depth cut is loose (twice the evaluator's): the exact
-boundary is still the evaluator's, decided where it always was."
+the expansion in the walks after stage 1, before the translator's own counter
+ever ran. The depth cut is loose (twice the evaluator's): the exact boundary is
+still the evaluator's, decided where it always was. SIZE NIL checks the depth
+alone: a definition's size is charged where it is read
+(docs/internals/sql-translation.md 7.4), and one nothing reads is free."
   (let ((m (node-metrics n)))
-    (when (> (car m) sel::+limit-max-sql-nodes+)
+    (when (and size (> (car m) sel::+limit-max-sql-nodes+))
       (refuse "E_SQL_SIZE"
               (format nil "this program expands to more than ~a nodes of SQL once its ~
 helpers are inlined; SEL evaluates it without the expansion, but a database cannot be ~
@@ -466,7 +469,7 @@ values stop the recursion, which is the whole reason clist exists."
           (:clist (dolist (cell (clist-entries s)) (push (cdr cell) out)))
           (t (push s out)))))))
 
-(defun record-statement (s defs const-names root depth)
+(defun record-statement (s defs constant scratch depth)
   "Fold one leading statement into DEFS, or refuse it. Every refusal reports the
 ASSIGN's position, which is its target's position -- not the `=` and not the
 statement start.
@@ -503,8 +506,23 @@ here, because the shape has to be known before the query runs"
       ;; translated to TRUE and every server answered TRUE where SEL raises
       ;; E_DIV_ZERO. An indexed assignment builds a clist, which the constant
       ;; test refuses to walk, so `R[1] = 1 / 0; COUNT(R)` was 1.
-      (check-expansion value)
-      (when (is-constant value const-names) (validate-constant value root))
+      ;;
+      ;; Every constant definition, whatever its expanded size: its size is
+      ;; charged only where it is read (7.4), but SEL's verdict on it is the
+      ;; program's. So the statement is asked AS WRITTEN, run in SCRATCH, where
+      ;; every earlier constant definition already holds its value (CONSTANT
+      ;; names them): SEL reads a helper, it does not re-expand it, so this is
+      ;; linear where evaluating the inlined tree is exponential in a doubling
+      ;; chain (norm.size.unread-definition-past-the-budget-*).
+      (check-expansion value :size nil)
+      (let ((const (is-constant (sel::node-r s) (car constant))))
+        (when const
+          (handler-case (sel:run (sel::%make-program "" s) scratch)
+            (sel:sel-error (e) (refuse-as-sel e (sel::node-r s)))))
+        (setf (car constant)
+              (if (and const (null keys))
+                  (adjoin name (car constant) :test #'equal)
+                  (remove name (car constant) :test #'equal))))
       (cond
         ((null keys)
          (when (defs-get name defs)
@@ -555,10 +573,16 @@ a shape. The result is not always an expression node."
          ;; is refused here too, although the chain alone would translate.
          ;; Stage 1 removes both wrappers before either guard looks, which is
          ;; why they must be charged up front.
-         (base (if (eq (sel::node-kind ast) :seq) 1 0)))
+         (base (if (eq (sel::node-kind ast) :seq) 1 0))
+         ;; The names a statement may read as constants (the value bindings,
+         ;; then each whole definition recorded as constant), in a cell
+         ;; RECORD-STATEMENT updates, and the scratch root constant statements
+         ;; run in: a copy of the value bindings.
+         (constant (list (copy-list const-names)))
+         (scratch (if root (sel::value-copy root) (sel:make-none))))
     (let ((*metrics* (make-hash-table :test #'eq)))
       (dolist (s leading)
-        (setf defs (record-statement s defs const-names root (1+ base))))
+        (setf defs (record-statement s defs constant scratch (1+ base))))
       (let ((out (substitute-node result defs '() base)))
         (check-expansion out)
         out))))
