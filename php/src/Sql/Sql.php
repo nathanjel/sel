@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Sel\Sql;
 
 use Sel\Program;
+use Sel\Value;
 
 final class Sql
 {
@@ -16,7 +17,7 @@ final class Sql
      * Use this when you want to know why a rule cannot be pushed down: during
      * development, in a build-time audit of a rule set, or in a test.
      *
-     * @param array<string, array<string,mixed>> $bindings
+     * @param array<string, Binding>|Bindings $bindings  Binding objects by SEL name (a raw array is refused)
      * @param array<string,mixed> $options  strict: refuse anything inexact
      */
     public static function translate(Program $program, string $dialect,
@@ -35,7 +36,7 @@ final class Sql
      * a try/catch to observe. Only SqlError is caught: a bug in the translator
      * must not be swallowed by the path that exists to handle refusals.
      *
-     * @param array<string, array<string,mixed>>|Bindings $bindings
+     * @param array<string, Binding>|Bindings $bindings
      * @param array<string,mixed> $options
      */
     public static function tryTranslate(Program $program, string $dialect,
@@ -51,7 +52,7 @@ final class Sql
     /**
      * Translate a relational pipeline program into a SQL statement fragment.
      *
-     * @param array<string, array<string,mixed>>|Bindings $bindings
+     * @param array<string, Binding>|Bindings $bindings
      * @param array<string,mixed> $options
      */
     public static function translateStatement(Program $program, string $dialect,
@@ -65,7 +66,7 @@ final class Sql
     /**
      * The same, returning null instead of throwing on SqlError.
      *
-     * @param array<string, array<string,mixed>>|Bindings $bindings
+     * @param array<string, Binding>|Bindings $bindings
      * @param array<string,mixed> $options
      */
     public static function tryTranslateStatement(Program $program, string $dialect,
@@ -96,7 +97,14 @@ final class Sql
         return Hybrid::plan($program, $dialect, $bindings, $options);
     }
 
-    /** @param callable(string,list<Value>,Fragment):mixed $dbRunner */
+    /**
+     * Run a plan: the statement through `$dbRunner` (which returns the rows, as
+     * natives or a Value), then the continuation over them, on a copy of
+     * `$context` -- never the caller's context itself.
+     *
+     * @param callable(string,list<Value>,Fragment):mixed $dbRunner
+     * @param Value|array<mixed>|null $context
+     */
     public static function executeHybrid(HybridPlan $plan, callable $dbRunner, $context = null): mixed
     {
         return Hybrid::execute($plan, $dbRunner, $context);

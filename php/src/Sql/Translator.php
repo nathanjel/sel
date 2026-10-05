@@ -48,15 +48,30 @@ final class Translator
     private array $frames = [];
     /** @var array<string,bool> */
     private array $caveats = [];
-    /** Value-binding names that count as constant leaves; see Constants::scope. */
-    /** @var array<string,bool> */
+    /** @var array<string,bool> value-binding names that count as constant leaves; see Constants::scope */
     private array $constNames = [];
     private ?\Sel\Context $constCtx = null;
     /** Walk depth, counted exactly as Evaluator counts evaluation nesting. */
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
-    private bool $inWhere = false;
     private int $subqueryCounter = 0;
+
+    /**
+     * Ranges of frame indices no name may resolve to: [from, to). A node written
+     * outside an aggregate -- a definition inlined by stage 1, an element of a
+     * static list -- is rendered inside that aggregate's frames, and would otherwise
+     * be captured by its binders. Frames pushed after the range was opened are
+     * above it and stay visible: they are the node's own.
+     *
+     * @var list<array{0:int,1:int}>
+     */
+    private array $hidden = [];
+
+    /** @var list<array{0:Binder,1:Binder}> the element and key binder of each open element/row frame */
+    private array $scopeStack = [];
+
+    /** Nodes dispatched so far in this translation (E_SQL_SIZE, docs 7.4). */
+    private int $nodes = 0;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -346,7 +361,7 @@ final class Translator
         // at it, so no dialect has a portable spelling.
         if ($v->isText() && str_contains($v->asText(), "\0")) {
             refuse('E_SQL_UNSUPPORTED', 'a text value holding NUL cannot be sent to '
-                . 'any SQL server', $pos ?? ['line' => 1, 'col' => 1, 'offset' => 0]);
+                . 'any SQL server', $pos);
         }
         $this->params[] = $v;
         $this->paramKinds[] = $kind === 'UNKNOWN' || $kind === 'LIST' ? 'TEXT' : $kind;
@@ -910,8 +925,7 @@ final class Translator
                     } else {
                         $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
                     }
-                    return new Fragment($parts, 'NUM', $this->dialect,
-                        $inner->params, $inner->paramKinds, $inner->caveats);
+                    return new Fragment($parts, 'NUM', $this->dialect);
                 }
             }
         }
@@ -1658,23 +1672,6 @@ final class Translator
                                   'JOIN' => 'join'];
     private const AGG_FOLD = ['ALL' => 'AND', 'ANY' => 'OR', 'SUM' => '+'];
 
-    /**
-     * Ranges of frame indices no name may resolve to: [from, to). A node written
-     * outside an aggregate -- a definition inlined by stage 1, an element of a
-     * static list -- is rendered inside that aggregate's frames, and would otherwise
-     * be captured by its binders. Frames pushed after the range was opened are
-     * above it and stay visible: they are the node's own.
-     *
-     * @var list<array{0:int,1:int}>
-     */
-    private array $hidden = [];
-
-    /** @var list<array{0:Binder,1:Binder}> the element and key binder of each open element/row frame */
-    private array $scopeStack = [];
-
-    /** Nodes dispatched so far in this translation (E_SQL_SIZE, docs 7.4). */
-    private int $nodes = 0;
-
     private function chargeNodes(int $n): void
     {
         $this->nodes += $n;
@@ -1784,7 +1781,9 @@ final class Translator
     {
         $key = $this->withRow($src, $group['binder'], fn (): Fragment => $this->node($group['node']));
         $identity = $this->identityGroupKey($group['node'], $key);
-        if ($projected && $key->kind === 'NUM') return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+        if ($projected && $key->kind === 'NUM') {
+            return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect);
+        }
         return $identity;
     }
 
@@ -1801,9 +1800,9 @@ final class Translator
             if (!in_array($node['t'], ['var', 'index', 'num'], true)) {
                 refuse('E_SQL_SHAPE', 'computed numeric group keys do not preserve SEL identity', $node['pos']);
             }
-            $numeric = new Fragment($f->parts, 'NUM', $this->dialect, $f->params, $f->paramKinds, $f->caveats);
+            $numeric = new Fragment($f->parts, 'NUM', $this->dialect);
             $w = $this->emit->textOperand($numeric);
-            return new Fragment($w->parts, 'TEXT', $this->dialect, $w->params, $w->paramKinds, $w->caveats, true, false, false);
+            return new Fragment($w->parts, 'TEXT', $this->dialect, exact: true);
         }
         return $this->collatedKey($f);
     }
@@ -1847,7 +1846,7 @@ final class Translator
             return $f;
         }
         $wrapped = $this->emit->textOperand($f);
-        return new Fragment($wrapped->parts, 'TEXT', $this->dialect, $wrapped->params, $wrapped->paramKinds, $wrapped->caveats, true, false, false);
+        return new Fragment($wrapped->parts, 'TEXT', $this->dialect, exact: true);
     }
 
     private function fromBinder(Binder $b, array $n): Fragment
@@ -1870,7 +1869,7 @@ final class Translator
                 }
                 $collated = $this->identityGroupKey($group['node'], $key);
                 if ($key->kind === 'NUM') {
-                    $out = new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+                    $out = new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect);
                     $out->canonical = $key->canonical;
                     return $out;
                 }
@@ -1883,7 +1882,7 @@ final class Translator
                 // HAVING name.
                 // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
                 if ($collated !== $key) {
-                    $out = new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
+                    $out = new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, exact: true);
                     $out->canonical = $key->canonical;
                     return $out;
                 }
@@ -2553,12 +2552,10 @@ final class Translator
             'CASE WHEN COUNT(*) = COUNT(CASE WHEN {bodyTest} THEN 1 END) THEN '
             . 'COALESCE(SUM({bodyCast}), 0) ELSE NULL END', $tpl);
         $slots = self::slots($this->relationSlots($rel), [
-            'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
-            'bodyCast' => [new Fragment($this->sumCast($test, $cast), 'UNKNOWN', $this->dialect,
-                $body->params, $body->paramKinds)],
+            'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect)],
+            'bodyCast' => [new Fragment($this->sumCast($test, $cast), 'UNKNOWN', $this->dialect)],
         ]);
-        return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect,
-            $body->params, $body->paramKinds, $body->caveats);
+        return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect);
     }
 
     /**
@@ -3219,7 +3216,7 @@ final class Translator
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
-    private function requireBool(Fragment $f, array $pos, string $where): Fragment
+    private function requireBool(Fragment $f, ?array $pos, string $where): Fragment
     {
         if ($f->kind === 'BOOL') {
             return $f;
@@ -3754,7 +3751,8 @@ final class Translator
                     // has only the keys left, and SEL's value is still a map of
                     // groups.
                     if ($plan->bucket === 'sealed') {
-                        refuse('E_SQL_SHAPE', "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+                        refuse('E_SQL_SHAPE', "a FILTER over buckets must follow the BUCKET directly: "
+                            . "SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
                     }
                     // A FILTER after a LIMIT or OFFSET is a WHERE over the rows
                     // that survived them, grouped or not -- SEL applies the TAKE
@@ -3805,7 +3803,8 @@ final class Translator
                     // value is a map of groups and re-grouping it is a different
                     // program.
                     if ($plan->bucket !== null) {
-                        refuse('E_SQL_SHAPE', "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+                        refuse('E_SQL_SHAPE', "a BUCKET over buckets: "
+                            . "SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
                     }
                     // Groups appear in order of their first member, and the members were
                     // sorted: a GROUP BY returns its groups in no order at all, and the
@@ -3844,7 +3843,8 @@ final class Translator
                     $severalKeys = ($keyNode['t'] === 'call' && in_array($keyNode['name'], ['LIST', 'RECORD'], true))
                         || $keyNode['t'] === 'list';
                     if ($aggNode === null && $severalKeys) {
-                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', $keyNode['pos']);
+                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; '
+                            . 'BUCKET(src, key, proj) groups by several', $keyNode['pos']);
                     }
                     $groupBy = [];
                     if (($keyNode['t'] === 'call' && $keyNode['name'] === 'LIST') || $keyNode['t'] === 'list') {
@@ -3977,9 +3977,14 @@ final class Translator
                     if ($plan->projections === null && $plan->selectCols === null) {
                         refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', $step['pos']);
                     }
-                    // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                    // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT
+                    // DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL
+                    // (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on
+                    // MariaDB. A loud refusal is acceptable and a silent misordering is not, so the
+                    // step stays in memory (CPP-C60).
                     if ($plan->orderBy !== []) {
-                        refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
+                        refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, '
+                            . 'which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
                     }
                     $plan->distinct = true;
                     break;
@@ -4303,7 +4308,9 @@ final class Translator
             foreach ($entries ?? [] as $entry) {
                 if (($entry['alias'] ?? null) !== null) {
                     $key = strtr($entry['alias'], 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-                    if (isset($seen[$key])) refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', $entry['node']['pos']);
+                    if (isset($seen[$key])) {
+                        refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', $entry['node']['pos']);
+                    }
                     $seen[$key] = true;
                 }
             }
@@ -4334,7 +4341,9 @@ final class Translator
                             ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
                             : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
                     if ($plan->distinct) {
-                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true) && !$pFrag->canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
+                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true) && !$pFrag->canonical) {
+                            refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
+                        }
                         $pFrag = $this->identityGroupKey($proj['node'], $pFrag);
                     }
                     foreach ($pFrag->parts as $p) {
@@ -4434,7 +4443,7 @@ final class Translator
                 $on = $this->withJoinBinders($plan, $join,
                     fn (): Fragment => $this->requireBool(
                         $this->node($join->onPred ?? ['t' => 'bool', 'v' => false, 'pos' => $join->pos]),
-                        $join->pos ?? ['line' => 1, 'col' => 1, 'offset' => 0], 'LINK'));
+                        $join->pos, 'LINK'));
                 foreach ($on->parts as $part) {
                     $parts[] = $part;
                 }
@@ -4445,15 +4454,10 @@ final class Translator
             if (!empty($plan->correlate)) {
                 $condParts[] = [$plan->correlate];
             }
-            $this->inWhere = true;
-            try {
-                foreach ($plan->filters as $filter) {
-                    $cFrag = $this->withRow($src, $filter['binder'],
-                        fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
-                    $condParts[] = $cFrag->parts;
-                }
-            } finally {
-                $this->inWhere = false;
+            foreach ($plan->filters as $filter) {
+                $cFrag = $this->withRow($src, $filter['binder'],
+                    fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
+                $condParts[] = $cFrag->parts;
             }
 
             if ($condParts !== []) {
@@ -4479,7 +4483,8 @@ final class Translator
                     $first = false;
                     $gFrag = $this->groupKey($src, $gb);
                     if ($plan->bareKey && ($gFrag->kind === 'BOOL' || $gFrag->kind === 'BIN')) {
-                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', $gb['pos']);
+                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; '
+                            . 'SEL refuses a boolean or binary key (E_NOT_TEXT)', $gb['pos']);
                     }
                     foreach ($gFrag->parts as $p) {
                         $parts[] = $p;
