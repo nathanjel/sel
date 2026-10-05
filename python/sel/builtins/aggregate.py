@@ -660,12 +660,10 @@ def do_top(args, ctx, forced_dir):
         else:
             body = args.node(1)
             direction = ascii_upper(args.text(2))
-    elif sort_count == 4:
+    else:                            # 4: TOP_BY's arity (2..5) leaves nothing else
         binder = args.symbol(1)
         body = args.node(2)
         direction = ascii_upper(args.text(3))
-    else:
-        fail('E_ARITY', f'{args.name} has an invalid sort form', args.pos)
 
     if direction not in ('ASC', 'DESC'):
         direction_index = 3 if sort_count == 4 else 2

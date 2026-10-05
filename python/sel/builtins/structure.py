@@ -972,9 +972,7 @@ def _link(args, ctx, left_join):
     # handed down on purpose below.
     prefilter = ctx.join_prefilter
     ctx.join_prefilter = None
-    count = args.count()
-    if count not in (3, 5):
-        fail('E_ARITY', f'{args.name} takes 3 or 5 arguments, got {count}', args.pos)
+    count = args.count()             # 3 or 5: the manifest's arity, checked at compile time
     # With conjuncts to pre-apply and a left source that is itself a join, the
     # right source is evaluated first -- unobservable when both sources are
     # pure -- so that the conjuncts still valid above this join's right rows

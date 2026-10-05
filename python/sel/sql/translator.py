@@ -225,8 +225,7 @@ class Translator:
         literal at the name. The planner reads RECORD in three places -- a
         bucket's projection, a bucket's key, a MAP's projection -- and each
         used to walk the pairs itself."""
-        if len(node.args) % 2:
-            refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos)
+        # An even count: the parser refused anything else (E_ARITY at compile time).
         fields: list[tuple[str, Node]] = []
         seen: dict[bytes, str] = {}
         for i in range(0, len(node.args), 2):
@@ -2627,14 +2626,13 @@ class Translator:
                 # ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
                 # beside it and the rows would come back in no order; a filter commutes with a
                 # stable sort, so the rows and their order are the same.)
+                # Arity is the parser's (E_ARITY at compile time): 2 or 3 here.
                 if len(args) == 2:
                     binder, predicate = '_', args[1]
-                elif len(args) == 3:
+                else:
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos)
                     binder, predicate = args[1].name, args[2]
-                else:
-                    refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos)
                 if plan.group_by is not None:
                     plan.having.append({'binder': binder, 'node': predicate, 'pos': step.pos,
                                         'over_groups': over_groups})
@@ -2664,12 +2662,10 @@ class Translator:
                     binder, key_node, aggregate_node = '_', args[1], None
                 elif len(args) == 3:
                     binder, key_node, aggregate_node = '_', args[1], args[2]
-                elif len(args) == 4:
+                else:                    # 4 (the parser refused any other count)
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos)
                     binder, key_node, aggregate_node = args[1].name, args[2], args[3]
-                else:
-                    refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos)
 
                 # A bare bucket's key is an index key (spec §7.4): one text or
                 # number. A list or record key is refused by the evaluator, and
@@ -2746,12 +2742,10 @@ class Translator:
                            'the projection that ends the grouping', step.pos)
                 if len(args) == 2:
                     binder, expr = '_', args[1]
-                elif len(args) == 3:
+                else:                    # 3 (the parser refused any other count)
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos)
                     binder, expr = args[1].name, args[2]
-                else:
-                    refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos)
                 # BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
                 # MAP's body is evaluated once per group, so it is the bucket's
                 # projection.
@@ -2778,14 +2772,10 @@ class Translator:
                 plan.distinct = True
 
             elif name == 'TAKE':
-                if len(args) != 2:
-                    refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos)
                 limit = self._eval_int_param(args[1], 'TAKE')
                 plan.limit = limit if plan.limit is None else min(plan.limit, limit)
 
             elif name == 'DROP':
-                if len(args) != 2:
-                    refuse('E_ARITY', 'DROP takes 2 arguments', step.pos)
                 offset = self._eval_int_param(args[1], 'DROP')
                 # Consume the bounded slice. Avoid sums beyond the exact
                 # integer range shared by hosts by retaining a SQL boundary.
@@ -2848,9 +2838,7 @@ class Translator:
                     refuse('E_SQL_SHAPE', f'a {name} over sorted rows would return them in no order, '
                            "where SEL has the left list's order", step.pos)
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
-                if len(args) not in (3, 5):
-                    refuse('E_ARITY', f'{name} takes 3 or 5 arguments', step.pos)
-                right_node = args[1]
+                right_node = args[1]             # 3 or 5 arguments: the parser's arity
                 if right_node.t != 'var' or not self.bindings.has(right_node.name):
                     refuse('E_SQL_SHAPE', f'{name} requires a bound relation as its right side', right_node.pos)
                 right_relation = self.bindings.get(right_node.name, right_node.pos)
@@ -2935,13 +2923,12 @@ class Translator:
                 plan.order_by.append({'binder': '_', 'node': args[1],
                                       'dir': direction, 'pos': step.pos})
                 return
-            if count == 3:
-                if not _constants.is_binder_name(args[1]):
-                    refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos)
-                plan.order_by.append({'binder': args[1].name, 'node': args[2],
-                                      'dir': direction, 'pos': step.pos})
-                return
-            refuse('E_ARITY', f'{name} takes 1 to 3 arguments', step.pos)
+            # 3, the last count the parser lets through.
+            if not _constants.is_binder_name(args[1]):
+                refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos)
+            plan.order_by.append({'binder': args[1].name, 'node': args[2],
+                                  'dir': direction, 'pos': step.pos})
+            return
 
         if count == 2:
             binder, key, direction = '_', args[1], 'ASC'
@@ -2955,15 +2942,13 @@ class Translator:
                 # would compute, and SQL cannot -- the four-argument form's
                 # refusal.
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos)
-        elif count == 4:
+        else:                            # 4 (the parser refused any other count)
             if not _constants.is_binder_name(args[1]):
                 refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos)
             binder, key = args[1].name, args[2]
             if args[3].t != 'text':
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos)
             direction = ascii_upper(args[3].v)
-        else:
-            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos)
         if direction not in ('ASC', 'DESC'):
             refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
                    args[3].pos if count == 4 else args[2].pos)
