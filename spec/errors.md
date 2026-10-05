@@ -33,7 +33,7 @@ argument's, not the call's.
 | `E_UNKNOWN_FUNC` | a call to a name that is not in the function table |
 | `E_ARITY` | argument count outside the function's declared minimum and maximum, or failing an extra rule it declares — `COND` requires an odd count, `LINK` and `LINK_LEFT` exactly three or five |
 | `E_DEPTH` | parser nesting exceeded the implementation limit; every nesting construct counts, prefix `NOT` and `-` included (§6.4) |
-| `E_REGEX_SYNTAX` | a regex literal pattern uses syntax outside the portable subset, is outside the structural limits (group depth, group count, pattern length, `{n}` bounds), or is exponentially ambiguous (§7.8); the offset is unspecified for the last two and is never asserted by a test |
+| `E_REGEX_SYNTAX` | a regex literal pattern uses syntax outside the portable subset, is outside the structural limits (group depth, group count, pattern length, `{n}` bounds), or is exponentially ambiguous (§7.8); the position is the pattern's, and the offset inside the pattern that the message quotes (see *Message conventions* below) is never asserted by a test |
 
 `E_ARITY` and `E_UNKNOWN_FUNC` are compile-time because the function table is
 fixed — there is no `DEFUN`. Catching them before the rule ever runs is most of
@@ -86,3 +86,35 @@ built at run time is validated when the call executes.
 `E_ABORT` is the only error a rule author is expected to raise deliberately. It
 is how a validation rule reports a domain failure rather than a language failure,
 and hosts may want to present it differently from every other code.
+
+---
+
+## Message conventions
+
+Messages are not normative, and no conformance case reads one. But a command
+line prints them, so the same mistake should read the same on every host, and
+these few details are agreed (`tools/check-messages.py` compares them):
+
+- **Quoting a text.** A message that quotes a value or a character of the
+  source writes it as a JSON string literal: double quotes, `\"` and `\\` for
+  the quote and the backslash, `\n`, `\r`, `\t`, `\b`, `\f` and `\u00xx` (lower-case hex) for
+  the other C0 controls, every other code point as itself.
+- **An unexpected character.** The lexer's `E_SYNTAX` for a character that
+  starts no token is `unexpected character "c"`, quoted as above, followed by
+  ` (U+XXXX)` when `c` is not printable ASCII (U+0021–U+007E), so that a
+  no-break space or a byte-order mark is visible.
+- **The regex detail.** An `E_REGEX_SYNTAX` from the pattern validator ends
+  `(at offset N of /P/)`. `P` is the pattern, or, when it is longer than 80
+  code points, its first 77 code points and `...`. `N` counts code points of
+  the pattern from 0 and names:
+  - for a refusal about a quantifier — the quantifier itself (nothing to
+    repeat, a quantifier on a quantifier, its bounds) or what it repeats (an
+    anchor, a body that can match the empty string, a capture an iteration may
+    skip) — the quantifier's first code point (`*`, `+`, `?` or `{`);
+  - for a range inside a class (an escape as an endpoint, a reversed range),
+    its `-`;
+  - for any other construct, its first code point: an escape's backslash, a
+    group's or a verb's `(` (an unclosed group's too, and the first group past
+    the depth or count cap), a POSIX bracket form's `[`;
+  - for a refusal of the whole pattern — its length, and every refusal of the
+    ambiguity rule of §7.8, its budget and its analysis caps included — 0.

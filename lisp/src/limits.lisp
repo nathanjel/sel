@@ -9,6 +9,14 @@
 (defconstant +limit-max-collection+ 1000000)   ; §6.4: children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE
 (defconstant +limit-max-regex-pattern+ 65535)   ; §7.8: code points of a regex pattern; beyond it E_REGEX_SYNTAX
 (defconstant +limit-max-regex-groups+ 1000)   ; §7.8: groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX
+(defconstant +limit-max-round-scale+ 1000000)   ; §6.4: the scale argument of ROUND(x, n); beyond it E_RANGE
+(defconstant +limit-max-power-exponent+ 100000)   ; §6.4: the exponent argument of POWER(x, n); beyond it E_RANGE
+(defconstant +limit-max-regex-quantifier+ 65535)   ; §6.4: a regex quantifier bound, as in a{n} or a{n,m} (PCRE2's own hard limit); beyond it E_REGEX_SYNTAX
+(defconstant +limit-regex-ambiguity-budget+ 16)   ; §7.8: the regex ambiguity budget, the summed log2 of the finite choices outside every loop; above it E_REGEX_SYNTAX
+(defconstant +limit-regex-analysis-positions+ 131072)   ; §7.8: positions of the regex ambiguity analysis (2^17); more is E_REGEX_SYNTAX
+(defconstant +limit-regex-analysis-edges+ 262144)   ; §7.8: follow edges of the regex ambiguity analysis (2^18); more is E_REGEX_SYNTAX
+(defconstant +limit-regex-analysis-ranges+ 2097152)   ; §7.8: the sum over follow edges of the ranges at the target (2^21); above it E_REGEX_SYNTAX
+(defconstant +limit-regex-analysis-pair-work+ 1048576)   ; §7.8: units of pair-graph work of the regex ambiguity analysis (2^20); more is E_REGEX_SYNTAX
 (defconstant +limit-max-sql-nodes+ 250000)   ; §6.4: nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md)
 (defconstant +limit-div-scale+ 10)   ; §5.3: fractional digits long division runs to before rounding half away from zero
 

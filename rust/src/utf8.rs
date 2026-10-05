@@ -220,6 +220,38 @@ pub fn decode_utf8_source(data: &[u8]) -> Result<String, SelError> {
     Ok(cps.into_iter().collect())
 }
 
+/// A text as a message quotes it (spec/errors.md, "Message conventions"): a JSON
+/// string literal with every code point from U+0020 up written as itself.
+pub(crate) fn quote_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// One source character as the lexer's message quotes it: quote_text, and its code
+/// point too unless it is printable ASCII, so that a no-break space is visible.
+pub(crate) fn quote_char(c: char) -> String {
+    if ('\u{21}'..='\u{7e}').contains(&c) {
+        quote_text(c.encode_utf8(&mut [0; 4]))
+    } else {
+        format!("{} (U+{:04X})", quote_text(c.encode_utf8(&mut [0; 4])), c as u32)
+    }
+}
+
 pub fn cap_text(n: u128, pos: Pos) -> Result<(), SelError> {
     if n > crate::limits::MAX_TEXT_LEN as u128 {
         Err(SelError::range(

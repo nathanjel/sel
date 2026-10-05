@@ -324,7 +324,7 @@ final class Value
             if (!is_string($key)) self::keyNotString($key);
             self::checkText($key);
             if (isset($seen[$key])) {
-                fail('E_BAD_ARG', "{$what} cannot hold the key " . json_encode($key) . ' twice', null);
+                fail('E_BAD_ARG', "{$what} cannot hold the key " . quote_text((string) $key) . ' twice', null);
             }
             $seen[$key] = true;
         }
@@ -395,7 +395,7 @@ final class Value
         }
         $parsed = Dec::parse($d);
         if ($parsed === null) {
-            fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
+            fail('E_NOT_NUM', 'not a number: ' . quote_text($d));
         }
         // The scalar is derived from the parsed decimal, not kept as typed:
         // "007" is 7 and "-0" is 0 (spec §4, §8), and a caller that spelled it
@@ -898,7 +898,10 @@ final class Value
             $v = $v->storage !== null
                 ? $v->storage[0]
                 : $v->children[array_key_first($v->children)];
-            if (++$guard > 1000) {
+            // Values are capped at MAX_DEPTH wherever the language builds them;
+            // only a host-built chain can get here, and it fails where clone,
+            // equality and dump would.
+            if (++$guard > Limits::MAX_DEPTH) {
                 fail('E_DEPTH', 'scalar context nested too deeply', $pos);
             }
         }
@@ -959,7 +962,7 @@ final class Value
         }
         $d = Dec::parse((string) $v->getScalar(), $pos);
         if ($d === null) {
-            fail('E_NOT_NUM', 'not a number: ' . json_encode($v->getScalar()), $pos);
+            fail('E_NOT_NUM', 'not a number: ' . quote_text($v->getScalar()), $pos);
         }
         $v->decVal = $d;
         return $d;

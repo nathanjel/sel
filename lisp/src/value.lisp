@@ -229,29 +229,19 @@ a negative zero loses its sign (spec §8)."
          (%make-value-raw :text nil nil nil 0 nil nil nil nil
                           (if (and (zerop (dec-digits d)) (dec-neg d)) (dec-make nil 0 (dec-scale d)) d)))
     (string (let ((p (dec-parse d)))
-              (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" d)))
+              (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" (quote-text d))))
               (%make-value-raw :text nil nil nil 0 nil nil nil nil p)))
     (t (bad-arg "not a number: expected a decimal string or a DEC, not ~(~a~)" (type-of d)))))
 
 (defvar *int-cap* nil "10^MAX_INT_DIGITS, built on first use.")
-(defvar *int-guard-bits* nil
-  "The bit length below which an integer is surely under the digit cap: the bit
-length of 10^(MAX_INT_DIGITS-1), less one. Integer arithmetic only -- a
-floating constant here was the one float in the numeric core, and it had to be
-kept in step with the limit by hand.")
-
-(defun int-guard-bits ()
-  (or *int-guard-bits*
-      (setf *int-guard-bits* (1- (integer-length (expt 10 (1- +max-int-digits+)))))))
-
 (defun make-int (n)
   (unless (integerp n) (bad-arg "not a whole number: ~a" n))
   ;; A native integer obeys the digit cap like the same digits in source (spec
   ;; §6.4); the bit-length test keeps an ordinary integer off the bignum compare.
   (when (and (> (integer-length n) 64)          ; nothing under 20 digits can trip the cap
-             (> (integer-length n) (int-guard-bits))
+             (>= (integer-length n) +max-int-bits+)
              (>= (abs n) (or *int-cap* (setf *int-cap* (expt 10 +max-int-digits+)))))
-    (fail "E_RANGE" (format nil "number has more than ~D integer digits" +max-int-digits+)))
+    (fail-digit-cap :int nil))
   (let ((d (dec-from-int n)))
     (%make-value-raw :text nil nil nil 0 nil nil nil nil d)))
 
@@ -479,7 +469,7 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
             at))
     (or (value-dec-val s)
         (let ((p (dec-parse (value-scalar s) at)))
-          (unless p (fail "E_NOT_NUM" (format nil "not a number: ~s" (value-scalar s)) at))
+          (unless p (fail "E_NOT_NUM" (format nil "not a number: ~a" (quote-text (value-scalar s))) at))
           (setf (value-dec-val s) p)
           p))))
 

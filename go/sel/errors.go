@@ -4,6 +4,7 @@ package sel
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/utf8"
@@ -12,6 +13,50 @@ import (
 // maxDepth is MAX_DEPTH (spec/limits.json): the nesting the evaluator and the
 // value walkers allow.
 const maxDepth = limits.MAX_DEPTH
+
+// quoteText quotes a text inside a message the way every host does (spec/errors.md,
+// "Message conventions"): a JSON string literal with every code point from U+0020
+// up written as itself.
+func quoteText(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// quoteChar quotes one character of the source for the lexer's message: quoteText,
+// and its code point too unless it is printable ASCII, so that a no-break space or
+// a byte-order mark is visible.
+func quoteChar(c rune) string {
+	if c >= 0x21 && c <= 0x7e {
+		return quoteText(string(c))
+	}
+	return fmt.Sprintf("%s (U+%04X)", quoteText(string(c)), c)
+}
 
 // Pos represents a source position with 1-based line and column (in Unicode code points),
 // and 0-based byte offset.

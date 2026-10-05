@@ -34,14 +34,24 @@ require_once __DIR__ . '/Limits.php';   // the caps below are defined from it
 final class Dec
 {
     public const DIV_SCALE = Limits::DIV_SCALE;   // spec/limits.json
-    /** @var list<int>|null */
-    private static ?array $nativePow10 = null;
+    /** Every power of ten a native int holds, 10^0 to 10^18. */
+    private const POW10_INT = [
+        1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
+        10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000,
+        1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000,
+    ];
+    /** The limb representation of the multiplication and division cores: base 10^7. */
+    private const LIMB_DIGITS = 7;
+    private const LIMB_BASE = 10 ** self::LIMB_DIGITS;
+    private const LIMB_FORMAT = '%0' . self::LIMB_DIGITS . 'd';
+    /**
+     * Rational bounds on log2(10), in millionths: 3.321928 < log2(10) < 3.321929.
+     * exceedsIntDigits() brackets 10^L between two powers of two with them.
+     */
+    private const LOG2_10_LO_PPM = 3321928;
+    private const LOG2_10_HI_PPM = 3321929;
 
     private static ?bool $hasGmp = null;
-    /** @var list<int> */
-    private static array $pow10Int = [
-        1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
-    ];
 
     /**
      * A digit string as a GMP number, in base 10. `gmp_add("010", ...)` on a
@@ -237,10 +247,10 @@ final class Dec
     private static function exceedsIntDigits(\GMP $g, int $scale): bool
     {
         $L = self::MAX_INT_DIGITS + $scale;
-        if (gmp_scan1($g, intdiv($L * 3321928, 1000000)) === -1) {
+        if (gmp_scan1($g, intdiv($L * self::LOG2_10_LO_PPM, 1000000)) === -1) {
             return false;   // below 2^floor(L * 3.321928), which is at most 10^L
         }
-        if (gmp_scan1($g, intdiv($L * 3321929, 1000000) + 1) !== -1) {
+        if (gmp_scan1($g, intdiv($L * self::LOG2_10_HI_PPM, 1000000) + 1) !== -1) {
             return true;    // at least 2^(floor(L * 3.321929) + 1), which is past 10^L
         }
         return gmp_cmp($g, self::pow10Gmp($L)) >= 0;
@@ -497,8 +507,8 @@ final class Dec
         $nb = count($b);
         foreach ($a as $i => $x) {
             $t = $x + ($i < $nb ? $b[$i] : 0) + $carry;
-            if ($t >= 10000000) {
-                $t -= 10000000;
+            if ($t >= self::LIMB_BASE) {
+                $t -= self::LIMB_BASE;
                 $carry = 1;
             } else {
                 $carry = 0;
@@ -519,7 +529,7 @@ final class Dec
         foreach ($a as $i => $x) {
             $t = $x - ($i < $nb ? $b[$i] : 0) - $borrow;
             if ($t < 0) {
-                $t += 10000000;
+                $t += self::LIMB_BASE;
                 $borrow = 1;
             } else {
                 $borrow = 0;
@@ -546,8 +556,8 @@ final class Dec
         for ($i = $shift; $i < $n; $i++) {
             $j = $i - $shift;
             $t = $out[$i] + ($j < $ny ? $y[$j] : 0) + $carry;
-            if ($t >= 10000000) {
-                $t -= 10000000;
+            if ($t >= self::LIMB_BASE) {
+                $t -= self::LIMB_BASE;
                 $carry = 1;
             } else {
                 $carry = 0;
@@ -588,8 +598,8 @@ final class Dec
                 $c = 0;
                 for ($k = 0, $m = $na + $nb; $k < $m; $k++) {
                     $t = $acc[$k] + $c;
-                    $acc[$k] = $t % 10000000;
-                    $c = intdiv($t, 10000000);
+                    $acc[$k] = $t % self::LIMB_BASE;
+                    $c = intdiv($t, self::LIMB_BASE);
                 }
             }
         }
@@ -598,12 +608,12 @@ final class Dec
         $nc = count($acc);
         for ($k = 0; $k < $nc; $k++) {
             $t = $acc[$k] + $carry;
-            $acc[$k] = $t % 10000000;
-            $carry = intdiv($t, 10000000);
+            $acc[$k] = $t % self::LIMB_BASE;
+            $carry = intdiv($t, self::LIMB_BASE);
         }
         while ($carry > 0) {
-            $acc[] = $carry % 10000000;
-            $carry = intdiv($carry, 10000000);
+            $acc[] = $carry % self::LIMB_BASE;
+            $carry = intdiv($carry, self::LIMB_BASE);
         }
         return self::trimLimbs($acc);
     }
@@ -658,7 +668,7 @@ final class Dec
             for ($i = 0; $i < $la; $i += 9) {
                 $chunkLen = min(9, $la - $i);
                 $chunk = (int) substr($a, $i, $chunkLen);
-                $curr = $rem * self::$pow10Int[$chunkLen] + $chunk;
+                $curr = $rem * self::POW10_INT[$chunkLen] + $chunk;
                 $qChunk = intdiv($curr, $ib);
                 $rem = $curr % $ib;
                 if ($q !== '' || $qChunk > 0) {
@@ -680,8 +690,8 @@ final class Dec
     private static function toLimbs(string $digits): array
     {
         $limbs = [];
-        for ($i = strlen($digits); $i > 0; $i -= 7) {
-            $start = max(0, $i - 7);
+        for ($i = strlen($digits); $i > 0; $i -= self::LIMB_DIGITS) {
+            $start = max(0, $i - self::LIMB_DIGITS);
             $limbs[] = (int) substr($digits, $start, $i - $start);
         }
         return $limbs;
@@ -694,7 +704,7 @@ final class Dec
         while ($i > 0 && $limbs[$i] === 0) $i--;
         $out = (string) $limbs[$i];
         for ($i--; $i >= 0; $i--) {
-            $out .= sprintf('%07d', $limbs[$i]);
+            $out .= sprintf(self::LIMB_FORMAT, $limbs[$i]);
         }
         return $out;
     }
@@ -711,7 +721,7 @@ final class Dec
      */
     private static function divModLimbs(string $a, string $b): array
     {
-        $base = 10000000;
+        $base = self::LIMB_BASE;
         $u = self::toLimbs($a);
         $v = self::toLimbs($b);
         $n = count($v);
@@ -862,16 +872,7 @@ final class Dec
 
     private static function intPow10(int $scale): ?int
     {
-        if ($scale < 0) return null;
-        if (self::$nativePow10 === null) {
-            self::$nativePow10 = [1];
-            for ($i = 1; $i <= 18; $i++) {
-                $next = self::$nativePow10[$i - 1] * 10;
-                if (!is_int($next)) break;
-                self::$nativePow10[] = $next;
-            }
-        }
-        return self::$nativePow10[$scale] ?? null;
+        return self::POW10_INT[$scale] ?? null;
     }
 
     /** @return array{0:int,1:int,2:int}|null */

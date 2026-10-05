@@ -52,12 +52,11 @@ for pkg in sel sel/sql; do
   grep -q "^Package ${pkg##*/} " <<<"$pkgdoc" || fail "$pkg has no package documentation"
 done
 
-# The hand-written sources are gofmt-clean. The generated ones (*_gen.go and the
-# three manifests under internal/) are left out until their generators emit
-# gofmt's layout; the generators, not gofmt -w, decide those bytes
-# (tools/check-generated.sh).
-unformatted="$(cd "$mod" && gofmt -l . | grep -v -e '_gen\.go$' -e '^internal/limits/limits\.go$' \
-  -e '^internal/manifest/builtins\.go$' -e '^internal/mathops/math_ops\.go$')"
+# Every source is gofmt-clean, the generated ones (*_gen.go and the three
+# manifests under internal/) included: their generators write gofmt's layout
+# themselves, so the bytes are the generators' (tools/check-generated.sh) and
+# this only notices when an emitter has drifted from it.
+unformatted="$(cd "$mod" && gofmt -l .)"
 [ -z "$unformatted" ] || fail "not gofmt-clean: $(echo $unformatted)"
 
 # Every package builds and vets, and the examples pkg.go.dev shows still print

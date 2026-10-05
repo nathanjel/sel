@@ -188,7 +188,7 @@
                   (let ((op (match-operator lx i to))
                         (pos (lexer-pos-at lx i)))
                     (unless op
-                      (fail "E_SYNTAX" (format nil "unexpected character ~s" (string c)) pos))
+                      (fail "E_SYNTAX" (format nil "unexpected character ~a" (describe-char c)) pos))
                     (when bal
                       (cond
                         ((or (string= op "(") (string= op "["))

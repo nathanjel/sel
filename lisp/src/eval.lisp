@@ -134,6 +134,22 @@
             (args-pos-of a i)))
     n))
 
+;;; ROUND's scale and POWER's exponent (spec/SPEC.md §6.4), checked once for the
+;;; builtin (builtins/number.lisp) and the math plan alike: a whole number, not
+;;; negative, and within its cap (+limit-max-round-scale+,
+;;; +limit-max-power-exponent+). The messages are args-int's and
+;;; args-non-neg-int's. A size argument beyond the cap asks for more memory than
+;;; any host has; capping turns a heap exhaustion into an ordinary rule error.
+(defun sized-dec (d fn arg-no limit what pos)
+  (unless (dec-integerp d)
+    (fail "E_NOT_INT" (format nil "~a argument ~d must be a whole number" fn arg-no) pos))
+  (let ((n (dec-to-int d)))
+    (when (minusp n)
+      (fail "E_RANGE" (format nil "~a argument ~d must not be negative" fn arg-no) pos))
+    (when (> n limit)
+      (fail "E_RANGE" (format nil "~a ~d exceeds the maximum of ~d" what n limit) pos))
+    n))
+
 ;;; Requires the argument to be a bare identifier in the source — the AST shape
 ;;; check that gives aggregates their three-argument binder form.
 (defun args-symbol (a i)
@@ -263,26 +279,14 @@
                  (:round
                   (let* ((d1 (opnd (math-step-src1 step) (math-step-pos1 step)))
                          (d2 (opnd (math-step-src2 step) (math-step-pos2 step))))
-                    (unless (dec-integerp d2)
-                      (fail "E_NOT_INT" "ROUND argument 2 must be a whole number" (math-step-aux-pos step)))
-                    (let ((n (dec-to-int d2)))
-                      (when (minusp n)
-                        (fail "E_RANGE" "ROUND argument 2 must not be negative" (math-step-aux-pos step)))
-                      (when (> n 1000000)
-                        (fail "E_RANGE" (format nil "ROUND scale ~d exceeds the maximum of 1000000" n) (math-step-aux-pos step)))
+                    (let ((n (sized-dec d2 "ROUND" 2 +limit-max-round-scale+ "ROUND scale" (math-step-aux-pos step))))
                       (setf (svref scratchpad dst)
                             (dec-round d1 n (math-step-pos step))))))
 
                  (:power
                   (let* ((d1 (opnd (math-step-src1 step) (math-step-pos1 step)))
                          (d2 (opnd (math-step-src2 step) (math-step-pos2 step))))
-                    (unless (dec-integerp d2)
-                      (fail "E_NOT_INT" "POWER argument 2 must be a whole number" (math-step-aux-pos step)))
-                    (let ((n (dec-to-int d2)))
-                      (when (minusp n)
-                        (fail "E_RANGE" "POWER argument 2 must not be negative" (math-step-aux-pos step)))
-                      (when (> n 100000)
-                        (fail "E_RANGE" (format nil "POWER exponent ~d exceeds the maximum of 100000" n) (math-step-aux-pos step)))
+                    (let ((n (sized-dec d2 "POWER" 2 +limit-max-power-exponent+ "POWER exponent" (math-step-aux-pos step))))
                       (setf (svref scratchpad dst)
                             (dec-power d1 n (math-step-pos step))))))
 
@@ -328,7 +332,7 @@
                      (as-text (eval-node r ctx) (node-pos r))))
             (child (value-get obj key)))
        (or child
-           (fail "E_NO_KEY" (format nil "no key ~s" key) (node-pos node)))))
+           (fail "E_NO_KEY" (format nil "no key ~a" (quote-text key)) (node-pos node)))))
 
     (:seq
      (let ((last nil))

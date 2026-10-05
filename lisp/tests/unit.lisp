@@ -1703,8 +1703,11 @@ run of the program that built it, not a value set with the caller's string."
   (is (null (nth-value 1 (ignore-errors (sel::make-int (1- (expt 10 1000000)))))))
   (raises "E_RANGE" (sel::make-int (expt 10 1000000)))
   (raises "E_RANGE" (sel::make-int (- (expt 10 1000000))))
-  (is (integerp (sel::int-guard-bits)))
-  (is (<= (expt 2 (sel::int-guard-bits)) (expt 10 999999))))
+  ;; +MAX-INT-BITS+ is derived from MAX_INT_DIGITS with integer arithmetic:
+  ;; the smallest B with 2^B >= 10^MAX_INT_DIGITS.
+  (is (integerp sel::+max-int-bits+))
+  (is (< (expt 2 (1- sel::+max-int-bits+)) (expt 10 sel::+max-int-digits+)))
+  (is (>= (expt 2 sel::+max-int-bits+) (expt 10 sel::+max-int-digits+))))
 
 (test ceil-and-floor-carry-past-the-digit-cap-is-positioned
   ;; A maximum-size 999...9.5 carries into one digit too many; the error is at
@@ -2640,7 +2643,8 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
   ;; no prompt on a pipe; a whitespace-only line is skipped, an NBSP line is not
   (multiple-value-bind (out rc) (run-cli "printf 'A = 1\\n \\t\\r\\nA + 1\\n\\302\\240\\n' | lisp/bin/sel 2>&1")
     (is (eql rc 0))
-    (is (string= (format nil "1~%2~%E_SYNTAX at line 1 column 1: unexpected character \"~a\"" (code-char #xa0)) out)
+    ;; the code and position, not the message text (spec/errors.md)
+    (is (starts-with-p (format nil "1~%2~%E_SYNTAX at line 1 column 1: ") out)
         "~s" out)))
 
 ;;; --- performance round 1: the fast paths answer what the general ones do

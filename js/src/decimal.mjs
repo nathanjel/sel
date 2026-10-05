@@ -46,6 +46,13 @@ export function intLimitShift(maxIntDigits) {
 const _intLimitShift = intLimitShift(MAX_INT_DIGITS);
 const _FAST_BOUND = 10n ** 18n;
 
+// log10(2) bracketed by two fractions over LOG10_2_DEN: LOG10_2_LO/LOG10_2_DEN is
+// just below it and LOG10_2_HI/LOG10_2_DEN just above, so a bit length b gives
+// floor((b - 1) * lo) + 1 <= digits <= floor(b * hi) + 1 in integer arithmetic.
+const LOG10_2_LO = 30102;
+const LOG10_2_HI = 30103;
+const LOG10_2_DEN = 100000;
+
 const POW10_TABLE = [1n];
 for (let i = 1; i <= 64; i++) POW10_TABLE.push(POW10_TABLE[i - 1] * 10n);
 const POW10_CACHE = new Map();
@@ -76,6 +83,11 @@ export function pow10(k) {
   return v;
 }
 
+// 10^DIV_SCALE, computed once from the generated limit: div() multiplies every
+// dividend by it, and a typed-out literal would keep the old scale's factor while
+// the quotient was labelled with a regenerated one.
+const DIV_FACTOR = pow10(DIV_SCALE);
+
 function bitLength(n) {
   if (n === 0n) return 0;
   const hex = n.toString(16);
@@ -85,7 +97,7 @@ function bitLength(n) {
 function numDigits(n) {
   if (n === 0n) return 1;
   const bitLen = bitLength(n);
-  let d = Math.floor((bitLen * 30103) / 100000) + 1;
+  let d = Math.floor((bitLen * LOG10_2_HI) / LOG10_2_DEN) + 1;
   while (n < pow10(d - 1)) d--;
   return d;
 }
@@ -114,10 +126,10 @@ export function guard(d, pos) {
       // the cap is refused, and one far inside it accepted, without building the
       // 10^k the exact count compares against; only the thin ambiguous band pays it.
       const b = bitLength(d.digits);
-      if (Math.floor(((b - 1) * 30102) / 100000) + 1 - d.scale > MAX_INT_DIGITS) {
+      if (Math.floor(((b - 1) * LOG10_2_LO) / LOG10_2_DEN) + 1 - d.scale > MAX_INT_DIGITS) {
         fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
       }
-      if (Math.floor((b * 30103) / 100000) + 1 - d.scale > MAX_INT_DIGITS
+      if (Math.floor((b * LOG10_2_HI) / LOG10_2_DEN) + 1 - d.scale > MAX_INT_DIGITS
           && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
         fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
       }
@@ -300,7 +312,7 @@ export function div(a, b, pos) {
   if (b.digits === 0n) fail('E_DIV_ZERO', 'division by zero', pos);
   const N = a.digits * pow10(b.scale);
   const D = b.digits * pow10(a.scale);
-  const num = N * 10000000000n; // pow10(DIV_SCALE)
+  const num = N * DIV_FACTOR;
   let q = num / D;
   const r = num % D;
   const neg = a.neg !== b.neg;

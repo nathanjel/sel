@@ -1,7 +1,7 @@
 # The limits and error catalogue — `spec/limits.json`
 
-The normative numbers (§6.4's depth cap and value caps, §5.3's division
-scale) and the language's error identifiers, in one machine-readable file.
+The normative numbers (§6.4's depth cap, argument caps and value caps, §7.8's
+regex caps, §5.3's division scale) and the language's error identifiers, in one machine-readable file.
 
 **It is not a second authority.** `spec/SPEC.md` and `spec/errors.md` define
 these; this file only restates them so that hosts can be held to them. The
@@ -16,10 +16,15 @@ Change the spec first; the check tells you when this file has fallen behind.
 | `errors.<CODE>.phase` | `compile`, `run` or `both` |
 
 Renderings, all committed: `js/src/_limits.mjs`, `python/sel/_limits.py`,
-`php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp` and
-`docs/reference/limits.md`. Each host's own constants (`MAX_DEPTH`, `MAX_INT_DIGITS`,
-`MAX_FRAC_DIGITS`, `DIV_SCALE`) are defined from its rendering rather than as
-literals, so the five cannot drift. `tools/check-error-codes.sh` then reads
+`php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp`,
+`go/internal/limits/limits.go`, `rust/src/limits.rs` and
+`docs/reference/limits.md`. Every host reads every number from its rendering
+rather than writing it as a literal — the depth and value caps, the `ROUND`
+scale, `POWER` exponent and regex quantifier caps of §6.4's argument table, the
+§7.8 ambiguity budget and analysis caps, `DIV_SCALE` — and a host constant that
+follows from one of them (the bit length that guards the integer-digit cap, the
+SQL layer's constant-folding depth margin) is derived from it in integer
+arithmetic, so the hosts cannot drift. `tools/check-error-codes.sh` then reads
 every host's sources and requires that the codes a host raises are exactly the
 catalogue's (plus the SQL layer's own, from `sql/errors.md`), so a new error can
 neither be raised unlisted nor listed unraised.

@@ -61,6 +61,23 @@ def _rebuild(code: str, message: str, line: int, col: int, offset: int) -> 'SelE
     return SelError(code, message, Pos(line, col, offset))
 
 
+def quote_text(s: str) -> str:
+    """A text as a message quotes it (spec/errors.md, "Message conventions"): a
+    JSON string literal, every code point outside C0 written as itself -- what
+    JSON.stringify writes, and not repr(), whose quotes and escapes are Python's."""
+    import json
+    return json.dumps(s, ensure_ascii=False)
+
+
+def describe_char(c: str) -> str:
+    """The lexer's unexpected character: quoted, and its code point too when it
+    is not printable ASCII, so that a no-break space or a byte-order mark shows."""
+    cp = ord(c)
+    if 0x21 <= cp <= 0x7e:
+        return quote_text(c)
+    return f'{quote_text(c)} (U+{cp:04X})'
+
+
 def fail(code: str, message: str, pos: Pos | None = None) -> NoReturn:
     """Raise at the innermost point of failure. Nothing wraps this on the way out."""
     raise SelError(code, message, pos)

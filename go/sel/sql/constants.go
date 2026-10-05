@@ -146,8 +146,14 @@ func (nf *neededFields) IsNeeded() bool {
 	return nf != nil && (nf.All || len(nf.Fields) > 0)
 }
 
+// identityWalkDepth is where the static walks below stop with their
+// conservative answer. They recurse over a tree whose depth is already capped at
+// MAX_DEPTH (the parser's and stage 1's E_SQL_DEPTH), and stop short of it to
+// leave headroom for the caller's frames.
+const identityWalkDepth = limits.MAX_DEPTH - 20
+
 func textLiteralResults(node *sNode, depth int) bool {
-	if node == nil || depth >= 180 || node.T != sNodeCall || (node.Str != "IF" && node.Str != "COND") {
+	if node == nil || depth >= identityWalkDepth || node.T != sNodeCall || (node.Str != "IF" && node.Str != "COND") {
 		return false
 	}
 	args := node.Kids
@@ -175,7 +181,7 @@ func textLiteralResults(node *sNode, depth int) bool {
 }
 
 func identityProjection(node *sNode, depth int) bool {
-	if node == nil || depth >= 180 {
+	if node == nil || depth >= identityWalkDepth {
 		return false
 	}
 	switch node.T {
@@ -207,7 +213,7 @@ func identityProjection(node *sNode, depth int) bool {
 }
 
 func identityInputs(n *sNode, depth int) *neededFields {
-	if n == nil || depth >= 180 {
+	if n == nil || depth >= identityWalkDepth {
 		return &neededFields{All: true}
 	}
 	switch n.T {

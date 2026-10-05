@@ -26,7 +26,7 @@ def outcome(f):
 def test_mul_refuses_exactly_what_guard_refuses_near_a_small_cap(monkeypatch, cap):
     monkeypatch.setattr(D, 'MAX_INT_DIGITS', cap)
     monkeypatch.setattr(D, 'MAX_FRAC_DIGITS', cap)
-    monkeypatch.setattr(D, '_MAX_INT_BITS', 0)
+    monkeypatch.setattr(D, 'MAX_INT_BITS', 0)
     monkeypatch.setattr(D, '_MUL_PRECHECK_BITS', 0)      # always take the estimate path
     rnd = random.Random(cap)
     pos = Pos(1, 7, 6)
@@ -41,7 +41,7 @@ def test_mul_refuses_exactly_what_guard_refuses_near_a_small_cap(monkeypatch, ca
 
 def test_mul_at_the_boundary_of_the_cap(monkeypatch):
     monkeypatch.setattr(D, 'MAX_INT_DIGITS', 100)
-    monkeypatch.setattr(D, '_MAX_INT_BITS', 0)
+    monkeypatch.setattr(D, 'MAX_INT_BITS', 0)
     monkeypatch.setattr(D, '_MUL_PRECHECK_BITS', 0)
     for k in range(0, 101):
         a = D.make(False, 10 ** k, 0)

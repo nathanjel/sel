@@ -25,6 +25,9 @@ use crate::sql::relational_plan::{
 use crate::sql::row_model::{build_join_rows, relation_alias, RowModel};
 use crate::sql::types::{Fragment, Part, SqlKind};
 
+/// The most operands fold_pairwise renders as one left-to-right chain.
+const FOLD_CHAIN_MAX: usize = 256;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
     pub strict: bool,
@@ -2543,6 +2546,8 @@ impl Translator {
         ))
     }
 
+    /// Up to FOLD_CHAIN_MAX operands fold as one left-to-right chain; a longer
+    /// unroll becomes a balanced tree.
     pub fn fold_pairwise(
         &mut self,
         op: &str,
@@ -2561,7 +2566,7 @@ impl Translator {
     }
 
     fn fold_parts(&mut self, op: &str, mut parts: Vec<Fragment>, pos: Pos) -> Result<Fragment, SqlError> {
-        if parts.len() > 256 {
+        if parts.len() > FOLD_CHAIN_MAX {
             let right = parts.split_off(parts.len().div_ceil(2));
             let left = self.fold_parts(op, parts, pos)?;
             let right = self.fold_parts(op, right, pos)?;

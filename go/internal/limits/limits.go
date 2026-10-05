@@ -3,42 +3,50 @@
 package limits
 
 const (
-	MAX_DEPTH = 200 // §6.4: parser nesting and evaluation nesting, each; exceeding either is E_DEPTH
-	MAX_INT_DIGITS = 1000000 // §6.4: integer digits of a number; beyond it E_RANGE
-	MAX_FRAC_DIGITS = 1000000 // §6.4: fractional digits of a number; beyond it E_RANGE
-	MAX_TEXT_LEN = 16777216 // §6.4: code points of a TEXT value, bytes of a BIN value, that an operation may build; beyond it E_RANGE
-	MAX_COLLECTION = 1000000 // §6.4: children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE
-	MAX_REGEX_PATTERN = 65535 // §7.8: code points of a regex pattern; beyond it E_REGEX_SYNTAX
-	MAX_REGEX_GROUPS = 1000 // §7.8: groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX
-	MAX_SQL_NODES = 250000 // §6.4: nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md)
-	DIV_SCALE = 10 // §5.3: fractional digits long division runs to before rounding half away from zero
+	MAX_DEPTH                = 200      // §6.4: parser nesting and evaluation nesting, each; exceeding either is E_DEPTH
+	MAX_INT_DIGITS           = 1000000  // §6.4: integer digits of a number; beyond it E_RANGE
+	MAX_FRAC_DIGITS          = 1000000  // §6.4: fractional digits of a number; beyond it E_RANGE
+	MAX_TEXT_LEN             = 16777216 // §6.4: code points of a TEXT value, bytes of a BIN value, that an operation may build; beyond it E_RANGE
+	MAX_COLLECTION           = 1000000  // §6.4: children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE
+	MAX_REGEX_PATTERN        = 65535    // §7.8: code points of a regex pattern; beyond it E_REGEX_SYNTAX
+	MAX_REGEX_GROUPS         = 1000     // §7.8: groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX
+	MAX_ROUND_SCALE          = 1000000  // §6.4: the scale argument of ROUND(x, n); beyond it E_RANGE
+	MAX_POWER_EXPONENT       = 100000   // §6.4: the exponent argument of POWER(x, n); beyond it E_RANGE
+	MAX_REGEX_QUANTIFIER     = 65535    // §6.4: a regex quantifier bound, as in a{n} or a{n,m} (PCRE2's own hard limit); beyond it E_REGEX_SYNTAX
+	REGEX_AMBIGUITY_BUDGET   = 16       // §7.8: the regex ambiguity budget, the summed log2 of the finite choices outside every loop; above it E_REGEX_SYNTAX
+	REGEX_ANALYSIS_POSITIONS = 131072   // §7.8: positions of the regex ambiguity analysis (2^17); more is E_REGEX_SYNTAX
+	REGEX_ANALYSIS_EDGES     = 262144   // §7.8: follow edges of the regex ambiguity analysis (2^18); more is E_REGEX_SYNTAX
+	REGEX_ANALYSIS_RANGES    = 2097152  // §7.8: the sum over follow edges of the ranges at the target (2^21); above it E_REGEX_SYNTAX
+	REGEX_ANALYSIS_PAIR_WORK = 1048576  // §7.8: units of pair-graph work of the regex ambiguity analysis (2^20); more is E_REGEX_SYNTAX
+	MAX_SQL_NODES            = 250000   // §6.4: nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md)
+	DIV_SCALE                = 10       // §5.3: fractional digits long division runs to before rounding half away from zero
 )
 
-// The language's error codes and the phase that raises each: "compile", "run" or "both".
+// ErrorCodes holds the language's error codes and the phase that raises each: "compile", "run" or "both".
 var ErrorCodes = map[string]string{
-	"E_SYNTAX": "compile",
-	"E_UNTERMINATED": "compile",
-	"E_ESCAPE": "compile",
-	"E_RESERVED": "compile",
-	"E_BAD_ASSIGN": "compile",
-	"E_UNKNOWN_FUNC": "compile",
-	"E_ARITY": "compile",
-	"E_DEPTH": "both",
-	"E_REGEX_SYNTAX": "compile",
-	"E_UNDEF_VAR": "run",
-	"E_NO_KEY": "run",
-	"E_NO_SCALAR": "run",
-	"E_NOT_NUM": "run",
-	"E_NOT_TEXT": "run",
-	"E_NOT_BIN": "run",
-	"E_NOT_BOOL": "run",
-	"E_NOT_INT": "run",
-	"E_NULL": "run",
+	"E_SYNTAX":        "compile",
+	"E_UNTERMINATED":  "compile",
+	"E_ESCAPE":        "compile",
+	"E_RESERVED":      "compile",
+	"E_BAD_ASSIGN":    "compile",
+	"E_UNKNOWN_FUNC":  "compile",
+	"E_ARITY":         "compile",
+	"E_DEPTH":         "both",
+	"E_REGEX_SYNTAX":  "compile",
+	"E_UNDEF_VAR":     "run",
+	"E_NO_KEY":        "run",
+	"E_NO_SCALAR":     "run",
+	"E_NOT_NUM":       "run",
+	"E_NOT_TEXT":      "run",
+	"E_NOT_BIN":       "run",
+	"E_NOT_BOOL":      "run",
+	"E_NOT_INT":       "run",
+	"E_NULL":          "run",
 	"E_EXPECT_SYMBOL": "run",
-	"E_DIV_ZERO": "run",
-	"E_UTF8": "both",
-	"E_RANGE": "both",
-	"E_BAD_ARG": "run",
-	"E_LEN_MISMATCH": "run",
-	"E_ABORT": "run",
+	"E_DIV_ZERO":      "run",
+	"E_UTF8":          "both",
+	"E_RANGE":         "both",
+	"E_BAD_ARG":       "run",
+	"E_LEN_MISMATCH":  "run",
+	"E_ABORT":         "run",
 }

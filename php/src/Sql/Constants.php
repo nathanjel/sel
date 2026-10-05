@@ -37,10 +37,17 @@ use Sel\Value;
 
 final class Constants
 {
+    /**
+     * The static walks below stop with their conservative answer at this depth.
+     * They recurse over a tree already capped at MAX_DEPTH and stop short of it
+     * to leave headroom for the caller's frames.
+     */
+    private const WALK_DEPTH = Limits::MAX_DEPTH - 20;
+
     /** @param array<string,mixed>|null $node */
     private static function identityProjection(?array $node, int $depth = 0): bool
     {
-        if ($node === null || $depth >= 180) return false;
+        if ($node === null || $depth >= self::WALK_DEPTH) return false;
         if (in_array($node['t'], ['var', 'num', 'text', 'bool', 'null'], true)) return true;
         if ($node['t'] === 'index') return self::identityProjection($node['obj'], $depth + 1)
             && self::identityProjection($node['idx'], $depth + 1);
@@ -74,7 +81,7 @@ final class Constants
      */
     private static function textLiteralResults(?array $node, int $depth = 0): bool
     {
-        if ($node === null || $depth >= 180 || $node['t'] !== 'call'
+        if ($node === null || $depth >= self::WALK_DEPTH || $node['t'] !== 'call'
             || !in_array($node['name'], ['IF', 'COND'], true)) {
             return false;
         }
@@ -101,7 +108,7 @@ final class Constants
 
     private static function identityInputs(?array $n, int $depth = 0): array|bool
     {
-        if ($n === null || $depth >= 180) return true;
+        if ($n === null || $depth >= self::WALK_DEPTH) return true;
         if (in_array($n['t'], ['num', 'text', 'bool', 'null'], true)) return [];
         if ($n['t'] === 'var') return $n['name'] === '_K' ? [] : true;
         if ($n['t'] === 'index') return $n['idx']['t'] !== 'text' ? true : ($n['obj']['t'] === 'var' ? [$n['idx']['v']] : self::identityInputs($n['obj'], $depth + 1));

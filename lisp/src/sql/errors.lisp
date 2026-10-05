@@ -42,6 +42,15 @@ rule spec/errors.md sets for the evaluator."
                     :col (if pos (sel::pos-col pos) 0)
                     :offset (if pos (sel::pos-offset pos) 0)))
 
+(defun refuse-sql-depth (pos)
+  "E_SQL_DEPTH: the expression nests deeper than the evaluator's MAX_DEPTH, read
+from there and not copied (sql/errors.md)."
+  (refuse "E_SQL_DEPTH"
+          (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
+there is nothing to translate; the evaluator answers E_DEPTH for it"
+                  sel::+max-depth+)
+          pos))
+
 
 (defun bad (fmt &rest args)
   "A malformed registration is a mistake in the application's startup, not a rule

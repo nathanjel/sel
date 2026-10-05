@@ -282,9 +282,9 @@ func (v *Value) Size() int {
 	return len(v.entries)
 }
 
-// keyIndexMin is the keyed-list size from which Get/Has/Set use a hash index
-// instead of scanning listKeys. Below it the scan is cheaper than
-// building the map.
+// keyIndexMin is the keyed-list (or record) size from which Get/Has/Set use a
+// hash index instead of scanning listKeys (or entries). Below it the scan is
+// cheaper than building the map.
 const keyIndexMin = 16
 
 // listKeyPos is the slot of key in a keyed list, or -1. Linear for a short list,
@@ -423,7 +423,7 @@ func (v *Value) Set(key string, val *Value) *Value {
 		}
 	}
 	v.entries = append(v.entries, Entry{Key: key, Val: val})
-	if len(v.entries) >= 16 {
+	if len(v.entries) >= keyIndexMin {
 		v.rebuildIndex()
 	}
 	return v
@@ -574,7 +574,10 @@ func (v *Value) ScalarSource(pos Pos) *Value {
 			cur = cur.entries[0].Val
 		}
 		guard++
-		if guard > 1000 {
+		// Unreachable for a value the language built (every value is capped
+		// at maxDepth where it is built); a host-built chain stops at the same
+		// depth as Clone, Equal and Dump.
+		if guard > maxDepth {
 			fail("E_DEPTH", "scalar context nested too deeply", pos)
 		}
 	}
@@ -631,7 +634,7 @@ func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	}
 	d := decimal.Parse(s.strVal, utf8.Pos(pos), fail)
 	if d == nil {
-		fail("E_NOT_NUM", fmt.Sprintf("not a number: %q", s.strVal), pos)
+		fail("E_NOT_NUM", "not a number: "+quoteText(s.strVal), pos)
 	}
 	s.decCache.Store(d)
 	return d

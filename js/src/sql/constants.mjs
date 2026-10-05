@@ -21,13 +21,18 @@
 // as wrong and passes, because `col` is a column and its value is not knowable at
 // translation time. See docs/internals/sql-translation.md §11.4.
 
-import { SelError } from '../errors.mjs';
+import { SelError, MAX_DEPTH } from '../errors.mjs';
 import { Context, evalNode } from '../eval.mjs';
 import { Value } from '../value.mjs';
 import { format as formatDecimal } from '../decimal.mjs';
 import { refuse } from './errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
+
+// The static walks below stop with their conservative answer at this depth. They
+// recurse over a tree already capped at MAX_DEPTH, and stop short of it to leave
+// headroom for the caller's frames.
+const WALK_DEPTH = MAX_DEPTH - 20;
 
 // Whether the node is an IF or COND whose every result is a text literal -- or,
 // in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
@@ -36,7 +41,7 @@ import { bindingForm } from '../registry.mjs';
 // computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
 // a text literal too.
 function textLiteralResults(node, depth = 0) {
-  if (!node || depth >= 180 || node.t !== 'call' || !['IF', 'COND'].includes(node.name)) return false;
+  if (!node || depth >= WALK_DEPTH || node.t !== 'call' || !['IF', 'COND'].includes(node.name)) return false;
   const args = node.args;
   let results;
   if (node.name === 'IF') {
@@ -49,7 +54,7 @@ function textLiteralResults(node, depth = 0) {
 }
 
 function identityProjection(node, depth = 0) {
-  if (!node || depth >= 180) return false;
+  if (!node || depth >= WALK_DEPTH) return false;
   if (['var', 'num', 'text', 'bool', 'null'].includes(node.t)) return true;
   if (node.t === 'index') return identityProjection(node.obj, depth + 1) && identityProjection(node.idx, depth + 1);
   if (node.t === 'call') {
@@ -66,7 +71,7 @@ function identityProjection(node, depth = 0) {
 }
 
 function identityInputs(n, depth = 0) {
-  if (!n || depth >= 180) return true;
+  if (!n || depth >= WALK_DEPTH) return true;
   if (['num', 'text', 'bool', 'null'].includes(n.t)) return new Set();
   if (n.t === 'var') return n.name === '_K' ? new Set() : true;
   if (n.t === 'index') return n.idx.t !== 'text' ? true : n.obj.t === 'var' ? new Set([n.idx.v]) : identityInputs(n.obj, depth + 1);

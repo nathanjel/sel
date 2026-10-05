@@ -19,7 +19,24 @@
 ;;; shrunk what the spec already sanctions.
 (defconstant +max-int-digits+ +limit-max-int-digits+)
 (defconstant +max-frac-digits+ +limit-max-frac-digits+)
-(defconstant +max-int-bits+ 3321929)
+;;; Rational bounds on log2(10) and log10(2), for integer-only digit-count
+;;; estimates: 3.321928094 < log2(10) < 3.321928095, 0.30102 < log10(2) < 0.30103.
+(defconstant +log2-10-lo-num+ 3321928094)
+(defconstant +log2-10-hi-num+ 3321928095)
+(defconstant +log2-10-den+ 1000000000)
+(defconstant +log10-2-lo-num+ 30102)
+(defconstant +log10-2-hi-num+ 30103)
+(defconstant +log10-2-den+ 100000)
+;;; The smallest B with 2^B >= 10^MAX_INT_DIGITS, that is ceil(D * log2(10)):
+;;; an integer of fewer bits is surely within the digit cap. D * log2(10) is
+;;; irrational, so the ceiling is the floor plus one, and both rational bounds
+;;; must give the same floor -- if a new MAX_INT_DIGITS ever made them disagree,
+;;; loading stops here rather than guarding at the wrong bit length.
+(defconstant +max-int-bits+
+  (let ((lo (floor (* +max-int-digits+ +log2-10-lo-num+) +log2-10-den+))
+        (hi (floor (* +max-int-digits+ +log2-10-hi-num+) +log2-10-den+)))
+    (assert (= lo hi) () "log2(10) bounds too loose for MAX_INT_DIGITS ~d" +max-int-digits+)
+    (1+ lo)))
 (defconstant +fast-scale+ 18)
 (defconstant +fast-bits+ 60)
 
@@ -109,7 +126,7 @@
   (cond
     ((zerop n) 1)
     ((< (integer-length n) 64)
-     (let ((d (1+ (truncate (* (integer-length n) 30103) 100000))))
+     (let ((d (1+ (truncate (* (integer-length n) +log10-2-hi-num+) +log10-2-den+))))
        (loop while (< n (pow10 (1- d)))
              do (decf d))
        d))
@@ -119,7 +136,7 @@
      ;; one, and the rest is found by multiplying that power by ten, which is
      ;; linear, where asking POW10 for each candidate exponent built a new
      ;; million-digit power every time.
-     (let* ((lo (1+ (floor (* (1- (integer-length n)) 30102) 100000)))
+     (let* ((lo (1+ (floor (* (1- (integer-length n)) +log10-2-lo-num+) +log10-2-den+)))
             (d lo)
             (q (* (pow10 (1- lo)) 10)))
        (loop while (>= n q)
@@ -137,21 +154,25 @@
         (setf int-val (if actual-neg (- digits) digits))))
     (%make-dec actual-neg digits scale int-val)))
 
+;;; The value caps' one refusal: WHICH is :int or :frac.
+(defun fail-digit-cap (which at)
+  (fail "E_RANGE"
+        (if (eq which :frac)
+            (format nil "number has more than ~D fractional digits" +max-frac-digits+)
+            (format nil "number has more than ~D integer digits" +max-int-digits+))
+        at))
+
 ;;; Refuses a value SEL cannot hold, where it is built rather than where it is
 ;;; rendered. Every operation that can grow a number passes its result through
 ;;; here, so DEC-POWER -- repeated squaring over DEC-MUL -- trips on an
 ;;; intermediate and the enormous value is never allocated.
 (defun dec-guard (d at)
   (when (> (dec-scale d) +max-frac-digits+)
-    (fail "E_RANGE"
-          (format nil "number has more than ~D fractional digits" +max-frac-digits+)
-          at))
+    (fail-digit-cap :frac at))
   ;; Negative when the value is below 1: those render as a single "0".
   (when (and (>= (integer-length (dec-digits d)) +max-int-bits+)
              (> (- (num-digits (dec-digits d)) (dec-scale d)) +max-int-digits+))
-    (fail "E_RANGE"
-          (format nil "number has more than ~D integer digits" +max-int-digits+)
-          at))
+    (fail-digit-cap :int at))
   d)
 
 ;;; --- construction ----------------------------------------------------------
@@ -251,16 +272,12 @@ ISNUM's probe -- catch it and answer no."
                  (frac-part (if dot (subseq body (1+ dot)) ""))
                  (frac-len (length frac-part)))
             (when (> frac-len +max-frac-digits+)
-              (fail "E_RANGE"
-                    (format nil "number has more than ~D fractional digits" +max-frac-digits+)
-                    at))
+              (fail-digit-cap :frac at))
             (let* ((combined (concatenate 'string int-part frac-part))
                    (first-nz (position-if (lambda (c) (char/= c #\0)) combined))
                    (int-digits (- (if first-nz (- (length combined) first-nz) 1) frac-len)))
               (when (> int-digits +max-int-digits+)
-                (fail "E_RANGE"
-                      (format nil "number has more than ~D integer digits" +max-int-digits+)
-                      at))
+                (fail-digit-cap :int at))
               (let* ((digits (if first-nz (parse-bignum-string combined first-nz (length combined)) 0))
                      (d (dec-guard (dec-make neg digits frac-len) at)))
                 ;; A long numeral that is already canonical -- no leading zero in
@@ -460,15 +477,11 @@ ISNUM's probe -- catch it and answer no."
     ;; The messages and their order are DEC-GUARD's.
     (when (and (plusp da) (plusp db))
       (when (> scale +max-frac-digits+)
-        (fail "E_RANGE"
-              (format nil "number has more than ~D fractional digits" +max-frac-digits+)
-              at))
+        (fail-digit-cap :frac at))
       (let* ((bits (1- (+ (integer-length da) (integer-length db))))
-             (lower (1+ (floor (* (1- bits) 30102) 100000))))
+             (lower (1+ (floor (* (1- bits) +log10-2-lo-num+) +log10-2-den+))))
         (when (> (- lower scale) +max-int-digits+)
-          (fail "E_RANGE"
-                (format nil "number has more than ~D integer digits" +max-int-digits+)
-                at))))
+          (fail-digit-cap :int at))))
     (dec-guard (dec-make (not (eq (dec-neg a) (dec-neg b)))
                          (kmul da db)
                          scale)

@@ -10,6 +10,10 @@ use crate::limits::MAX_DEPTH;
 use crate::shape::{parse_list_slot, unique_record_shape, RecordShape};
 use crate::utf8::{Pos, SelError};
 
+/// The record size from which set() keeps a hash index of its keys; below it a
+/// scan is cheaper than building the map.
+const RECORD_INDEX_MIN: usize = 16;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     None,
@@ -300,7 +304,7 @@ pub(crate) fn parse_text_decimal(text: &str, pos: Pos) -> Result<Dec, SelError> 
         if e.code == "E_RANGE" {
             e
         } else {
-            SelError::not_num(format!("not a number: {:?}", text), pos)
+            SelError::not_num(format!("not a number: {}", crate::utf8::quote_text(text)), pos)
         }
     })
 }
@@ -647,7 +651,7 @@ impl Value {
             key: key.to_string(),
             val,
         });
-        if inner.entries().len() >= 16 {
+        if inner.entries().len() >= RECORD_INDEX_MIN {
             inner.rebuild_index();
         }
         Ok(())

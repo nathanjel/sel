@@ -132,10 +132,10 @@ fn host_arities_store() -> &'static RwLock<HashMap<String, HashMap<String, [usiz
 
 fn init_shipped() -> (HashMap<String, DialectRecord>, RulesData) {
     let raw_dialects: HashMap<String, serde_json::Value> =
-        serde_json::from_str(SHIPPED_DIALECTS_JSON).expect("failed to parse ShippedDialectsJSON");
+        serde_json::from_str(SHIPPED_DIALECTS_JSON).expect("failed to parse SHIPPED_DIALECTS_JSON");
 
     let raw_rules: serde_json::Value =
-        serde_json::from_str(SHIPPED_RULES_JSON).expect("failed to parse ShippedRulesJSON");
+        serde_json::from_str(SHIPPED_RULES_JSON).expect("failed to parse SHIPPED_RULES_JSON");
 
     let mut rules = RulesData::default();
     if let Some(op_arity) = raw_rules.get("opArity").and_then(|v| v.as_object()) {

@@ -202,6 +202,51 @@ std::string encode_utf8(std::span<const char32_t> cps) {
   return out;
 }
 
+// A text quoted in a message (spec/errors.md, "Message conventions"): a JSON
+// string literal -- the quote, the backslash and the C0 controls escaped,
+// every other code point as itself. Only ASCII bytes are ever escaped, so
+// this works on the UTF-8 bytes without decoding them.
+std::string quote_text(std::string_view text) {
+  static const char* hex = "0123456789abcdef";
+  std::string out = "\"";
+  for (const char ch : text) {
+    const auto b = static_cast<unsigned char>(ch);
+    switch (b) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
+      default:
+        if (b < 0x20) {
+          out += "\\u00";
+          out.push_back(hex[b >> 4]);
+          out.push_back(hex[b & 15]);
+        } else {
+          out.push_back(ch);
+        }
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
+// The lexer's unexpected character: quoted, and named by code point when it
+// is not printable ASCII, so that a no-break space or a BOM is visible.
+std::string describe_char(char32_t c) {
+  std::string s;
+  encode_cp(s, c);
+  std::string out = quote_text(s);
+  if (c < 0x21 || c > 0x7e) {
+    char buf[16];
+    std::snprintf(buf, sizeof buf, " (U+%04X)", static_cast<unsigned>(c));
+    out += buf;
+  }
+  return out;
+}
+
 bool is_valid_utf8(std::string_view bytes) {
   try {
     decode_utf8(bytes);
@@ -261,9 +306,9 @@ constexpr long long MAX_REGEX_GROUPS = sel_limits::MAX_REGEX_GROUPS;
 // first table. These are not the same as the value caps above: they bound what
 // a call may ask for, not how big the answer may be, and an argument cap alone
 // left POWER's base free to step over MAX_POWER by nesting.
-constexpr long long MAX_SCALE = 1000000;
-constexpr long long MAX_POWER = 100000;
-constexpr long long MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
+constexpr long long MAX_SCALE = sel_limits::MAX_ROUND_SCALE;
+constexpr long long MAX_POWER = sel_limits::MAX_POWER_EXPONENT;
+constexpr long long MAX_QUANTIFIER = sel_limits::MAX_REGEX_QUANTIFIER;   // PCRE2's own hard limit
 
 }  // namespace (anonymous)
 
@@ -1923,8 +1968,11 @@ Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
   return result;
 }
 
-// Truncates towards zero and converts. Used where a built-in needs a count or a
-// length; the caller has already checked the range it cares about.
+// Truncates towards zero and converts, saturating at the long long range. Used
+// where a built-in needs a count or a length; the caller has already checked the
+// range it cares about.
+constexpr long long LLONG_MAX_ = std::numeric_limits<long long>::max();
+constexpr long long LLONG_MIN_ = std::numeric_limits<long long>::min();
 long long dec_to_int(const Dec& d) {
   if (d.small) {
     __int128_t m = d.mantissa;
@@ -1932,19 +1980,36 @@ long long dec_to_int(const Dec& d) {
       if (d.scale <= 38) m /= POW10_128[d.scale];
       else m = 0;
     }
-    if (m > 9223372036854775807LL) return 9223372036854775807LL;
-    if (m < -9223372036854775807LL - 1) return -9223372036854775807LL - 1;
+    if (m > LLONG_MAX_) return LLONG_MAX_;
+    if (m < LLONG_MIN_) return LLONG_MIN_;
     return static_cast<long long>(m);
   }
   const Dec t = dec_trunc(d);
   if (t.small) return dec_to_int(t);
   const std::vector<std::uint64_t>& words = dec_get_words(t);
   if (words.empty()) return 0;
-  if (words.size() > 1 || words[0] > static_cast<std::uint64_t>(9223372036854775807LL)) {
-    return t.neg ? -9223372036854775807LL - 1 : 9223372036854775807LL;
+  if (words.size() > 1 || words[0] > static_cast<std::uint64_t>(LLONG_MAX_)) {
+    return t.neg ? LLONG_MIN_ : LLONG_MAX_;
   }
   const long long v = static_cast<long long>(words[0]);
   return t.neg ? -v : v;
+}
+
+// The size argument of ROUND (the scale) and POWER (the exponent), checked once
+// for both lanes -- the builtin and the math plan -- with the builtins' wording:
+// a whole number (E_NOT_INT), not negative, and at most the §6.4 cap (E_RANGE),
+// all reported at the argument.
+long long checked_size_arg(const Dec& d, const char* fn, const char* what, long long cap, Pos pos) {
+  if (!dec_is_integer(d)) fail("E_NOT_INT", std::string(fn) + " argument 2 must be a whole number", pos);
+  const long long n = dec_to_int(d);
+  if (n < 0) fail("E_RANGE", std::string(fn) + " argument 2 must not be negative", pos);
+  if (n > cap) {
+    fail("E_RANGE",
+         std::string(fn) + " " + what + " " + std::to_string(n) + " exceeds the maximum of " +
+             std::to_string(cap),
+         pos);
+  }
+  return n;
 }
 
 // ============================================================================
@@ -2451,7 +2516,7 @@ Value Value::boolean(bool b) { return Internals::raw(Kind::Bool, "", b); }
 Value Value::num(const std::string& decimal) {
   Dec d;
   if (!sel::dec_parse(decimal, d)) {
-    throw SelError("E_NOT_NUM", "not a number: " + decimal, Pos{});
+    throw SelError("E_NOT_NUM", "not a number: " + quote_text(decimal), Pos{});
   }
   return make_num(std::move(d));
 }
@@ -2750,7 +2815,7 @@ const Value& Value::scalar_source(Pos pos) const {
       throw SelError("E_NO_SCALAR", "value has no scalar and no children", pos);
     }
     v = first;
-    if (++guard > 1000) throw SelError("E_DEPTH", "scalar context nested too deeply", pos);
+    if (++guard > sel_limits::MAX_DEPTH) throw SelError("E_DEPTH", "scalar context nested too deeply", pos);
   }
   return *v;
 }
@@ -3337,7 +3402,7 @@ class Lexer {
         continue;
       }
 
-      fail("E_SYNTAX", "unexpected character \"" + slice(i, i + 1) + "\"", pos);
+      fail("E_SYNTAX", "unexpected character " + describe_char(chars_[i]), pos);
     }
   }
 
@@ -4508,7 +4573,7 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
            pos);
     }
     Dec d;
-    if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
+    if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: " + quote_text(src.scalar()), pos);
     Internals::set_dec(src, std::move(d));
   }
   return Internals::dec_ref(src);
@@ -5097,20 +5162,14 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
         // is reported before the second's (spec §6.2, §7.1).
         const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
         const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
-        if (!dec_is_integer(d2)) fail("E_NOT_INT", "ROUND argument 2 must be a whole number", step.aux_pos);
-        const long long n = dec_to_int(d2);
-        if (n < 0) fail("E_RANGE", "ROUND argument 2 must not be negative", step.aux_pos);
-        if (n > MAX_SCALE) fail("E_RANGE", "ROUND scale " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_SCALE), step.aux_pos);
+        const long long n = checked_size_arg(d2, "ROUND", "scale", MAX_SCALE, step.aux_pos);
         slot(step.dst) = dec_round(x, n, step.pos);
         break;
       }
       case MathOp::Power: {
         const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
         const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
-        if (!dec_is_integer(d2)) fail("E_NOT_INT", "POWER argument 2 must be a whole number", step.aux_pos);
-        const long long n = dec_to_int(d2);
-        if (n < 0) fail("E_RANGE", "POWER argument 2 must not be negative", step.aux_pos);
-        if (n > MAX_POWER) fail("E_RANGE", "POWER exponent " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_POWER), step.aux_pos);
+        const long long n = checked_size_arg(d2, "POWER", "exponent", MAX_POWER, step.aux_pos);
         slot(step.dst) = dec_power(x, n, step.pos);
         break;
       }
@@ -7837,24 +7896,12 @@ void register_numbers() {
                 // the strict lane is left to right (spec §6.2), and the planned
                 // spelling of the same call already was.
                 const Dec x = a.dec(0);
-                const long long n = a.non_neg_int(1);
-                if (n > MAX_SCALE) {
-                  fail("E_RANGE",
-                       "ROUND scale " + std::to_string(n) + " exceeds the maximum of " +
-                           std::to_string(MAX_SCALE),
-                       a.pos_of(1));
-                }
+                const long long n = checked_size_arg(a.dec(1), "ROUND", "scale", MAX_SCALE, a.pos_of(1));
                 return make_num(dec_round(x, n, a.pos()));
               }});
   define(Spec{"POWER", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const Dec x = a.dec(0);
-                const long long n = a.non_neg_int(1);
-                if (n > MAX_POWER) {
-                  fail("E_RANGE",
-                       "POWER exponent " + std::to_string(n) + " exceeds the maximum of " +
-                           std::to_string(MAX_POWER),
-                       a.pos_of(1));
-                }
+                const long long n = checked_size_arg(a.dec(1), "POWER", "exponent", MAX_POWER, a.pos_of(1));
                 return make_num(dec_power(x, n, a.pos()));
               }});
 
@@ -8108,10 +8155,20 @@ bool is_syntax_char(char32_t e) {
   return chars.find(e) != std::u32string::npos;
 }
 
+// The detail every host spells alike (spec/errors.md, "Message conventions"):
+// `at` is a code point offset into the pattern, and a pattern longer than 80
+// code points is quoted as its first 77 and "...".
 [[noreturn]] void bad_regex(const std::string& message, const std::string& pattern, std::size_t at,
                             Pos pos) {
+  std::size_t cps = 0, cut = pattern.size();
+  for (std::size_t b = 0; b < pattern.size(); ++b) {
+    if ((static_cast<unsigned char>(pattern[b]) & 0xc0) == 0x80) continue;
+    if (cps == 77) cut = b;
+    ++cps;
+  }
+  const std::string shown = cps > 80 ? pattern.substr(0, cut) + "..." : pattern;
   fail("E_REGEX_SYNTAX",
-       message + " (at offset " + std::to_string(at) + " of /" + pattern + "/)", pos);
+       message + " (at offset " + std::to_string(at) + " of /" + shown + "/)", pos);
 }
 
 [[noreturn]] void reject_escape(char32_t e, const std::string& pattern, std::size_t at, Pos pos) {
@@ -8291,6 +8348,7 @@ struct RxNode {
   bool capture = false;    // Group
   long long lo = 1;        // Repeat
   long long hi = 1;        // Repeat; -1 = unbounded
+  std::size_t at = 0;      // Repeat: the quantifier's code point offset, for messages
   std::vector<int> kids;
   RxRanges set;            // Atom: the code points it reads (folded under `i`)
   bool nullable = true;    // the measures below are filled in by RxParser::measure
@@ -8560,6 +8618,7 @@ class RxParser {
     const int rep = make(RxNode::K::Repeat);
     tree_.nodes[rep].lo = lo;
     tree_.nodes[rep].hi = hi;
+    tree_.nodes[rep].at = at_q;
     tree_.nodes[rep].kids = {atom};
     measure(rep);
     return rep;
@@ -8575,10 +8634,11 @@ class RxParser {
         bad_regex("more than " + std::to_string(MAX_REGEX_GROUPS) + " groups", pattern_, i_, pos_);
       }
       bool capture = true;
+      const std::size_t open = i_;
       i_++;
       if (at(U'?')) { capture = false; i_ += 2; }   // `(?:`, the only `(?` the pass above lets by
       const int inner = alternation(depth + 1);
-      if (!at(U')')) bad_regex("unterminated group", pattern_, i_, pos_);
+      if (!at(U')')) bad_regex("unterminated group", pattern_, open, pos_);
       i_++;
       const int g = make(RxNode::K::Group);
       tree_.nodes[g].capture = capture;
@@ -8597,11 +8657,12 @@ class RxParser {
         const long long lo = class_member(&rs);
         if (lo < 0) continue;   // a class escape: a set, never a range end
         if (at(U'-') && i_ + 1 < p_.size() && p_[i_ + 1] != U']') {
+          const std::size_t dash = i_;
           i_++;
           const long long hi = class_member(&rs);
           // A range that runs backwards is a compile-time refusal whatever the
           // flags (SPEC 7.8), as it is in every other host.
-          if (hi >= 0 && hi < lo) bad_regex("a class range runs backwards", pattern_, i_ - 1, pos_);
+          if (hi >= 0 && hi < lo) bad_regex("a class range runs backwards", pattern_, dash, pos_);
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(hi < 0 ? lo : hi));
         } else {
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(lo));
@@ -8668,10 +8729,10 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
     if (x.k == RxNode::K::Repeat && (x.hi == -1 || x.hi > 1)) {
       // RxParser::measure stored it on every node as the tree was built.
       if (t.nodes[static_cast<std::size_t>(x.kids[0])].nullable) {
-        bad_regex("a loop whose body can match the empty string is not portable", pattern, 0, pos);
+        bad_regex("a loop whose body can match the empty string is not portable", pattern, x.at, pos);
       }
       if (rx_optional_capture(t, x.kids[0], false)) {
-        bad_regex("a capture inside a loop must take part in every iteration", pattern, 0, pos);
+        bad_regex("a capture inside a loop must take part in every iteration", pattern, x.at, pos);
       }
     }
     for (const int k : x.kids) work.push_back(k);
@@ -8686,11 +8747,12 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
 // port of: every count, cap and verdict is the same, and every walk here is a
 // loop over explicit work lists or a recursion no deeper than the tree.
 constexpr int RX_UNROLL = 8;
-constexpr long long RX_P_MAX = 1LL << 17;   // positions
-constexpr long long RX_E_MAX = 1LL << 18;   // follow edges
-constexpr long long RX_D_MAX = 1LL << 21;   // sum over edges of the ranges at the target
-constexpr long long RX_Q_MAX = 1LL << 20;   // pair-graph work
-constexpr long long RX_AMB_MAX = 16;
+// The closed-form caps and the budget of spec §7.8, from spec/limits.json.
+constexpr long long RX_P_MAX = sel_limits::REGEX_ANALYSIS_POSITIONS;   // positions
+constexpr long long RX_E_MAX = sel_limits::REGEX_ANALYSIS_EDGES;       // follow edges
+constexpr long long RX_D_MAX = sel_limits::REGEX_ANALYSIS_RANGES;      // sum over edges of the ranges at the target
+constexpr long long RX_Q_MAX = sel_limits::REGEX_ANALYSIS_PAIR_WORK;   // pair-graph work
+constexpr long long RX_AMB_MAX = sel_limits::REGEX_AMBIGUITY_BUDGET;
 
 int rx_ceil_log2(long long k) {   // k >= 2
   int c = 0;
@@ -9002,7 +9064,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_ca
   const CodePoints p = decode_utf8(pattern, pos);
   const std::size_t n = p.size();
   if (n > static_cast<std::size_t>(MAX_REGEX_PATTERN)) {
-    bad_regex("pattern longer than " + std::to_string(MAX_REGEX_PATTERN) + " code points", "", 0, pos);
+    bad_regex("pattern longer than " + std::to_string(MAX_REGEX_PATTERN) + " code points", pattern, 0,
+              pos);
   }
   std::string out;
   std::size_t i = 0;
@@ -9087,6 +9150,9 @@ namespace {
 using Regex = srell::u32regex;
 
 constexpr std::size_t REGEX_CACHE_MAX = 256;   // spec §7.8: bounded pattern cache
+// RREPLACE takes its replacement apart into pieces only for a subject at least
+// this long (bytes); see the builtin.
+constexpr std::size_t RREPLACE_SPLIT_MIN_SUBJECT = 256;
 
 // The compiled-pattern cache. A named object rather than function statics so a
 // unit test can look at how many entries it holds.
@@ -9146,12 +9212,12 @@ std::shared_ptr<const Regex> compile_regex(const std::string& pattern, const std
     encode_cp(s, ch);
     if (f == U'm' || f == U's' || f == U'M' || f == U'S') {
       fail("E_BAD_ARG",
-           "flag \"" + s +
-               "\" is not offered — SEL always matches . against any character and anchors ^ $ to "
+           "flag " + quote_text(s) +
+               " is not offered — SEL always matches . against any character and anchors ^ $ to "
                "the whole subject",
            flag_pos);
     }
-    fail("E_BAD_ARG", "unknown regex flag \"" + s + "\"", flag_pos);
+    fail("E_BAD_ARG", "unknown regex flag " + quote_text(s), flag_pos);
   }
 
   if (ignore_case) {
@@ -9334,7 +9400,7 @@ void register_regex() {
                 // million short strings was 8% slower for it).
                 struct Piece { std::u32string lit; int group; };   // group < 0: a literal
                 std::vector<Piece> pieces;
-                const bool split_replacement = subject.size() >= 256;
+                const bool split_replacement = subject.size() >= RREPLACE_SPLIT_MIN_SUBJECT;
                 if (split_replacement) {
                   const CodePoints rc = decode_utf8(repl, a.pos_of(1));
                   std::u32string lit;

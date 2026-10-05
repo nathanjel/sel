@@ -38,7 +38,7 @@ pub fn fn_from_hex(args: &mut Args) -> Result<Value, SelError> {
     let bytes = s.as_bytes();
     for &c in bytes {
         if !(c.is_ascii_hexdigit()) {
-            return Err(SelError::new("E_BAD_ARG", format!("FROM_HEX: invalid hex byte in {:?}", s), pos));
+            return Err(SelError::new("E_BAD_ARG", format!("FROM_HEX: invalid hex byte in {}", crate::utf8::quote_text(&s)), pos));
         }
     }
     let mut out = Vec::with_capacity(bytes.len() / 2);
@@ -119,7 +119,9 @@ pub fn fn_decode_base64(args: &mut Args) -> Result<Value, SelError> {
                 return Err(SelError::new("E_BAD_ARG", "misplaced base64 padding", pos));
             }
             let v = b64_val(ch).ok_or_else(|| {
-                SelError::new("E_BAD_ARG", format!("invalid base64 character {:?}", ch as char), pos)
+                // The character, not the byte (`i + k` is where it starts).
+                let bad = s[i + k..].chars().next().unwrap_or('\u{fffd}');
+                SelError::new("E_BAD_ARG", format!("invalid base64 character {}", crate::utf8::quote_text(bad.encode_utf8(&mut [0; 4]))), pos)
             })?;
             quad[k] = v as u32;
         }

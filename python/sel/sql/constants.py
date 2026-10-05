@@ -31,6 +31,11 @@ from ..registry import binding_form
 from ..value import Value
 from .errors import refuse
 
+# The static walks below stop with their conservative answer at this depth. They
+# recurse over a tree already capped at MAX_DEPTH, and stop short of it to leave
+# headroom for the caller's frames.
+_WALK_DEPTH = MAX_DEPTH - 20
+
 
 def _text_literal_results(node: Node, depth: int = 0) -> bool:
     """Whether ``node`` is an IF or COND whose every result is a text literal --
@@ -39,7 +44,7 @@ def _text_literal_results(node: Node, depth: int = 0) -> bool:
     re-spell (MariaDB types ``CASE ... THEN 1 ELSE 1.0`` as DECIMAL(2,1)), and
     a column or a computation is not a literal at all. A two-argument IF's
     otherwise is "" (§7.2), a text literal too."""
-    if node is None or depth >= 180 or node.t != 'call' or node.name not in ('IF', 'COND'):
+    if node is None or depth >= _WALK_DEPTH or node.t != 'call' or node.name not in ('IF', 'COND'):
         return False
     args = node.args
     if node.name == 'IF':
@@ -53,7 +58,7 @@ def _text_literal_results(node: Node, depth: int = 0) -> bool:
 
 
 def _identity_projection(node: Node, depth: int = 0) -> bool:
-    if node is None or depth >= 180:
+    if node is None or depth >= _WALK_DEPTH:
         return False
     if node.t in ('var', 'num', 'text', 'bool', 'null'):
         return True
@@ -75,7 +80,7 @@ def _identity_projection(node: Node, depth: int = 0) -> bool:
 
 
 def _identity_inputs(node: Node, depth: int = 0):
-    if node is None or depth >= 180:
+    if node is None or depth >= _WALK_DEPTH:
         return True
     if node.t in ('num', 'text', 'bool', 'null'):
         return set()

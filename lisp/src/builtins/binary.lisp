@@ -41,7 +41,7 @@
               for lo = (ascii-hex-value (char s (1+ (* i 2))))
               do (unless (and hi lo)
                    (fail "E_BAD_ARG"
-                         (format nil "FROM_HEX: ~s is not hex" (subseq s (* i 2) (+ 2 (* i 2))))
+                         (format nil "FROM_HEX: ~a is not hex" (quote-text (subseq s (* i 2) (+ 2 (* i 2)))))
                          at))
                  (setf (aref out i) (+ (* hi 16) lo)))
         (make-bin out)))))
@@ -96,7 +96,7 @@
                              (let ((v (position ch +b64-alphabet+)))
                                (unless v
                                  (fail "E_BAD_ARG"
-                                       (format nil "invalid base64 character ~s" (string ch))
+                                       (format nil "invalid base64 character ~a" (quote-text (string ch)))
                                        at))
                                (setf (aref quad k) v)))))
                  (let ((n (logior (ash (aref quad 0) 18) (ash (aref quad 1) 12)

@@ -323,7 +323,7 @@ func (l *lexer) lexTokens(frm, to int, out *[]token, stack []lexTask, bal *balan
 			continue
 		}
 
-		fail("E_SYNTAX", fmt.Sprintf("unexpected character %q", c), pos)
+		fail("E_SYNTAX", "unexpected character "+quoteChar(c), pos)
 	}
 	return stack
 }

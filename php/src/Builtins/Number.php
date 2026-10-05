@@ -5,25 +5,45 @@ namespace Sel\Builtins;
 
 use Sel\Args;
 use Sel\Dec;
+use Sel\Limits;
 use Sel\Registry;
 use Sel\Value;
 
 use function Sel\fail;
 
+/**
+ * @phpstan-import-type Decimal from Dec
+ */
 final class Number
 {
-    // spec/SPEC.md §6.4 — a size argument beyond these exhausts memory instead
-    // of failing as a rule error.
-    private const MAX_SCALE = 1000000;
-    private const MAX_POWER = 100000;
+    /**
+     * ROUND's scale and POWER's exponent, checked once for the builtin and the
+     * math plan (Evaluator::runMathPlan) alike: a whole number (E_NOT_INT), not
+     * negative, and within its spec/SPEC.md §6.4 cap (Limits::MAX_ROUND_SCALE,
+     * Limits::MAX_POWER_EXPONENT) — a size argument beyond these exhausts memory
+     * instead of failing as a rule error. The messages are Args::nonNegInt's.
+     *
+     * @param Decimal $d
+     * @param array<string,mixed>|null $pos
+     */
+    public static function sizedArg(array $d, string $fn, int $argNo, int $limit, string $what, ?array $pos): int
+    {
+        if (!Dec::isInteger($d)) {
+            fail('E_NOT_INT', "{$fn} argument {$argNo} must be a whole number", $pos);
+        }
+        $n = Dec::toInt($d);
+        if ($n < 0) {
+            fail('E_RANGE', "{$fn} argument {$argNo} must not be negative", $pos);
+        }
+        if ($n > $limit) {
+            fail('E_RANGE', "{$what} {$n} exceeds the maximum of {$limit}", $pos);
+        }
+        return $n;
+    }
 
     private static function sized(Args $a, int $i, int $limit, string $what): int
     {
-        $n = $a->nonNegInt($i);
-        if ($n > $limit) {
-            fail('E_RANGE', "{$what} {$n} exceeds the maximum of {$limit}", $a->posOf($i));
-        }
-        return $n;
+        return self::sizedArg($a->dec($i), $a->name, $i + 1, $limit, $what, $a->posOf($i));
     }
 
     public static function register(): void
@@ -42,10 +62,10 @@ final class Number
             'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::trimScale($a->dec(0)))]);
 
         Registry::define(['name' => 'ROUND', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale'), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::round($a->dec(0), self::sized($a, 1, Limits::MAX_ROUND_SCALE, 'ROUND scale'), $a->pos))]);
 
         Registry::define(['name' => 'POWER', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::power($a->dec(0), self::sized($a, 1, self::MAX_POWER, 'POWER exponent'), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::power($a->dec(0), self::sized($a, 1, Limits::MAX_POWER_EXPONENT, 'POWER exponent'), $a->pos))]);
 
         Registry::define(['name' => 'MIN', 'min' => 1, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {

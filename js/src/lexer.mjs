@@ -205,7 +205,7 @@ class Lexer {
         continue;
       }
 
-      fail('E_SYNTAX', `unexpected character ${JSON.stringify(c)}`, pos);
+      fail('E_SYNTAX', `unexpected character ${describeChar(c)}`, pos);
     }
   }
 
@@ -405,4 +405,13 @@ export function asciiLower(s) {
 
 export function tokenize(source) {
   return new Lexer(source).tokenize();
+}
+
+// spec/errors.md, "Message conventions": the character as a JSON string, and its
+// code point too when it is not printable ASCII, so that a no-break space or a
+// byte-order mark is visible.
+function describeChar(c) {
+  const cp = c.codePointAt(0);
+  if (cp >= 0x21 && cp <= 0x7e) return JSON.stringify(c);
+  return `${JSON.stringify(c)} (U+${cp.toString(16).toUpperCase().padStart(4, '0')})`;
 }

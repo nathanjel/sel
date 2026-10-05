@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nathanjel/sel/go/internal/limits"
 )
 
 const (
-	maxQuantifier   = 65535
-	maxRegexDepth   = 200
+	maxQuantifier   = limits.MAX_REGEX_QUANTIFIER
+	maxRegexDepth   = limits.MAX_DEPTH
 	maxRegexGroups  = limits.MAX_REGEX_GROUPS
 	maxRegexPattern = limits.MAX_REGEX_PATTERN
 	regexSat        = int64(1) << 40
@@ -42,6 +43,7 @@ type reNode struct {
 	text string    // portable source of a leaf; the quantifier text of a reRep
 	subs []*reNode // reCat / reAlt members; reGroup and reRep have one
 	idx  int       // capture index of a capturing group
+	at   int       // a reRep's quantifier, in code points from the start of the pattern
 	lo   int       // reRep bounds; hi < 0 is unbounded
 	hi   int
 	lazy bool
@@ -63,11 +65,14 @@ func badRegex(message, pattern string, at int, pos Pos) {
 	fail("E_REGEX_SYNTAX", fmt.Sprintf("%s (at offset %d of /%s/)", message, at, clipPattern(pattern)), pos)
 }
 
+// clipPattern is the pattern as the message quotes it (spec/errors.md, "Message
+// conventions"): whole up to 80 code points, else its first 77 and "...".
 func clipPattern(p string) string {
-	if len(p) > 80 {
-		return p[:80] + "…"
+	if utf8.RuneCountInString(p) <= 80 {
+		return p
 	}
-	return p
+	r := []rune(p)
+	return string(r[:77]) + "..."
 }
 
 var expandOutside = map[rune]string{
@@ -134,8 +139,8 @@ func parseRegexIC(pattern string, ignoreCase bool, pos Pos) *reNode {
 		badRegex("unmatched ) — escape it as \\)", pattern, p.i, pos)
 	}
 	analyse(n)
-	checkLoops(n, pos)
-	checkAmbiguity(n, ignoreCase, pos)
+	checkLoops(n, pattern, pos)
+	checkAmbiguity(n, pattern, ignoreCase, pos)
 	return n
 }
 
@@ -172,7 +177,6 @@ func (p *reParser) parseCat() *reNode {
 }
 
 func (p *reParser) parseQuantified() *reNode {
-	start := p.i
 	atom := p.parseAtom()
 	if !p.more() {
 		return atom
@@ -196,7 +200,7 @@ func (p *reParser) parseQuantified() *reNode {
 		lo, hi = p.parseBraces()
 	}
 	if atom.kind == reBOL || atom.kind == reEOL {
-		badRegex("an anchor cannot be quantified — ^ and $ match a position, and engines disagree on what repeating one means", p.pattern, start, p.pos)
+		badRegex("an anchor cannot be quantified — ^ and $ match a position, and engines disagree on what repeating one means", p.pattern, qStart, p.pos)
 	}
 	lazy := false
 	if p.more() && p.src[p.i] == '+' {
@@ -211,7 +215,7 @@ func (p *reParser) parseQuantified() *reNode {
 			badRegex("nested repetition — a quantifier cannot follow a quantifier", p.pattern, p.i, p.pos)
 		}
 	}
-	return &reNode{kind: reRep, subs: []*reNode{atom}, lo: lo, hi: hi, lazy: lazy, text: string(p.src[qStart:p.i])}
+	return &reNode{kind: reRep, subs: []*reNode{atom}, lo: lo, hi: hi, lazy: lazy, at: qStart, text: string(p.src[qStart:p.i])}
 }
 
 func (p *reParser) parseBraces() (lo, hi int) {
@@ -528,42 +532,42 @@ func isLoop(n *reNode) bool { return n.kind == reRep && (n.hi < 0 || n.hi > 1) }
 
 // checkLoops applies the two loop rules of §7.8: a quantified group's body must
 // not be able to match the empty text, and a capture inside a loop must take part
-// in every iteration. Both are properties of the pattern as a whole, so they are
-// reported at the pattern's position.
-func checkLoops(n *reNode, pos Pos) {
+// in every iteration. Both are reported at the pattern's position, with the
+// loop's quantifier as the offset in the message.
+func checkLoops(n *reNode, pattern string, pos Pos) {
 	if isLoop(n) {
 		body := n.subs[0]
 		if body.nullable {
-			fail("E_REGEX_SYNTAX", "a quantified group whose body can match the empty text is not portable — engines disagree on what the empty iteration captures and consumes", pos)
+			badRegex("a quantified group whose body can match the empty text is not portable — engines disagree on what the empty iteration captures and consumes", pattern, n.at, pos)
 		}
-		checkOptionalCaptures(body, pos)
+		checkOptionalCaptures(body, pattern, n.at, pos)
 	}
 	for _, s := range n.subs {
-		checkLoops(s, pos)
+		checkLoops(s, pattern, pos)
 	}
 }
 
 // checkOptionalCaptures refuses, inside a loop body, a capture that some
 // iteration can skip: one under an alternation, or under a quantifier that can
 // iterate zero times.
-func checkOptionalCaptures(n *reNode, pos Pos) {
+func checkOptionalCaptures(n *reNode, pattern string, loopAt int, pos Pos) {
 	switch n.kind {
 	case reGroup:
-		checkOptionalCaptures(n.subs[0], pos)
+		checkOptionalCaptures(n.subs[0], pattern, loopAt, pos)
 	case reCat:
 		for _, s := range n.subs {
-			checkOptionalCaptures(s, pos)
+			checkOptionalCaptures(s, pattern, loopAt, pos)
 		}
 	case reAlt:
 		for _, s := range n.subs {
 			if s.hasCap {
-				fail("E_REGEX_SYNTAX", "a capture inside a loop must take part in every iteration — one under an alternation may not", pos)
+				badRegex("a capture inside a loop must take part in every iteration — one under an alternation may not", pattern, loopAt, pos)
 			}
 		}
 	case reRep:
 		if n.subs[0].hasCap && n.lo == 0 {
-			fail("E_REGEX_SYNTAX", "a capture inside a loop must take part in every iteration — one under ?, * or {0,n} may not", pos)
+			badRegex("a capture inside a loop must take part in every iteration — one under ?, * or {0,n} may not", pattern, loopAt, pos)
 		}
-		checkOptionalCaptures(n.subs[0], pos)
+		checkOptionalCaptures(n.subs[0], pattern, loopAt, pos)
 	}
 }

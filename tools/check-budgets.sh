@@ -16,6 +16,20 @@
 #   SEL_BUDGET_TIME=30 SEL_BUDGET_ULIMIT_KB=4000000 tools/check-budgets.sh
 #
 # The ceilings: SEL_BUDGET_TIME seconds of wall time per request (default 20),
+# except for the requests marked @parse below, whose SOURCE is the large thing —
+# a call of 1 000 001 arguments, 3 MB and 14 MB of program text. Every host has
+# to lex and parse all of it before LIST or RECORD can refuse, and that is linear
+# in the arguments but not quick. Measured standalone (CPU seconds for the LIST
+# and the RECORD request, on a box at load 30-50, so wall time was up to 3x
+# that): C++ 2.5 / 6, Lisp 5 / 11, JS 4 / 10, PHP 17 / 39, Python 38 / 80 —
+# CPython at about 35 us of CPU per LIST argument and 75 per RECORD pair, a
+# third of it the cyclic collector walking the growing tree, with no
+# superlinear term (checked from 100 000 to 400 000 arguments). Under the
+# gate's own load the 20 s ceiling failed JS, PHP, Python and Rust on them, so
+# they get SEL_BUDGET_PARSE_TIME (default 300 s, about twice the worst wall time
+# seen): the refusal itself is still one comparison, and the ceiling there has
+# only to tell a slow parse from a hang or an allocation-sized answer, which the
+# address-space ceiling below catches anyway;
 # and SEL_BUDGET_ULIMIT_KB of address space (default 6 000 000) for the hosts
 # whose runtime survives `ulimit -v` — not JS (V8 reserves address space up
 # front) or Lisp (SBCL maps its whole dynamic space); those two bound themselves
@@ -35,10 +49,12 @@ cd "$(dirname "$0")/.."
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 TIME="${SEL_BUDGET_TIME:-20}"
+PARSE_TIME="${SEL_BUDGET_PARSE_TIME:-300}"
 ULIMIT_KB="${SEL_BUDGET_ULIMIT_KB:-6000000}"
 IMPLS="$(available_impls)"
 
-# name | a python expression giving the source
+# name | a python expression giving the source. A name ending in @parse is a
+# request whose source is itself millions of tokens (SEL_BUDGET_PARSE_TIME).
 read -r -d '' REQUESTS <<'REQUESTS_END' || true
 repeat-huge-count|'REPEAT("ab", 99999999999999999999)'
 repeat-10-to-the-10|'LEN(REPEAT("ab", 10000000000))'
@@ -52,13 +68,15 @@ split-two-million|'COUNT(SPLIT(REPEAT("a,", 2000000) & "a", ","))'
 replace-fan-out|'REPLACE("a", REPEAT("b", 200000), REPEAT("a", 200000))'
 rreplace-fan-out|'RREPLACE("a", REPEAT("b", 100), REPEAT("a", 500000))'
 hex-of-a-giant|'TO_HEX(TO_UTF8(REPEAT("a", 16777216)))'
-list-args-past-cap|'COUNT(LIST(' + '1, ' * 1000000 + '1))'
-record-pairs-past-cap|'COUNT(RECORD(' + ', '.join('"k%d", 1' % i for i in range(1000001)) + '))'
+list-args-past-cap@parse|'COUNT(LIST(' + '1, ' * 1000000 + '1))'
+record-pairs-past-cap@parse|'COUNT(RECORD(' + ', '.join('"k%d", 1' % i for i in range(1000001)) + '))'
 REQUESTS_END
 
 failures=0
 while IFS='|' read -r name expr; do
   [ -n "${name:-}" ] || continue
+  ceiling="$TIME"
+  case "$name" in *@parse) name="${name%@parse}"; ceiling="$PARSE_TIME" ;; esac
   f="$WORK/$name.sel"
   python3 -c "open('$f', 'w').write($expr)"
   for impl in $IMPLS; do
@@ -67,7 +85,7 @@ while IFS='|' read -r name expr; do
       *) lim="ulimit -v $ULIMIT_KB;" ;;
     esac
     start=$(date +%s)
-    out="$( (eval "$lim"; timeout "$TIME" bash -c '. tools/impls.sh; impl_cli "$0" "$1"' "$impl" "$f") 2>&1 </dev/null | head -c 400 | head -1 )"
+    out="$( (eval "$lim"; timeout "$ceiling" bash -c '. tools/impls.sh; impl_cli "$0" "$1"' "$impl" "$f") 2>&1 </dev/null | head -c 400 | head -1 )"
     rc=${PIPESTATUS[0]}
     took=$(( $(date +%s) - start ))
     case "$out" in
@@ -77,7 +95,7 @@ while IFS='|' read -r name expr; do
     if [ "$ok" -ne 1 ]; then
       printf 'FAIL %-24s %-14s %ss: %s\n' "$name" "$impl" "$took" "${out:0:90}"
       failures=$((failures + 1))
-    elif [ "$took" -ge "$TIME" ]; then
+    elif [ "$took" -ge "$ceiling" ]; then
       printf 'SLOW %-24s %-14s %ss\n' "$name" "$impl" "$took"
       failures=$((failures + 1))
     fi
@@ -88,4 +106,4 @@ if [ "$failures" -gt 0 ]; then
   echo "$failures budget check(s) failed"
   exit 1
 fi
-echo "budgets: every request is refused with E_RANGE within ${TIME}s across: $IMPLS"
+echo "budgets: every request is refused with E_RANGE within ${TIME}s (${PARSE_TIME}s for the parse-sized ones) across: $IMPLS"

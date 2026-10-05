@@ -7,7 +7,7 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare, compareText, encodeUtf8 } from './utf8.mjs';
-import { cpLength, checkText, checkCollection, MAX_TEXT_LEN, checkSizedInt, MAX_SCALE, MAX_POWER } from './budget.mjs';
+import { cpLength, checkText, checkCollection, MAX_TEXT_LEN, checkSizedInt, MAX_ROUND_SCALE, MAX_POWER_EXPONENT } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
@@ -219,13 +219,13 @@ function evalMathPlan(plan, ctx) {
         break;
       case OpCode.ROUND: {
         const x = asNum(scratchpad[step.src1], step.p1);
-        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.auxPos);
+        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'ROUND', 2, MAX_ROUND_SCALE, 'ROUND scale', step.auxPos);
         scratchpad[step.dst] = D.round(x, n, step.pos);
         break;
       }
       case OpCode.POWER: {
         const x = asNum(scratchpad[step.src1], step.p1);
-        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'POWER', 2, MAX_POWER, 'POWER exponent', step.auxPos);
+        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'POWER', 2, MAX_POWER_EXPONENT, 'POWER exponent', step.auxPos);
         scratchpad[step.dst] = D.power(x, n, step.pos);
         break;
       }

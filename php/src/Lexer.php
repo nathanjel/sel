@@ -269,7 +269,7 @@ final class Lexer
                 continue;
             }
 
-            fail('E_SYNTAX', 'unexpected character ' . json_encode($c), $pos);
+            fail('E_SYNTAX', 'unexpected character ' . describe_char($c), $pos);
         }
     }
 

@@ -50,8 +50,8 @@ import re
 
 from .._budget import check_text
 from .._stack import recursion_budget
-from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
-from ..errors import fail
+from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_REGEX_QUANTIFIER, MAX_TEXT_LEN
+from ..errors import fail, quote_text
 from ..registry import REGEX_FLAG_AT, define
 from ..value import Value
 from . import _regex_ambiguity as _amb
@@ -71,11 +71,15 @@ CONTROL_ESCAPES = frozenset(['n', 'r', 't', 'f'])
 SYNTAX_CHARS = frozenset(['^', '$', '\\', '.', '*', '+', '?', '(', ')',
                           '[', ']', '{', '}', '|', '/'])
 
-MAX_QUANTIFIER = 65535   # PCRE2's own hard limit
+# MAX_REGEX_QUANTIFIER (spec/limits.json) is PCRE2's own hard limit.
 
 
 def _bad(message, pattern, at, pos):
-    fail('E_REGEX_SYNTAX', f'{message} (at offset {at} of /{pattern}/)', pos)
+    # The detail every host writes alike (spec/errors.md, "Message conventions"):
+    # `at` is a code point offset into the pattern, and a pattern longer than 80
+    # code points is quoted as its first 77 and "...".
+    shown = pattern if len(pattern) <= 80 else pattern[:77] + '...'
+    fail('E_REGEX_SYNTAX', f'{message} (at offset {at} of /{shown}/)', pos)
 
 
 def _reject_escape(e, pattern, at, pos):
@@ -185,7 +189,8 @@ def parse(pattern, pos=None, ignore_case=False):
     i = 0
     groups = 0
     # One frame per open group: its finished branches, the items of the branch
-    # being read, and its capture number (0 for a non-capturing group).
+    # being read, its capture number (0 for a non-capturing group) and the offset
+    # of its `(`, which a refusal of the group names.
     stack = [([], [], 0, 0)]
 
     while i < n:
@@ -218,6 +223,7 @@ def parse(pattern, pos=None, ignore_case=False):
             continue
 
         if c == '(':
+            opened = i
             capture = 0
             if i + 1 < n and p[i + 1] == '?':
                 nxt = p[i + 2] if i + 2 < n else ''
@@ -238,10 +244,10 @@ def parse(pattern, pos=None, ignore_case=False):
                 capture = groups + 1
             groups += 1
             if groups > MAX_REGEX_GROUPS:
-                _bad(f'more than {MAX_REGEX_GROUPS} groups', pattern, i, pos)
+                _bad(f'more than {MAX_REGEX_GROUPS} groups', pattern, opened, pos)
             if len(stack) > MAX_DEPTH:
-                _bad(f'groups nested deeper than {MAX_DEPTH}', pattern, i, pos)
-            stack.append(([], [], capture, 0))
+                _bad(f'groups nested deeper than {MAX_DEPTH}', pattern, opened, pos)
+            stack.append(([], [], capture, opened))
             continue
 
         if c == ')':
@@ -263,7 +269,7 @@ def parse(pattern, pos=None, ignore_case=False):
         if c == '|':
             branches, items, _, _ = stack[-1]
             branches.append(_cat(tuple(items)) if items else _Node('cat', (), nullable=True))
-            stack[-1] = (branches, [], stack[-1][2], 0)
+            stack[-1] = (branches, [], stack[-1][2], stack[-1][3])
             out.append('|')
             i += 1
             continue
@@ -312,7 +318,7 @@ def parse(pattern, pos=None, ignore_case=False):
         i += 1
 
     if len(stack) > 1:
-        _bad('missing )', pattern, n, pos)
+        _bad('missing )', pattern, stack[-1][3], pos)
     branches, items, _, _ = stack[0]
     branches.append(_cat(tuple(items)) if items else _Node('cat', (), nullable=True))
     tree = _alt(tuple(branches))
@@ -405,8 +411,8 @@ def _validate_braces(p, start, pattern, pos):
         hi = int(p[hi_start:i]) if i > hi_start else None
     if i >= len(p) or p[i] != '}':
         _bad('malformed quantifier', pattern, start, pos)
-    if lo > MAX_QUANTIFIER or (hi is not None and hi > MAX_QUANTIFIER):
-        _bad(f'quantifier bound exceeds the maximum of {MAX_QUANTIFIER}',
+    if lo > MAX_REGEX_QUANTIFIER or (hi is not None and hi > MAX_REGEX_QUANTIFIER):
+        _bad(f'quantifier bound exceeds the maximum of {MAX_REGEX_QUANTIFIER}',
              pattern, start, pos)
     if hi is not None and hi < lo:
         _bad(f'quantifier {{{lo},{hi}}} is empty — the upper bound is below the '
@@ -471,12 +477,12 @@ def _validate_class(p, start, pattern, pos):
         # hyphen and ECMAScript refuses it, so a class escape at either end is out.
         if nxt + 1 < n and p[nxt] == '-' and p[nxt + 1] != ']':
             if is_escape:
-                _bad('a class escape cannot start a range', pattern, i, pos)
+                _bad('a class escape cannot start a range', pattern, nxt, pos)
             rtext, rrs, r_escape, after = _class_item(p, nxt + 1, pattern, pos)
             if r_escape:
-                _bad('a class escape cannot end a range', pattern, nxt + 1, pos)
+                _bad('a class escape cannot end a range', pattern, nxt, pos)
             if rrs[0][0] < rs[0][0]:
-                _bad('character class range is reversed', pattern, i, pos)
+                _bad('character class range is reversed', pattern, nxt, pos)
             out.append(text + '-' + rtext)
             ranges.append((rs[0][0], rrs[0][0]))
             i = after
@@ -577,7 +583,7 @@ def _flags(flags, pos):
             fail('E_BAD_ARG',
                  f'flag "{ch}" is not offered — SEL always matches . against any '
                  'character and anchors ^ $ to the whole subject', pos)
-        fail('E_BAD_ARG', f'unknown regex flag "{ch}"', pos)
+        fail('E_BAD_ARG', f'unknown regex flag {quote_text(ch)}', pos)
     return ignore_case
 
 

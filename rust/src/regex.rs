@@ -6,12 +6,26 @@ use regex::Regex;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MAX_QUANTIFIER: usize = 65535;
+const MAX_QUANTIFIER: usize = crate::limits::MAX_REGEX_QUANTIFIER;
+/// The compiled-pattern cache keeps at most this many patterns (§7.8), the
+/// oldest evicted first.
+const REGEX_CACHE_SIZE: usize = 256;
 
+/// A refusal of the pattern. `at` is a BYTE offset into `pattern`; the message
+/// reports it in code points and quotes the pattern clipped to 80 code points
+/// (spec/errors.md, "Message conventions").
 fn bad_regex(message: &str, pattern: &str, at: usize, pos: Pos) -> SelError {
+    let at = pattern.char_indices().take_while(|&(b, _)| b < at).count();
+    let quoted = if pattern.chars().count() <= 80 {
+        pattern.to_string()
+    } else {
+        let mut clipped: String = pattern.chars().take(77).collect();
+        clipped.push_str("...");
+        clipped
+    };
     SelError::new(
         "E_REGEX_SYNTAX",
-        format!("{} (at offset {} of /{}/)", message, at, pattern),
+        format!("{} (at offset {} of /{}/)", message, at, quoted),
         pos,
     )
 }
@@ -138,6 +152,14 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
         }
 
         if c == '(' {
+            if i + 1 < n && bytes[i + 1] == b'*' {
+                return Err(bad_regex(
+                    "PCRE verbs such as (*FAIL) are not portable",
+                    pattern,
+                    i,
+                    pos,
+                ));
+            }
             if i + 1 < n && bytes[i + 1] == b'?' {
                 let nxt = if i + 2 < n {
                     bytes[i + 2] as char
@@ -195,8 +217,10 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
 
     let normalized =
         String::from_utf8(out).map_err(|e| SelError::new("E_UTF8", e.to_string(), pos))?;
+    // The structure is checked on the pattern as written (every escape and class
+    // in it is valid by now), so that a refusal's offset is into that pattern.
     StructureParser {
-        src: &normalized,
+        src: pattern,
         i: 0,
         groups: 0,
         pos,
@@ -408,13 +432,15 @@ impl StructureParser<'_> {
             self.i += 1;
         }
     }
-    fn error(&self) -> SelError {
-        bad_regex("non-portable regex structure", self.src, self.i, self.pos)
+    /// A refusal at byte `at` of the pattern: the quantifier a refusal is about,
+    /// else the construct's first character (spec/errors.md, "Message conventions").
+    fn error(&self, at: usize) -> SelError {
+        bad_regex("non-portable regex structure", self.src, at, self.pos)
     }
     fn parse(&mut self) -> Result<(), SelError> {
         self.alt(0)?;
         if self.i != self.src.len() {
-            return Err(self.error());
+            return Err(self.error(self.i));
         }
         Ok(())
     }
@@ -447,6 +473,7 @@ impl StructureParser<'_> {
     }
     fn atom(&mut self, depth: usize) -> Result<Facts, SelError> {
         let bytes = self.src.as_bytes();
+        let start = self.i;
         let c = bytes[self.i];
         self.i += 1;
         let mut facts = Facts::default();
@@ -456,7 +483,7 @@ impl StructureParser<'_> {
                 if depth >= crate::limits::MAX_DEPTH
                     || self.groups > crate::limits::MAX_REGEX_GROUPS
                 {
-                    return Err(self.error());
+                    return Err(self.error(start));
                 }
                 let capture = bytes.get(self.i) != Some(&b'?');
                 if !capture {
@@ -464,7 +491,7 @@ impl StructureParser<'_> {
                 }
                 facts = self.alt(depth + 1)?;
                 if bytes.get(self.i) != Some(&b')') {
-                    return Err(self.error());
+                    return Err(self.error(start));
                 }
                 self.i += 1;
                 facts.capture |= capture;
@@ -486,15 +513,16 @@ impl StructureParser<'_> {
                 facts.nullable = true;
                 facts.anchor = true;
             }
-            b'*' | b'+' | b'?' | b'{' => return Err(self.error()),
+            b'*' | b'+' | b'?' | b'{' => return Err(self.error(start)),
             // A literal is one code point: a quantifier after a multi-byte
             // character binds to all of it, not to its last byte.
             _ => self.skip_continuation(bytes),
         }
         if let Some(&q) = bytes.get(self.i) {
             if matches!(q, b'*' | b'+' | b'?' | b'{') {
+                let q_at = self.i;
                 if facts.anchor {
-                    return Err(self.error());
+                    return Err(self.error(q_at));
                 }
                 let (lo, hi) = if q == b'{' {
                     let end = validate_braces(self.src, bytes, self.i, self.pos)?;
@@ -512,7 +540,7 @@ impl StructureParser<'_> {
                     )
                 };
                 if hi > 1 && (facts.nullable || facts.optional_capture) {
-                    return Err(self.error());
+                    return Err(self.error(q_at));
                 }
                 facts.nullable |= lo == 0;
                 facts.optional_capture |= lo == 0 && facts.capture;
@@ -523,7 +551,7 @@ impl StructureParser<'_> {
                     .get(self.i)
                     .is_some_and(|b| matches!(b, b'*' | b'+' | b'?' | b'{'))
                 {
-                    return Err(self.error());
+                    return Err(self.error(self.i));
                 }
             }
         }
@@ -621,7 +649,7 @@ impl RegexCache {
         {
             return;
         }
-        if self.0.len() == 256 {
+        if self.0.len() == REGEX_CACHE_SIZE {
             self.0.pop_front();
         }
         self.0
@@ -646,8 +674,8 @@ pub fn compile_sel_regex(
             ignore_case = true;
             continue;
         }
-        // Quoted as a string, as the other hosts' messages quote it ("x").
-        let quoted = format!("{:?}", ch.to_string());
+        // Quoted as every host's messages quote a text (spec/errors.md).
+        let quoted = crate::utf8::quote_text(ch.encode_utf8(&mut [0; 4]));
         if ch == 'm' || ch == 's' {
             return Err(SelError::new(
                 "E_BAD_ARG",
@@ -934,11 +962,11 @@ mod tests {
         for n in 0..254 {
             cache.insert(&format!("p{n}"), false, compiled.clone());
         }
-        assert_eq!(cache.0.len(), 256);
+        assert_eq!(cache.0.len(), REGEX_CACHE_SIZE);
         assert!(cache.get("a", false).is_some());
         cache.insert("a", false, compiled.clone());
         cache.insert("new", false, compiled);
-        assert_eq!(cache.0.len(), 256);
+        assert_eq!(cache.0.len(), REGEX_CACHE_SIZE);
         assert!(cache.get("a", false).is_none());
         assert!(cache.get("a", true).is_some());
     }

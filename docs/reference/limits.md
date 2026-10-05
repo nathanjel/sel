@@ -14,6 +14,14 @@ before rendering — the prose there defines them; this page lists them.
 | `MAX_COLLECTION` | 1,000,000 | §6.4 | children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE |
 | `MAX_REGEX_PATTERN` | 65,535 | §7.8 | code points of a regex pattern; beyond it E_REGEX_SYNTAX |
 | `MAX_REGEX_GROUPS` | 1,000 | §7.8 | groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX |
+| `MAX_ROUND_SCALE` | 1,000,000 | §6.4 | the scale argument of ROUND(x, n); beyond it E_RANGE |
+| `MAX_POWER_EXPONENT` | 100,000 | §6.4 | the exponent argument of POWER(x, n); beyond it E_RANGE |
+| `MAX_REGEX_QUANTIFIER` | 65,535 | §6.4 | a regex quantifier bound, as in a{n} or a{n,m} (PCRE2's own hard limit); beyond it E_REGEX_SYNTAX |
+| `REGEX_AMBIGUITY_BUDGET` | 16 | §7.8 | the regex ambiguity budget, the summed log2 of the finite choices outside every loop; above it E_REGEX_SYNTAX |
+| `REGEX_ANALYSIS_POSITIONS` | 131,072 | §7.8 | positions of the regex ambiguity analysis (2^17); more is E_REGEX_SYNTAX |
+| `REGEX_ANALYSIS_EDGES` | 262,144 | §7.8 | follow edges of the regex ambiguity analysis (2^18); more is E_REGEX_SYNTAX |
+| `REGEX_ANALYSIS_RANGES` | 2,097,152 | §7.8 | the sum over follow edges of the ranges at the target (2^21); above it E_REGEX_SYNTAX |
+| `REGEX_ANALYSIS_PAIR_WORK` | 1,048,576 | §7.8 | units of pair-graph work of the regex ambiguity analysis (2^20); more is E_REGEX_SYNTAX |
 | `MAX_SQL_NODES` | 250,000 | §6.4 | nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md) |
 | `DIV_SCALE` | 10 | §5.3 | fractional digits long division runs to before rounding half away from zero |
 
@@ -45,4 +53,4 @@ before rendering — the prose there defines them; this page lists them.
 | `E_LEN_MISMATCH` | run |
 | `E_ABORT` | run |
 
-9 limits, 25 error codes. The SQL layer's own codes are in `sql/errors.md`.
+17 limits, 25 error codes. The SQL layer's own codes are in `sql/errors.md`.

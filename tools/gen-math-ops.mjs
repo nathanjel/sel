@@ -186,14 +186,22 @@ function renderGo(ops) {
     '',
     'var Operators = map[string]string{',
   ];
-  for (const o of ops) if (o.kind === 'operator') l.push(`\t"${o.token}": "${o.name}",`);
+  // gofmt aligns the values of one-line map entries one space past the longest key.
+  const key = (kind) => {
+    const w = Math.max(...ops.filter((o) => o.kind === kind).map((o) => o.token.length)) + 3;
+    return (o) => `"${o.token}":`.padEnd(w);
+  };
+  const opKey = key('operator');
+  for (const o of ops) if (o.kind === 'operator') l.push(`\t${opKey(o)} "${o.name}",`);
   l.push('}', '', 'var Prefix = map[string]string{');
-  for (const o of ops) if (o.kind === 'prefix') l.push(`\t"${o.token}": "${o.name}",`);
+  const prefixKey = key('prefix');
+  for (const o of ops) if (o.kind === 'prefix') l.push(`\t${prefixKey(o)} "${o.name}",`);
   l.push('}', '', 'var Builtins = map[string]BuiltinSpec{');
+  const builtinKey = key('builtin');
   for (const o of ops) if (o.kind === 'builtin') {
     const arity = typeof o.arity === 'string' ? o.arity : String(o.arity);
     const aux = o.aux === null ? -1 : o.aux;
-    l.push(`\t"${o.token}": {Op: "${o.name}", Arity: "${arity}", Aux: ${aux}},`);
+    l.push(`\t${builtinKey(o)} {Op: "${o.name}", Arity: "${arity}", Aux: ${aux}},`);
   }
   l.push('}', '', 'var Ops = []string{');
   for (const o of ops) l.push(`\t"${o.name}",`);

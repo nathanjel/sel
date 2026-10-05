@@ -1,7 +1,7 @@
 import * as D from '../decimal.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
-import { checkSizedInt, MAX_SCALE, MAX_POWER } from '../budget.mjs';
+import { checkSizedInt, MAX_ROUND_SCALE, MAX_POWER_EXPONENT } from '../budget.mjs';
 
 
 define({ name: 'ABS', min: 1, max: 1, fn: (a) => Value.numOwned(D.abs(a.dec(0))) });
@@ -13,12 +13,12 @@ define({ name: 'CANON', min: 1, max: 1, fn: (a) => Value.numOwned(D.trimScale(a.
 
 define({
   name: 'ROUND', min: 2, max: 2,
-  fn: (a) => Value.numOwned(D.round(a.dec(0), checkSizedInt(a.dec(1), 'ROUND', 2, MAX_SCALE, 'ROUND scale', a.posOf(1)), a.pos)),
+  fn: (a) => Value.numOwned(D.round(a.dec(0), checkSizedInt(a.dec(1), 'ROUND', 2, MAX_ROUND_SCALE, 'ROUND scale', a.posOf(1)), a.pos)),
 });
 
 define({
   name: 'POWER', min: 2, max: 2,
-  fn: (a) => Value.numOwned(D.power(a.dec(0), checkSizedInt(a.dec(1), 'POWER', 2, MAX_POWER, 'POWER exponent', a.posOf(1)), a.pos)),
+  fn: (a) => Value.numOwned(D.power(a.dec(0), checkSizedInt(a.dec(1), 'POWER', 2, MAX_POWER_EXPONENT, 'POWER exponent', a.posOf(1)), a.pos)),
 });
 
 define({

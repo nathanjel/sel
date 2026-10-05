@@ -12,6 +12,8 @@ package sel
 import (
 	"math/bits"
 	"sort"
+
+	"github.com/nathanjel/sel/go/internal/limits"
 )
 
 type rng struct{ lo, hi rune }
@@ -20,11 +22,11 @@ const (
 	maxCodePoint = rune(0x10FFFF)
 
 	reUnroll = 8
-	reAmbMax = 16
-	rePMax   = 1 << 17 // positions
-	reEMax   = 1 << 18 // follow edges
-	reDMax   = 1 << 21 // sum over edges of the range count at the target
-	reQMax   = 1 << 20 // pair-graph work
+	reAmbMax = limits.REGEX_AMBIGUITY_BUDGET
+	rePMax   = limits.REGEX_ANALYSIS_POSITIONS // positions
+	reEMax   = limits.REGEX_ANALYSIS_EDGES     // follow edges
+	reDMax   = limits.REGEX_ANALYSIS_RANGES    // sum over edges of the range count at the target
+	reQMax   = limits.REGEX_ANALYSIS_PAIR_WORK // pair-graph work
 )
 
 // ---- range sets -------------------------------------------------------------
@@ -172,12 +174,14 @@ type reAmb struct {
 	e, d int
 	amb  int
 
-	pos Pos
-	ic  bool
+	pos     Pos
+	pattern string
+	ic      bool
 }
 
+// refuse rejects the whole pattern, so the message's offset is 0.
 func (a *reAmb) refuse(why string) {
-	fail("E_REGEX_SYNTAX", "the pattern can take exponential time on some subject ("+why+") — rewrite it so that no two paths through it match the same text", a.pos)
+	badRegex("the pattern can take exponential time on some subject ("+why+") — rewrite it so that no two paths through it match the same text", a.pattern, 0, a.pos)
 }
 
 // letterSet is the class of a leaf under the flag: `i` folds the members, and a
@@ -399,8 +403,8 @@ func sccs(succ [][]int) (comp []int, cyc []bool) {
 }
 
 // checkAmbiguity applies §7.8's exponential-ambiguity rule to a parsed pattern.
-func checkAmbiguity(tree *reNode, ignoreCase bool, pos Pos) {
-	a := &reAmb{cls: [][]rng{nil}, succ: [][]int{nil}, tag: map[[2]int]bool{}, pos: pos, ic: ignoreCase}
+func checkAmbiguity(tree *reNode, pattern string, ignoreCase bool, pos Pos) {
+	a := &reAmb{cls: [][]rng{nil}, succ: [][]int{nil}, tag: map[[2]int]bool{}, pos: pos, pattern: pattern, ic: ignoreCase}
 	_, first, _ := a.walk(tree, false)
 	a.succ[0] = append([]int(nil), first...)
 	succ, cls := a.succ, a.cls
