@@ -334,12 +334,15 @@ SQL expression cannot do" (snode-pos node)))
          (let ((inner (append bound binds)))
            (replace-items
             node
-            (loop for arg in args
-                  for scope in (or scopes (make-list (length args) :initial-element :outer))
-                  collect (case scope
-                            (:binder arg)
-                            (:inner (substitute-node arg defs inner depth))
-                            (t (substitute-node arg defs bound depth)))))))))
+            (sel::keep-binding-form
+             (sel::node-s node) args
+             (loop for arg in args
+                   for scope in (or scopes (make-list (length args) :initial-element :outer))
+                   collect (case scope
+                             (:binder arg)
+                             (:inner (substitute-node arg defs inner depth))
+                             (t (substitute-node arg defs bound depth))))
+             (snode-pos node)))))))
     (t node)))
 
 (defvar *metrics* nil

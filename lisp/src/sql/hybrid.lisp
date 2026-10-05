@@ -197,12 +197,15 @@ same-named helper inside its body. Copies on the way down, never writes."
            (let ((inner (append binds bound))
                  (c (sel::copy-node node)))
              (setf (sel::node-items c)
-                   (loop for arg in args
-                         for scope in (or scopes (make-list (length args) :initial-element :outer))
-                         collect (case scope
-                                   (:binder arg)
-                                   (:inner (inline-child arg inner))
-                                   (t (inline-child arg bound)))))
+                   (sel::keep-binding-form
+                    (sel::node-s node) args
+                    (loop for arg in args
+                          for scope in (or scopes (make-list (length args) :initial-element :outer))
+                          collect (case scope
+                                    (:binder arg)
+                                    (:inner (inline-child arg inner))
+                                    (t (inline-child arg bound))))
+                    (sel::node-pos node)))
              c))))
       (t node))))
 

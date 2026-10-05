@@ -592,6 +592,24 @@ layer's stage 1 both classify through here, so they cannot disagree."
                 do (push (node-s a) bound))
         (values scopes bound)))))
 
+(defun keep-binding-form (name old-args new-args pos)
+  "NEW-ARGS -- a binding call's arguments after a rewrite that inlined a helper
+into them -- made to select the form OLD-ARGS, the call as written, selects.
+The form is read off the call as written (spec §7.3): in `D = \"DESC\";
+L .> SORT_BY(r, D)` the bare name r is the binder and D the KEY, and inlining
+D would turn the call into SORT_BY(r, \"DESC\"), the direction form with an
+unbound key. Only SORT_BY and TOP_BY have such forms; their binder form is
+pinned by spelling out its direction, ASC, at POS."
+  (let* ((forms (binding-forms-named name))
+         (was (second (match-binding-form forms old-args)))
+         (now (second (match-binding-form forms new-args))))
+    (if (or (null was) (equal was now)
+            (not (member name '("SORT_BY" "TOP_BY") :test #'string=)))
+        new-args
+        (let ((asc (make-node :text pos)))
+          (setf (node-s asc) "ASC")
+          (append (subseq new-args 0 3) (list asc) (nthcdr 3 new-args))))))
+
 (defun call-form (forms args &optional counted)
   "The roles of a binding call's arguments under the manifest form that takes
 ARGS (MATCH-BINDING-FORM), as four values, each an argument index or NIL: the
