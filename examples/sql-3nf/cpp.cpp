@@ -8,7 +8,7 @@
 // hashing, which PostgreSQL has no spelling for -- so the database joins, filters
 // and multiplies, and the cohorts are computed in memory over what it returned.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // Built by `make -C cpp BUILD=build-usage build-usage/example-sql-3nf`,
 // which links examples/lib/db.cpp and the PostgreSQL, MariaDB and SQLite

@@ -6,8 +6,8 @@
 // host consumes.
 //
 // The contract this host is graded against is `sql/cases/*.sqlt`, run by
-// `js/bin/sqlt`: the cases assert an exact string, so the hosts agreeing on all
-// 368 is a measurement rather than an intention.
+// `js/bin/sqlt`: the cases assert an exact string, so the hosts agreeing on every
+// one of them is a measurement rather than an intention.
 
 import * as map from './map.mjs';
 import { DIALECTS } from './_map.mjs';

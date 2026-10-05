@@ -1,5 +1,5 @@
 <?php
-// Precedence climbing, mirroring the other four hosts so all five can be read
+// Precedence climbing, mirroring the other hosts so they can all be read
 // side by side. See docs/contributing.md, "Adding an operator", step 5, and
 // python/sel/parser.py, whose module docstring is the rationale.
 //
@@ -301,10 +301,8 @@ final class Parser
     /** @return array<string,mixed> */
     private function parseSequence(): array
     {
-        // The try/finally is new. It costs nothing — a failing parse abandons the
-        // Parser either way — and the Lisp and Python hosts already protect this
-        // counter, so this is the shape the five hosts converged on rather than
-        // a deviation. All five protect it now.
+        // The try/finally costs nothing — a failing parse abandons the Parser
+        // either way — and every host protects this counter the same way.
         $start = $this->peek();
         $this->enter($start);
         $items = [];

@@ -53,7 +53,7 @@ def define(name: str, min: int, max: float | None = None, *,   # noqa: A002
     # into _builtin_manifest.py. A name the manifest knows is held to it:
     # min/max/lazy/binds must agree, and the extra arity rule (COND's odd
     # count, LINK's three-or-five) comes from the manifest rather than from
-    # here — one body for all five hosts. A name it does not know is a host's
+    # here — one body for every host. A name it does not know is a host's
     # own function (examples/fn-*) and passes.
     m = BUILTIN_MANIFEST.get(key)
     if m is not None:

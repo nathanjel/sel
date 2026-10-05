@@ -24,7 +24,7 @@ const SUITE = resolve(HERE, '../../conformance');
 // SEL's four whitespace characters and nothing else. `String.prototype.trim()`
 // strips ECMA-262's WhiteSpace set, which includes U+FEFF and every Unicode Zs
 // -- so a case whose source began with a byte-order mark had it silently
-// deleted HERE, and this host alone answered TRUE where the other four raised
+// deleted HERE, and this host alone answered TRUE where the other hosts raised
 // E_SYNTAX. The lexers agreed all along; the reader did not. See
 // conformance/README.md on why the set is normative.
 function trimWs(t) {

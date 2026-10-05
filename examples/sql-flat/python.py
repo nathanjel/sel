@@ -12,7 +12,7 @@ hands: its collation would decide which of them are "the same", and SEL's
 identity is exact bytes. The third explodes a `;`-separated column, which no
 SQL step can express, so it runs in memory entirely.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

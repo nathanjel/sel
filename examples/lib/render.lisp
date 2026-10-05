@@ -5,7 +5,7 @@
 ;;;;   (sel-db:render rows "   | ")
 ;;;;
 ;;;; render(rows, pad) prints rows as `field=value` lines. It is written in SEL,
-;;;; so it prints the same bytes on every host by construction. In the other four
+;;;; so it prints the same bytes on every host by construction. In the other
 ;;;; hosts it lives in db.*; here it has a file of its own because loading db.lisp
 ;;;; loads postmodern, cl-sqlite and cl-mysql, and examples/memory-complex renders
 ;;;; rows without having any of them. db.lisp loads this file, so an example that

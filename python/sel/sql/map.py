@@ -379,7 +379,7 @@ def lexical(dialect: str, key: str) -> Any:
     # sql/MAP.md §3 says a null lexical value is a WITHDRAWAL -- "a null
     # binaryLiteral refuses BIN literals" -- and a None test reads that as
     # "absent" and walks on to the base, which handed the withdrawn value back.
-    # The documented withdrawal was unimplementable, in both hosts.
+    # The documented withdrawal was unimplementable, in every host that had it.
     for d in chain(dialect):
         lx = _record(d).get('lexical') or {}
         if key in lx:
@@ -428,7 +428,7 @@ _SLOT_IN_TPL = re.compile(r'\{([^}]*)\}')
 #
 # What tools/gen-sql-map.mjs enforces at generation time, enforced here at
 # registration time, against the vocabulary that file EMITS rather than a second
-# copy of it. Every one of these refusals closes a place where the two hosts
+# copy of it. Every one of these refusals closes a place where the hosts
 # improvised differently over an entry the generator would never have accepted --
 # a JSON list where a template belongs, an arity of strings, a `ret` that was not
 # there at all.
@@ -447,9 +447,9 @@ def _check_lexical(key: str, v: Any, where: str) -> None:
     if v is None:
         return
     if types[key] == 'map':
-        # textEscape given as a STRING made both hosts skip escaping entirely and
-        # emit 'it's' unquoted. That is an injection, it was in both hosts, and
-        # nothing checked.
+        # textEscape given as a STRING made the hosts of the day skip escaping
+        # entirely and emit 'it's' unquoted. That is an injection, it was in every
+        # one of them, and nothing checked.
         if not isinstance(v, dict):
             raise RuntimeError(f'{where} sets {key} to a {type(v).__name__}; it must '
                                'be a map of character to replacement')
@@ -577,7 +577,7 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
         # {"0": "a", "1": "b"} -- and it reached the renderer and emitted the
         # literal `b`. Against UPPER's arity of [1, 1] the count 0 is out of
         # range, and the list is refused for the reason it is actually wrong.
-        # A list is included here so both hosts refuse it at the same line.
+        # A list is included here so every host refuses it at the same line.
         lo, hi = (RULES['opArity'][key] if section == 'ops'
                   else host if host is not None
                   else RULES['funcArity'][ascii_upper(key)])

@@ -12,7 +12,7 @@
 // tells a browser which rules to re-run when a field changes -- and the browser
 // runs the very same rule text, in JavaScript.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // The visible difference here is that C++ has no from_native: a submitted form
 // is a list of (field, text) pairs, and the context is built from it one set()
@@ -31,8 +31,8 @@
 
 namespace {
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }

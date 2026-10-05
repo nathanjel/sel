@@ -7,7 +7,7 @@ through addition.
 
 **This deliberately does not use the `decimal` module.** Not for speed, and not
 for pride: `tools/decimal-oracle.py` generates this project's decimal test cases
-*from* Python's `decimal`, as an independent third opinion on four cores that
+*from* Python's `decimal`, as an independent third opinion on decimal cores that
 were all written from one spec by one hand. If this host's core were `decimal`
 too, `tools/check-decimal.sh` would be comparing that module against itself and
 would verify precisely nothing for Python while still printing a reassuring
@@ -19,7 +19,7 @@ are retained explicitly, without a second cached signed mantissa.
 
 The arithmetic is unbounded; the *conversions* are not. CPython refuses int/str
 above 4300 digits by default, and since a SEL number is text, that limit reached
-straight into the language: a 4301-digit literal the other four hosts evaluated
+straight into the language: a 4301-digit literal the other hosts evaluated
 could not be compiled here at all. It is raised below to what §6.4 admits, and
 the digit count the cap needs is read from bit_length rather than str(), because
 str() is the conversion being guarded.

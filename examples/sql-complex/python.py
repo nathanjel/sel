@@ -12,7 +12,7 @@ over the tables -- with the SELECTs written by SEL too, from the same bindings
 against the report over the data generated in memory (examples/memory-complex),
 which is where the rows in this database came from.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

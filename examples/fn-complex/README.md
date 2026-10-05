@@ -19,7 +19,7 @@ See that README for why, and for the order of work.
 
 A lazy function declares `lazy: true` and reads argument **nodes** instead of
 values. Nothing is evaluated for it; it decides what to evaluate, when, and how
-many times. Four things it has to get right, and all four are the reason the
+many times. Four things it has to get right, and they are the reason the
 strict lane is the default:
 
 1. **Declare `binds: true.`** That is what tells `dependencies()` the second

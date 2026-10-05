@@ -18,7 +18,7 @@
 // the same program computes in memory -- which is how the example checks that the
 // two implementations of each function agree on this data.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // Built by `make -C cpp BUILD=build-usage build-usage/example-sql-functions`,
 // which links examples/lib/db.cpp and the PostgreSQL, MariaDB and SQLite

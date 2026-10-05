@@ -4,7 +4,7 @@
 ;;;;        --load lisp/bin/boot.lisp --load examples/plain/lisp.lisp \
 ;;;;        --eval '(sel-example:main)'
 ;;;;
-;;;; The four files beside this one do the same thing through their own host API
+;;;; The files beside this one do the same thing through their own host API
 ;;;; and print byte-identical output; tools/check-examples.sh diffs them. That is
 ;;;; the point of the example as much as the code is: the differences you see
 ;;;; between these files are the languages', never SEL's.
@@ -79,8 +79,8 @@
     (format t "   keys   => ~{~a~^,~}~%" (sel:value-keys v))
     (format t "   [2]    => ~a~%" (sel:as-text (sel:value-get v "2")))
     (format t "   scalar => ~a~%" (sel:as-text v)))     ; scalar context: first child
-  ;; A host bool prints differently in all five languages (true/1/True/T), and
-  ;; this file's output has to be byte-identical to its four siblings, so say it
+  ;; A host bool prints differently in every host language (true/1/True/T), and
+  ;; this file's output has to be byte-identical to its siblings, so say it
   ;; in SEL's own spelling rather than the host's.
   (format t "   bool   => ~a~%" (if (sel:as-bool (sel:evaluate "1 < 2")) "TRUE" "FALSE"))
 

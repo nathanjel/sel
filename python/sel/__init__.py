@@ -1,7 +1,7 @@
 """SEL — a small expression language for validation rules.
 
-One rule file evaluates identically on JavaScript, PHP, C++23, Common Lisp and
-Python. Exact decimal arithmetic, no floating point, no truthiness.
+One rule file evaluates identically on every host: Python, JavaScript, PHP,
+C++23, Common Lisp, Rust and Go. Exact decimal arithmetic, no floating point, no truthiness.
 
     from sel import compile, evaluate, Value, SelError
 
@@ -64,8 +64,7 @@ class Program:
         # optimiser, built on the first run and kept, because the rewrite and
         # the copy it makes cost more than evaluating a small rule does. Keyed
         # by the identity of `ast` so a reassignment is noticed. Private; SQL
-        # translation never sees it, since a physical rewrite (join
-        # pushdown) is not something a database can be asked to run.
+        # translation never sees it.
         self._physical: Node | None = None
         self._physical_of: Node | None = None
 
@@ -93,7 +92,7 @@ class Program:
 
     def physical_ast(self) -> Node:
         """The optimised tree run() evaluates, built once per `ast` and from the
-        AST alone -- the other four hosts' rule, which this host broke by keying
+        AST alone -- every other host's rule, which this host broke by keying
         the tree on the context too (SEL-0049): a fresh context per run rebuilt
         it, and its join-filter pushdown read the rows to decide a side."""
         if self._physical_of is not self.ast:
@@ -124,8 +123,8 @@ uncounted, and `dependencies()` on a flat chain of about 48,000 operators
 raised an uncaught RecursionError, which is not a SEL error at all.
 
 The depth rides as a parameter rather than as a counter with a guard, because
-there is nothing to release on the way out -- which is also what lets the five
-hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
+there is nothing to release on the way out -- which is also what lets every
+host spell this identically. Capped at the same MAX_DEPTH the evaluator uses
 and tripping at the same node, so a program whose dependencies cannot be
 computed is exactly a program that could not have been evaluated.
 

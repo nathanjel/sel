@@ -16,7 +16,7 @@ final class Registry
      * into BuiltinManifest.php. A name the manifest knows is held to it:
      * min/max/lazy/binds must agree, and the extra arity rule (COND's odd
      * count, LINK's three-or-five) comes from the manifest rather than from
-     * the caller — one body for all five hosts. A name it does not know is a
+     * the caller — one body for every host. A name it does not know is a
      * host's own function (examples/fn-*) and passes.
      *
      * @param array<string,mixed> $spec

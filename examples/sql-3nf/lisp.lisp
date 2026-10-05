@@ -9,7 +9,7 @@
 ;;;; filters and multiplies, and the cohorts are computed in memory over what it
 ;;;; returned.
 ;;;;
-;;;; The four files beside this one print byte-identical output.
+;;;; The files beside this one print byte-identical output.
 
 ;;; Before the DEFPACKAGE, because --load reads and evaluates one top-level form
 ;;; at a time: the SEL.SQL and SEL-DB symbols further down are only readable once

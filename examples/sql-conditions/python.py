@@ -11,7 +11,7 @@ tighter and able to say more. Either way a rule SQL cannot express is refused
 whole, and runs in memory instead; every answer below is checked against the
 in-memory one.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

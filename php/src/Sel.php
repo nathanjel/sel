@@ -194,8 +194,8 @@ final class Program
      * segfaulted this host once its memory_limit was out of the way.
      *
      * The depth rides as a parameter rather than as a counter with a guard, because
-     * there is nothing to release on the way out -- which is also what lets the five
-     * hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
+     * there is nothing to release on the way out -- which is also what lets every
+     * host spell this identically. Capped at the same MAX_DEPTH the evaluator uses
      * and tripping at the same node, so a program whose dependencies cannot be
      * computed is exactly a program that could not have been evaluated.
      *

@@ -1,14 +1,14 @@
 // The portable regex subset. See spec/SPEC.md §7.8.
 //
 // A pattern is validated against a whitelist before it reaches the host engine,
-// so anything the two engines would disagree about fails loudly here instead of
-// producing different answers on the backend and the frontend.
+// so anything the hosts' engines would disagree about fails loudly here instead
+// of producing different answers on the backend and the frontend.
 //
-// Both hosts compile with `u` (code point matching, and \d \w \s stay ASCII in
-// both) and with dotall permanently on. `m` and `s` are not offered: JS treats
+// Every host compiles with code point matching (`u` here and in PHP), with
+// \d \w \s rewritten to ASCII classes, and with dotall permanently on. `m` and `s` are not offered: JS treats
 // \r, U+2028 and U+2029 as line terminators and PCRE does not, so anything whose
 // meaning depends on where a line ends cannot be made portable. With dotall
-// always on, `.` means "any code point" in both, and ^ and $ anchor only to the
+// always on, `.` means "any code point" everywhere, and ^ and $ anchor only to the
 // ends of the subject.
 
 import { fail } from '../errors.mjs';

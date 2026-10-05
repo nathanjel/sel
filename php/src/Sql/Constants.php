@@ -192,7 +192,7 @@ final class Constants
      *
      * The evaluator's rule, in Args::symbol: a bare `var` node that did NOT come
      * from parentheses. Both halves matter and the second was missing here, in
-     * all three hosts. `(C)` parses as a `var` node carrying the parser's
+     * every host that had this check. `(C)` parses as a `var` node carrying the parser's
      * `grouped` flag — which is exactly what makes `(A) = 1` an E_BAD_ASSIGN — so
      * testing only the kind accepted a binder the evaluator refuses with
      * E_EXPECT_SYMBOL, and `ALL(V, (C), C > 0)` translated to working SQL for a

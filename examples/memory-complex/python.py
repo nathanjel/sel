@@ -10,7 +10,7 @@ them deterministically, and the source the PostgreSQL seed was rendered from
 the plan for MariaDB is computed from the bindings alone, and it says what it
 said for PostgreSQL, that none of this report is SQL's to answer.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

@@ -3,7 +3,7 @@
 Python `str` is already a sequence of code points, so unlike the JS and PHP
 hosts this needs no explicit code-point array: every index into `self.chars` is
 a code point index, which is what keeps reported positions identical across
-hosts. The source is still passed through to_code_points once, to reject lone
+hosts. The source is still checked once (utf8.check_source), to reject lone
 surrogates as E_UTF8 rather than let them become silently mangled tokens.
 
 String interpolation is resolved here and nowhere else: a literal containing

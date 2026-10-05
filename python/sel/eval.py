@@ -591,7 +591,7 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     # reported the right one for `TRUE $== FALSE` because argument evaluation
     # order is unspecified there. Python evaluates arguments left to right, so
     # this is not strictly required here — it is written this way so the file
-    # can be read against the other four without a footnote.
+    # can be read against the other hosts without a footnote.
     arith = ARITH.get(op)
     if arith is not None:
         a = l.as_decimal(lp); b = r.as_decimal(rp)

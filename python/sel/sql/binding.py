@@ -2,7 +2,7 @@
 
 Constructed in code, never decoded from a document. That is the whole point:
 this layer used to take a nested dict shaped like JSON and validate it by hand,
-and a cross-host review found the two hosts disagreeing about what a malformed
+and a cross-host review found PHP and Python disagreeing about what a malformed
 one meant -- ``from: ["order_items"]`` was refused by PHP and spliced into an
 identifier here; ``items`` as an object was accepted by one and refused by the
 other. None of that was a decision anybody made; it was ``json_decode``'s shape
@@ -15,8 +15,8 @@ parses nothing.
 **The checks are in the bodies rather than in the annotations, deliberately.**
 PHP would enforce a ``string`` parameter and refuse a list with a TypeError;
 Python's annotations enforce nothing at run time, JS has no types to declare, and
-Lisp's are advisory. A guarantee written as a signature is a guarantee three of
-the six hosts do not make. Written in the body it is the same refusal, with the
+Lisp's are advisory. A guarantee written as a signature is a guarantee several
+hosts do not make. Written in the body it is the same refusal, with the
 same code, everywhere -- and ``SqlError`` is the class an application catches,
 where a ``TypeError`` is not.
 
@@ -46,7 +46,7 @@ class Binding:
     def __init__(self, spec: dict[str, Any]) -> None:
         self.spec = spec
 
-    # --- the four kinds ------------------------------------------------------
+    # --- the factories --------------------------------------------------------
 
     def with_unique_key(self, key: Any) -> 'Binding':
         """Declare a schema-proven single-column, non-null unique key (a copy)."""

@@ -8,7 +8,7 @@
 // spelled differently, an extension is not installed. A dialect is registered
 // rather than forked, so what you write is only the difference.
 //
-// The four files beside this one print byte-identical output;
+// The files beside this one print byte-identical output;
 // tools/check-examples.sh diffs them.
 
 declare(strict_types=1);

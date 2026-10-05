@@ -3,7 +3,7 @@ units — so positions and lengths agree with the other hosts on astral
 characters. Positions are 1-based and 0 means "not found" (§7.5).
 
 Python `str` indexes by code point already, which removes the whole class of bug
-the other four hosts fight here. The traps that remain are the ones where
+the other hosts fight here. The traps that remain are the ones where
 Python's convenience methods mean something *wider* than SEL does, and each is
 avoided explicitly below: str.upper/lower are full Unicode, str.strip takes the
 Unicode whitespace set, and str.find would be right but is spelled out for the

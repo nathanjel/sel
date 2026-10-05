@@ -1,33 +1,34 @@
-"""Parser.
+"""Parser: precedence climbing, the shared design note.
 
-**This is the precedence-climbing pilot.** The other four hosts transcribe
-spec/grammar.md one method per production — `parse_sequence` -> `parse_list` ->
-`parse_assignment` -> `parse_or` -> ... -> `parse_primary`, sixteen deep, plus a
-helper frame per binary operator. That shape is a deliberate choice there and it
-costs those hosts nothing, but it is **35 stack frames per level of parenthesis
-nesting** (measured against the JS host: 44 frames at one paren, 1409 at forty,
-linear at 35.0). E_DEPTH trips at 100 nested parens, so transcribing it here
-would need ~3500 Python frames against a default recursion limit of 1000, and
-this host would raise RecursionError where the other four raise E_DEPTH.
+Every host parses the same way, with the same function names:
+`parse_program` -> `parse_sequence` -> `parse_list` -> `parse_term` ->
+`parse_prefix` -> `parse_postfix` -> `parse_primary`, and the sixteen levels of
+spec/SPEC.md §5 as the binding-power table below rather than sixteen functions
+(docs/contributing.md, "Where everything lives", says where a host departs from
+the names).
 
-Raising sys.setrecursionlimit would paper over that. Precedence climbing removes
-it: the sixteen levels of spec/SPEC.md §5 become the table below, and one level
-of nesting costs six frames instead of thirty-five.
+Why not one method per production of spec/grammar.md, which is how the parsers
+were first written: that shape costs **35 stack frames per level of parenthesis
+nesting** (measured on a transcribed parser: 44 frames at one paren, 1409 at
+forty, linear at 35.0). E_DEPTH trips at 100 nested parens, so it needs ~3500
+frames where Python's default recursion limit is 1000, and a host would raise
+RecursionError where the others raise E_DEPTH. Raising sys.setrecursionlimit
+would paper over that. Precedence climbing removes it: one level of nesting
+costs six frames instead of thirty-five.
 
-The intent is that the other four hosts adopt this shape in turn, so the table
-is written to be transcribed rather than to be clever, and anything specific to
-Python is kept out of the loop.
+The table is written to be transcribed rather than to be clever, and anything
+specific to one language is kept out of the loop.
 
 Five things this has to reproduce exactly, none of which the type checker will
 catch for you — they all produce a *valid parse of the wrong tree*:
 
  1. NOT is a LOOSE prefix operator (bp 7 — looser than comparison, tighter than
-    AND) while unary `-` is a TIGHT one (bp 15). Textbook precedence climbing
+    AND) while unary `-` is a TIGHT one (bp 16). Textbook precedence climbing
     puts every prefix operator in parse_primary, at the tightest end, which
     would make `NOT a == b` parse as `(NOT a) == b`. Prefix operators get their
     own binding power here, and `parse_prefix` refuses one whose binding power
     is looser than the position allows — which is what makes `a == NOT b` and
-    `-NOT x` E_RESERVED, exactly as the transcribed parsers make them.
+    `-NOT x` E_RESERVED, as the grammar makes them.
  2. Comparison is NON-associative. Its right side is parsed one level tighter
     and a second comparison operator afterwards is E_SYNTAX, reported at that
     second operator.
@@ -61,8 +62,9 @@ COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
                          '$==', '$!=', '$<', '$<=', '$>', '$>='])
 COMPARE_WORDS = frozenset(['EQL', 'IN'])
 
-# spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-# that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+# spec/SPEC.md §5, as a table. Higher binds tighter. The levels that are not
+# infix: 16 is unary minus and 7 is NOT; postfix and primary bind tighter than
+# every level and have no number.
 # BP_SEQ and BP_LIST are read by nothing: `;` and `,` are parsed by their own
 # functions (parse_sequence, parse_list), not by the climbing loop. Kept so the
 # table is the whole of §5.
@@ -289,11 +291,9 @@ class Parser:
 
     # sequence = list { ";" list } [ ";" ]
     #
-    # The try/finally around the depth counter is deliberate and differs from the
-    # JS, PHP and C++ parsers, which leave parse_sequence's leave() unprotected.
-    # It costs nothing — a failing parse abandons the Parser either way — and the
-    # Lisp host's with-depth macro already protects it, so this is the shape the
-    # other three should converge on rather than a Python deviation.
+    # The try/finally around the depth counter costs nothing — a failing parse
+    # abandons the Parser either way — and every host protects this counter the
+    # same way.
     def parse_sequence(self) -> Node:
         start = self.peek()
         self.enter(start.pos)
@@ -416,7 +416,6 @@ class Parser:
 
         return self.parse_postfix()
 
-    # postfix = primary { "[" sequence "]" }
     # postfix = primary { "[" sequence "]" }
     #
     # The bracket counts a level of its own. Without it an index is the one

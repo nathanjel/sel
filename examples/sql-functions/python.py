@@ -19,7 +19,7 @@ Every pipeline prints its plan and its rows, and whether those rows are the rows
 the same program computes in memory -- which is how the example checks that the
 two implementations of each function agree on this data.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

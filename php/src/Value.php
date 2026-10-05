@@ -638,7 +638,7 @@ final class Value
 
     /**
      * Kind predicates. The recommended way to branch on kind in every host,
-     * because it is the one spelling that reads the same in all four. These
+     * because it is the one spelling that reads the same in all of them. These
      * test the value's own kind and do not apply scalar context.
      */
     public function isNone(): bool
@@ -1022,7 +1022,7 @@ final class Value
      * sixty. Three hosts answered where two died, on the same program.
      *
      * The depth rides as a parameter, as it does in dependencies(): nothing has to be
-     * released on the way out, so all five hosts spell it the same way. A value of
+     * released on the way out, so every host spells it the same way. A value of
      * exactly MAX_DEPTH levels is fine; the level past it is refused. `$pos` is
      * reported when the caller has one -- the evaluator knows which node asked -- and
      * is null for a call from host code, the same convention as asText().

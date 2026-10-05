@@ -67,7 +67,7 @@ HOSTS_NEW = {
 }
 
 EXCLUDED_SUFFIXES = ('.selt', '.sqlt', '.selo', '.json', '.sel', '.svg', '.png', '.ico', '.lock', '.sum')
-EXCLUDED_PREFIXES = ('sql/oracle/', 'docs/interim/', 'cpp/third_party/srell/srell', 'tools/scale-test/')
+EXCLUDED_PREFIXES = ('sql/oracle/', 'cpp/third_party/srell/srell', 'tools/scale-test/')
 EXCLUDED_FILES = {
     'CHANGELOG.md', 'tools/check-roster.py',
     # renderings of the dialect map and the sqlt cases: they follow sql/dialects/*.json and sql/cases/

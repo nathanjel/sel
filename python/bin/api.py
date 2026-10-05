@@ -133,7 +133,7 @@ except SelError as e:
     say('error.host.badnum', e.code)
 # Every character is a digit, so this is E_RANGE and not E_NOT_NUM. Value.num is
 # public API, so an embedding application can reach the numeral cap without
-# compiling a rule at all -- and all six hosts must refuse it the same way.
+# compiling a rule at all -- and every host must refuse it the same way.
 try:
     Value.num('1' * 2000001)
 except SelError as e:

@@ -18,7 +18,7 @@ final class Bindings
      * Name => Binding, and nothing else.
      *
      * The array-of-arrays this used to take was a JSON document in all but
-     * name, and validating one by hand is where the two hosts diverged: PHP's
+     * name, and validating one by hand is where PHP and Python diverged: PHP's
      * `is_array` cannot tell a JSON object from a JSON array, Python's
      * `isinstance` can, and neither difference was a decision anybody made. A
      * Binding is built by a typed constructor (see Binding.php), so the

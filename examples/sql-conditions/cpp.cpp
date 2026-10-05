@@ -10,7 +10,7 @@
 // whole, and runs in memory instead; every answer below is checked against the
 // in-memory one.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // Built by `make -C cpp BUILD=build-usage build-usage/example-sql-conditions`,
 // which links examples/lib/db.cpp and the PostgreSQL, MariaDB and SQLite
@@ -38,8 +38,8 @@ using sel::sql::Sql;
 using sel::sql::SqlError;
 using sel::sql::SqlKind;
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }

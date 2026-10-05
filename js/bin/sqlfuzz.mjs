@@ -8,8 +8,8 @@
 // The oracle lane answers "does the emitted SQL MEAN what SEL means?" and needs
 // a database; this one answers "do the hosts emit the SAME thing?" and needs
 // nothing. Without it, `tools/check.sh`'s SQL fuzz step was a no-op on any
-// machine with no DSN set — which is every machine by default — so three
-// translators agreeing was asserted only over the 377 hand-written cases.
+// machine with no DSN set — which is every machine by default — so the
+// translators agreeing was asserted only over the hand-written cases.
 //
 // The corpus format and the one-line-per-program protocol are specified in
 // tools/README.md, and this reader is the same five lines as the others.

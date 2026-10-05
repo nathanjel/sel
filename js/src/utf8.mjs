@@ -3,8 +3,8 @@
 // The host's own facilities are not used: TextDecoder is lenient (it substitutes
 // U+FFFD where the spec demands E_UTF8), and JS string indexing counts UTF-16
 // units, which disagrees with PHP on every code point above U+FFFF. Every length,
-// offset and slice in SEL counts code points, and that has to be true in both
-// hosts or nothing else is.
+// offset and slice in SEL counts code points, and that has to be true in every
+// host or nothing else is.
 
 import { fail } from './errors.mjs';
 

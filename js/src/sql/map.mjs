@@ -364,7 +364,7 @@ export function lexical(dialect, key) {
   // sql/MAP.md §3 says a null lexical value is a WITHDRAWAL — "a null
   // binaryLiteral refuses BIN literals" — and a null test reads that as "absent"
   // and walks on to the base, which handed the withdrawn value back. The
-  // documented withdrawal was unimplementable, in both hosts.
+  // documented withdrawal was unimplementable, in every host that had it.
   for (const d of chain(dialect)) {
     const lx = record(d).lexical ?? {};
     if (has(lx, key)) return lx[key];
@@ -427,9 +427,9 @@ function checkLexical(key, v, where) {
   // looks keys up by presence so that it can.
   if (v === null) return;
   if (types[key] === 'map') {
-    // textEscape given as a STRING made both hosts skip escaping entirely and
-    // emit 'it's' unquoted. That is an injection, it was in both hosts, and
-    // nothing checked.
+    // textEscape given as a STRING made the hosts of the day skip escaping
+    // entirely and emit 'it's' unquoted. That is an injection, it was in every
+    // one of them, and nothing checked.
     if (v === null || typeof v !== 'object' || Array.isArray(v)) {
       throw new Error(`${where} sets ${key} to a ${typeName(v)}; it must be a map of `
         + 'character to replacement');
