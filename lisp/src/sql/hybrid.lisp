@@ -690,8 +690,10 @@ Name are two fields. A null BINDER counts a read under any name."
       (walk node))
     (nreverse refs)))
 
+;; The calls the translator renders itself rather than through the dialect's
+;; function map; every other call needs a map entry to reach SQL.
 (defparameter +sql-special-calls+
-  '("IF" "COND" "COALESCE" "COUNT" "SUM" "AVG" "MIN" "MAX" "RECORD" "LIST"))
+  '("IF" "COND" "COALESCE" "COUNT" "SUM" "MIN" "MAX" "RECORD" "LIST"))
 
 (defun contains-unsupported-sql-p (node dialect &optional defs seen)
   "Returns T if NODE contains any function call not supported by DIALECT.
