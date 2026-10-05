@@ -20,7 +20,7 @@
 (defun tidy-message (message)
   "Call sites write long messages with FORMAT's `~<newline>` continuation, and
 REFUSE does not call FORMAT -- so twenty-odd refusals said `~` and a line break in
-the middle of a sentence (LISP-C38). Only that directive is processed: a message is
+the middle of a sentence. Only that directive is processed: a message is
 not a control string, and a `~` in a name a user wrote must survive."
   (if (not (search (format nil "~~~%") message))
       message

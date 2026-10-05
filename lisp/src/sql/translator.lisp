@@ -184,7 +184,7 @@ emitted VERBATIM -- the one place application-written SQL enters, which is why
 it is a named constructor and not a map key."
   ;; A raw field is an expression against the relation's OWN alias. A derived
   ;; table the relation is wrapped in has no column of that name (:OPAQUE), so a
-  ;; read through it would name something that is not there (JS-C28, CPP-C32).
+  ;; read through it would name something that is not there.
   (when (getf spec :opaque)
     (refuse "E_SQL_SHAPE"
             "this field is a raw expression, and the derived table this statement ~
@@ -539,7 +539,7 @@ row with no match does not have; read it through the right binder" label key)
 appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
 collated the way the `$` family compares text, because the evaluator groups by
 the key's exact bytes and a case-insensitive collation would merge groups it
-keeps apart (review 2026-09-15 finding L; MariaDB's default merged 'A' and
+keeps apart (MariaDB's default merged 'A' and
 'a'). The result is marked exact so a comparison over it does not wrap it a
 second time -- MySQL's only_full_group_by accepts a projected or compared key
 only as the identical expression."
@@ -1098,7 +1098,7 @@ aggregate's identity value instead, and those differ per aggregate."
 
 (defun arithmetic-operand (tr n)
   "An operand that is a constant TEXT holding a number, in an arithmetic position, is
-that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would read
+that number: SEL computes with it exactly, and MariaDB and MySQL would read
 the quoted string as a DOUBLE. It is translated as the numeric literal it stands for.
 The text was translated first (its SQL kind is only known then), so the slots it
 bound are taken back, or `params` mode would report a value bound that no
@@ -1316,7 +1316,7 @@ occasionally what you want."
     (when (and alias (plusp (length alias)))
       (setf from (concatenate 'string from " " (emit-ident d alias))))
     (list (cons "from" (list from))
-          ;; A correlate the application supplied is parenthesised (CPP-C56): it is
+          ;; A correlate the application supplied is parenthesised: it is
           ;; spliced before `AND body`, so `a = o.id OR b = o.id` would bind the
           ;; AND to its second operand alone. The default TRUE stays bare.
           (cons "corr" (list (if corr
@@ -1517,7 +1517,7 @@ requires for the same reason and refuses here too"
 binder position, given something else, is E_SQL_SHAPE at that expression -- in
 the statement forms and inside a MAP body as much as under an aggregate, and
 BEFORE any argument is rendered, so the refusal is the binder's and not
-whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
+whatever the arguments would have said or a `no mapping` for the call."
   (let* ((name (sel::node-s n))
          (args (sel::node-items n))
          (forms (remove-if-not
@@ -1540,8 +1540,8 @@ whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
     ;; The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
     ;; SUM(g, [x,] body) is SUM over the grouped rows -- fire on the :group
     ;; binder alone: over a relation row, COUNT(_) is the row's number of
-    ;; fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
-    ;; MIN or MAX (finding J). The body binds the member row, as the
+    ;; fields in SEL, and SEL has no per-group
+    ;; MIN or MAX. The body binds the member row, as the
     ;; evaluator's walk does: `_` for the two-argument form, the name given
     ;; for the three-argument one.
     (when (translator-statement-plan tr)
@@ -1604,7 +1604,7 @@ value a SQL expression can be" (snode-pos n)))
                        ;; Left to right, and the order is load-bearing: slot
                        ;; numbers are allocated in render order.
                        ;; MIN and MAX compare their arguments as numbers: a numeric text
-                       ;; constant is the number, as in arithmetic (PHP-C33).
+                       ;; constant is the number, as in arithmetic.
                        for f = (if (member name '("MIN" "MAX") :test #'equal)
                                    (arithmetic-operand tr arg)
                                    (walk-node tr arg))
@@ -1888,7 +1888,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
     (t nil))
   ;; The four text functions that yield a list, the constructors, and every
   ;; pipeline step -- the optimiser's vocabulary, so a new step is covered by
-  ;; being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+  ;; being one (COUNT(LIST(1, 2, 3)) was once 0).
   (when (and (eq (snode-kind src) :call)
              (or (member (sel::node-s src) +yields-list+ :test #'equal)
                  (member (sel::node-s src) '("LIST" "RECORD") :test #'equal)
@@ -1909,7 +1909,7 @@ it; SQL has no way to count or index what it produces" (sel::node-s src))
 CONSTANTS for the duration: a value binding named V is a constant only where V
 is not shadowed, and inside `ALL(L, V, V + 1 > 0)` the V is the element, so
 treating it as the binding's value validated (and could refuse) a program SEL
-evaluates differently, and left a column unguarded (JS-C53, PY-C45)."
+evaluates differently, and left a column unguarded."
   (let ((saved-const (translator-const-names tr)))
     (push frame (translator-frames tr))
     (setf (translator-const-names tr)
@@ -1938,9 +1938,8 @@ resolves to the key -- which is what the evaluator does."
 (defun with-join-binders (tr plan j render)
   "A LINK's predicate sees `_`/`_1` as its left element and `_2` as its right,
 plus the names the LINK gives them (spec §7.4) and nothing else: a relation's
-name outside those, its alias or its table is not a binder (review 2026-09-28
-SQL-07), and the left element of a later LINK is the joined row so far, not
-the source (SQL-05)."
+name outside those, its alias or its table is not a binder, and the left
+element of a later LINK is the joined row so far, not the source."
   (let* ((step (nth (position j (relational-plan-joins plan)) (third (join-rows plan))))
          (left-row (binder-row (relational-plan-source-relation plan)))
          (right-row (binder-row (join-plan-source-relation j)))
@@ -1985,8 +1984,8 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
           (setf (binder-model row) (second (join-rows plan)))))
       (setf frame (frame-set frame binder-name row))
       ;; The statement binds the name given and nothing else, as the
-      ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (review
-      ;; 2026-09-15 finding J; this host bound `_` unconditionally). After a
+      ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (this host
+      ;; once bound `_` unconditionally). After a
       ;; LINK only the row is in scope (spec §7.4): the binders are scoped to
       ;; its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
       ;; a later step -- the joined row carries them as keys, not as names.
@@ -2006,7 +2005,7 @@ over the groups before it. The binder is the group -- the list of its members,
 which only COUNT and SUM read (translate-call) -- and _K is the group key, when
 there is one key to be it. This is the one place _K is a group key: before the
 bucket it is a source row's position, after the projection the projected row's,
-and SQL has neither (review 2026-09-15 finding K)."
+and SQL has neither."
   (let* ((plan (translator-statement-plan tr))
          (group-by (and plan (relational-plan-group-by plan)))
          (frame '()))
@@ -2037,7 +2036,7 @@ from \"1\", and SQL has no row position to compare against")))
   "Run RENDER where a FILTER's predicate is written: its own binder names the
 element and the aggregate's does NOT exist yet. A FILTER's binder is scoped to its
 predicate, so it is not visible in the body or in another FILTER, and the
-aggregate's binder is not visible in a predicate (LISP-C7, JS-C26)."
+aggregate's binder is not visible in a predicate."
   (let* ((frames (translator-frames tr))
          (top (first frames))
          (elem (cdr (assoc binder-name top :test #'equal)))
@@ -2229,7 +2228,7 @@ expression here knows" (snode-pos n)))
 (defun require-joinable (f pos)
   "JOIN concatenates text and numbers, as `&` does; a BOOL or BIN element or
 separator has no SQL rendering that agrees with SEL's (docs/internals/
-sql-kinds.md 5), and a refusal is the only honest answer (LISP-C24, PY-C19)."
+sql-kinds.md 5), and a refusal is the only honest answer."
   (when (member (fragment-kind f) '(:bool :bin))
     (refuse "E_SQL_SHAPE"
             (format nil "JOIN joins text and numbers, and this is ~a"
@@ -2241,7 +2240,7 @@ sql-kinds.md 5), and a refusal is the only honest answer (LISP-C24, PY-C19)."
   (let ((src (classify tr (first (sel::node-items n))))
         (sep-node (second (sel::node-items n))))
     ;; FILTER yields a list, and only ALL, ANY, SUM and COUNT absorb it (docs
-    ;; 7.5). JOIN used to drop the filter and join the whole list (LISP-C6).
+    ;; 7.5). JOIN used to drop the filter and join the whole list.
     (when (source-filters src)
       (refuse "E_SQL_SHAPE"
               "JOIN over a FILTER is not translated: only ALL, ANY, SUM and COUNT ~
@@ -2396,7 +2395,7 @@ SQL counterpart" (snode-pos e)))
             ;; A declared `exact` column opts out of the cast and keeps its own
             ;; collation, but a NUMBER item beside it is still cast: bare
             ;; `t = 3` compares numerically on MariaDB and MySQL, where
-            ;; 'x' = 0 and '25/298' = 25 (PY-C20, CPP-C30, LISP-C25).
+            ;; 'x' = 0 and '25/298' = 25.
             (let ((item (if (and is-exact (not (eq (fragment-kind f) :num)))
                             f
                             (emit-text-operand d f))))
@@ -2656,8 +2655,7 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
 (defun check-alias-name (name pos)
   "An alias or column that comes from a SEL text literal is held to the rules a
 binding's own names already meet: not empty, no NUL (sql/MAP.md 3.1). A NUL
-reached the statement on every dialect, and `AS \"\"` is refused by the servers
-(PHP-C53, PHP-C54, PY-C43, GO-C37)."
+reached the statement on every dialect, and `AS \"\"` is refused by the servers."
   (when (or (zerop (length name)) (find (code-char 0) name))
     (refuse "E_SQL_UNSUPPORTED"
             (if (zerop (length name))
@@ -2998,15 +2996,14 @@ can say about a bucket on its own."
                    ;; keys (a sort's, say) are otherwise checked only when the
                    ;; statement is rendered, after the LINK's predicate was --
                    ;; which reported the LINK's refusal where the other four
-                   ;; hosts report the earlier step's (review 2026-09-25 SQL-03,
-                   ;; found by the SQL fuzzer).
+                   ;; hosts report the earlier step's (found by the SQL fuzzer).
                    (when (or (relational-plan-order-by plan)
                              (relational-plan-projections plan)
                              (relational-plan-select-cols plan)
                              (relational-plan-group-by plan))
                      ;; A check, its fragment discarded: the slots it created are
                      ;; discarded with it, or `params` mode binds a value the
-                     ;; statement has no place for (CPP-C57, LISP-C40).
+                     ;; statement has no place for.
                      (let ((params (translator-params tr))
                            (kinds (translator-param-kinds tr))
                            (count (translator-param-count tr)))
@@ -3088,7 +3085,7 @@ can say about a bucket on its own."
                                ;; again under an alias the statement already uses
                                ;; (a self-join, or a chain back to an aliased
                                ;; relation) rendered it twice, which the server
-                               ;; rejects (review 2026-09-28 SQL-09). The program
+                               ;; rejects. The program
                                ;; stays in memory.
                                (let ((open (cons (let ((a (relational-plan-source-alias plan)))
                                                    (if (null a)
@@ -3206,7 +3203,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (unless (or (relational-plan-projections plan)
                                (relational-plan-select-cols plan))
                      (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
-                   ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                   ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
                    (when (relational-plan-order-by plan)
                      (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
                    (setf (relational-plan-distinct plan) t))
@@ -3239,7 +3236,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    ;; name what they produced. A sort after a sort does not wrap:
                    ;; the sorts are stable, so the earlier one is the later one's
                    ;; tie-breaker, and the later one's keys go FIRST in the ORDER
-                   ;; BY (review 2026-09-15 finding V).
+                   ;; BY.
                    (let ((wraps (or (relational-plan-limit plan)
                                     (relational-plan-offset plan)
                                     (and (not (relational-plan-group-by plan))
@@ -3545,8 +3542,8 @@ is why this is a function taking FN rather than one returning three values."
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
       ;; Stage 1 and nothing else: the translator renders the tree it is
-      ;; handed, as the other four hosts do (review 2026-09-15 finding C:
-      ;; TRANSLATE-STATEMENT alone once ran the full optimiser). The planner
+      ;; handed, as the other hosts do (TRANSLATE-STATEMENT alone once ran
+      ;; the full optimiser). The planner
       ;; is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
              (norm (normalise (sel:program-ast program) names root))

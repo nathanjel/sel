@@ -1,5 +1,5 @@
 ;;;; This host's side of tools/check-hybrid-parity-driver.py, the executing
-;;;; hybrid-parity lane (T11): the corpus in sql/oracle/hybrid.json is planned and
+;;;; hybrid-parity lane: the corpus in sql/oracle/hybrid.json is planned and
 ;;;; run HERE, and the harness supplies the one thing this host cannot: a
 ;;;; database. One JSON request per line on stdin, one JSON answer per line on
 ;;;; stdout.

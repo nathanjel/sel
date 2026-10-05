@@ -393,7 +393,7 @@
 
 (defun binary-op-code (op)
   "The operator's keyword. The one place operator spellings are matched; the
-evaluator asks it once per node and dispatches with CASE (LISP-P3)."
+evaluator asks it once per node and dispatches with CASE."
   (cond ((string= op "AND") :and) ((string= op "OR") :or)
         ((string= op "??") :coalesce) ((string= op "???") :vacuous)
         ((string= op "+") :add) ((string= op "-") :sub) ((string= op "*") :mul)

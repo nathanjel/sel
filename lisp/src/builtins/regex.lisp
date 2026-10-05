@@ -255,7 +255,7 @@ SERVER, which is one of those. Left on, `RMATCH(\"^a$\", s)` emitted
                    ;; Its own dotall `.*` is optimised on the assumption that it can
                    ;; consume to the end, and after an end anchor that assumption
                    ;; loses the empty match: `\z.*` finds nothing in "abc" where
-                   ;; `\z[\s\S]*` finds the empty match at 3 (LISP-C10).
+                   ;; `\z[\s\S]*` finds the empty match at 3.
                    ((and (char= c #\.) lower-anchors) (write-string "[\\s\\S]" out) (incf i))
 
                    (t (write-char c out) (incf i))))))
@@ -906,8 +906,7 @@ The second value is a function of no arguments that returns the TAIL scanner: th
 same pattern with `^` made unsatisfiable, which RREPLACE uses for every match after
 the first, because cl-ppcre re-anchors \\A to :start. It is built on the first call
 and kept with the cached head scanner: RMATCH, RFIND and RGROUPS never ask for it,
-and building it for every pattern doubled the compile cost of a pattern used once
-(LISP-P17)."
+and building it for every pattern doubled the compile cost of a pattern used once."
   (let* ((ignore-case (check-regex-flags flags flag-pos))
          (key (concatenate 'string (if ignore-case "i " " ") pattern))
          (cached (regex-cache-get key)))
@@ -937,7 +936,7 @@ and building it for every pattern doubled the compile cost of a pattern used onc
 
 ;;; cl-ppcre matches by recursion: a repeated group over a long subject nests one
 ;;; frame set per iteration, and `^(?:ab|a)*$` over 100,000 characters exhausted the
-;;; default 2 MB control stack (LISP-C3). The answer is a value, not a crash, so a
+;;; default 2 MB control stack. The answer is a value, not a crash, so a
 ;;; scan that runs out of stack is run again in a thread with a control stack big
 ;;; enough for the subjects the language allows; the address space is reserved, not
 ;;; committed. Only if THAT runs out too is the request refused, as E_RANGE at the

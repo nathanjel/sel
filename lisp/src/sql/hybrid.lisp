@@ -46,8 +46,7 @@ Scope-aware: a name is a read of a bound relation only where nothing shadows
 it. A binder of a binding call (through the manifest's own forms) shadows it in
 the arguments it scopes, and an assignment makes the name a variable of the
 program from the next statement on -- `ORDERS = LIST(1); COUNT(ORDERS)` reads no
-table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)` (PHP-C55, PY-C48,
-LISP-C43)."
+table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)`."
   (let ((out '()))
     (labels ((assign-base (target)
                (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
@@ -106,7 +105,7 @@ LISP-C43)."
 ;;; plan, because that half is a program run evaluates and §12.1 promises it
 ;;; reports errors where run would: run evaluates the READ of Y at the use
 ;;; site and reports `+`'s operand there, and it evaluates the definition once,
-;;; before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+;;; before the pipeline, not once per row. So
 ;;; the planner does not inline. It plans the program as written, three ways:
 ;;;
 ;;;   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -191,8 +190,7 @@ same-named helper inside its body. Copies on the way down, never writes."
       (:call
        ;; The binding form decides which argument is a binder NAME (never
        ;; inlined: it is not a read), which run inside the binder, and what they
-       ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included
-       ;; (PY-C24, LISP-C28).
+       ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included.
        (let ((args (sel::node-items node)))
          (multiple-value-bind (scopes binds)
              (sel::binding-form (sel::node-s node) args (sel::node-spec node))
@@ -259,7 +257,7 @@ it reads, and those THEY read, transitively.
 
 A worklist over names: each statement's right side is read once, and a name is
 expanded once, where the fixpoint loop this replaced re-read every statement's
-right side on every pass and tested membership in a list (LISP-P25)."
+right side on every pass and tested membership in a list."
   (let ((needed (make-hash-table :test #'equal))
         (by-name (make-hash-table :test #'equal))
         (queue '()))
@@ -438,8 +436,8 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                ;; pipeline starts from (spec 7.4), so a continuation
                                ;; that contains one reads the prefix's rows under the
                                ;; SOURCE's own name -- `_INPUT` would rename ORDERS in
-                               ;; the joined row and `_["ORDERS"]` would be E_NO_KEY
-                               ;; (PHP-C9, PY-C23, LISP-C29, GO-C22). Only where no
+                               ;; the joined row and `_["ORDERS"]` would be E_NO_KEY.
+                               ;; Only where no
                                ;; remaining step reads that name as something else.
                                (link-p (needs-left-name-p (subseq steps 0 k) rem-steps))
                                (root-name (sel::node-s source-node))
@@ -468,7 +466,8 @@ rebinds the name is counted too, which can only refuse a split, never allow one)
              found))))
 
 (defun step-reads-key-p (step)
-  "Whether a pipeline step's own arguments read `_K` (item 0 is its input)."
+  "Whether a pipeline step's own arguments read `_K` (its first argument is its
+input, and is not looked at)."
   (some #'reads-key-p (rest (sel::node-items step))))
 
 (defun key-safe-boundary-p (prefix-steps cont-steps)
@@ -481,8 +480,7 @@ keys, which is invisible only if the continuation renumbers before anything
 reads a key or shows one: scanning it in order, a step that reads `_K` makes the
 boundary unsafe, and the first step that is not a FILTER renumbers (and is safe
 once its own arguments have been checked). A continuation of FILTERs alone
-returns the kept rows under their keys, which is exactly what would be lost
-(JS-C22, PHP-C8, PY-C22, CPP-C33, LISP-C8, LISP-C27)."
+returns the kept rows under their keys, which is exactly what would be lost."
   (let ((tail (car (last prefix-steps))))
     (if (not (and tail (equal (sel::node-s tail) "FILTER")))
         t
@@ -494,8 +492,7 @@ returns the kept rows under their keys, which is exactly what would be lost
   "Whether evaluating NODE in memory might raise. Only a literal and a plain read of a
 projected field are proven not to (the statement carries the field as a column, so
 the key is there): anything else may hit a digit cap, a missing key or an ABORT, and a row-cutting
-step must not hide a row whose evaluation would have (JS-C23, PY-C47, CPP-C34,
-LISP-C30, PHP-C36)."
+step must not hide a row whose evaluation would have."
   (not (or (literal-kind-p node) (field-read-p node))))
 
 (defun latest-field-name (n)
@@ -604,7 +601,7 @@ promoted fields beside them (spec §7.4); SQL carries the promoted fields
 alone. A MAP, a SELECT_COLS or a projected BUCKET after the LINK makes the
 rows exact again -- what they compute is over the promoted fields, or is
 refused -- so a prefix whose LINK nothing has projected is not a split point
-and not a full pushdown (finding Y, lanes): its continuation would read
+and not a full pushdown: its continuation would read
 `_[\"C\"]` where the database sent nothing."
   (let ((joined nil))
     (dolist (step steps joined)
@@ -626,7 +623,7 @@ the planner's to refuse -- the translator's bytes for them are pinned and the
 program is still fine in memory:
 
   * a BUCKET after a sort: GROUP BY answers its groups in the server's order, not
-    in the order the sorted rows first showed them (JS-C59, PHP-C35, LISP-C26);
+    in the order the sorted rows first showed them;
   * a LINK or LINK_LEFT after a sort (a TOP* included: the LIMIT beside the ORDER BY
     decides which rows survive, not the order a join returns them in): the joined rows
     come out in the server's order, where SEL's are the left's order then the right's;
@@ -987,9 +984,9 @@ written: the context itself when PROGRAM cannot write, else CONTINUATION-ROOT."
 DB-RUNNER is a function (lambda (sql-string params) ...) that returns a SEL:VALUE
 (e.g. list of rows). It is handed the statement in :PARAMS mode -- text
 literals as `?` placeholders, numbers inlined -- and BINDINGS, the bound values
-in placeholder order, which is what the other four hosts hand their runners
-(review finding AK: this host handed inline SQL and the creation-order slot
-list, which a driver could not bind as it was)."
+in placeholder order, which is what the other hosts hand their runners (inline
+SQL and the creation-order slot list, which this host once handed, could not
+be bound by a driver as they were)."
   (cond
     ((hybrid-plan-pure-sql-p plan)
      (let ((frag (hybrid-plan-sql-statement plan)))
@@ -997,7 +994,7 @@ list, which a driver could not bind as it was)."
     ((hybrid-plan-pure-memory-p plan)
      ;; On a COPY of the caller's context, like the hybrid branch below: the
      ;; program may assign, and running it on the caller's value would write
-     ;; into the caller's tree (JS-C60, PY-C51, CPP-C54). The continuation still
+     ;; into the caller's tree. The continuation still
      ;; reads the caller's variables through the copy.
      (let ((program (hybrid-plan-continuation-program plan)))
        (sel:run program

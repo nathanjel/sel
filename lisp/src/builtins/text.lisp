@@ -155,7 +155,7 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
                   (filled (length s)))
               ;; One copy of the unit, then the filled prefix doubles into the
               ;; rest (the two regions never overlap): a REPLACE call per copy
-              ;; costs more than the characters it moves (LISP-P21).
+              ;; costs more than the characters it moves.
               (replace out s)
               (loop while (< filled total)
                     do (let ((n (min filled (- total filled))))
@@ -174,7 +174,7 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
         ;; The result is allocated once, at its final length, and the padding is
         ;; written straight into it: building the padding in a string stream and
         ;; then copying it out and concatenating cost about 14 characters of garbage
-        ;; per result character (LISP-P21).
+        ;; per result character.
         (let* ((need (progn (check-text-cap width (args-pos a)) (- width (length s))))
                (flen (length fill))
                (out (make-string width))

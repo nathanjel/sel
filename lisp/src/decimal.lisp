@@ -31,7 +31,7 @@
   ;; The canonical text this number was parsed from, kept for a LONG numeral only:
   ;; rendering a million-digit integer is the most expensive thing the core does,
   ;; and a value that was read and is now printed unchanged (`X == Y`, CANON,
-  ;; a pass-through) need not be rendered at all (LISP-P2). Set once, by DEC-PARSE.
+  ;; a pass-through) need not be rendered at all. Set once, by DEC-PARSE.
   (text nil))
 
 (defvar *pow10-table*
@@ -41,7 +41,7 @@
 ;;; and one lock around the bounded-generation bookkeeping, whose count/weight/
 ;;; clear/insert steps are a read-modify-write of four things at once. Without
 ;;; both, threads doing arithmetic at many scales corrupted the table and lost
-;;; the weight (LISP-C12).
+;;; the weight.
 (defvar *pow10-cache* (make-hash-table :test 'eql :synchronized t))
 (defvar *pow10-lock* (sb-thread:make-mutex :name "sel pow10 cache"))
 (defconstant +pow10-cache-entries+ 64)
@@ -51,7 +51,7 @@
 
 ;;; Multiplication of big integers. SBCL multiplies bignums limb by limb
 ;;; (quadratic), which made every operation on a legal million-digit number cost
-;;; seconds (LISP-P2). Karatsuba above a threshold brings parse, 10^k and the
+;;; seconds. Karatsuba above a threshold brings parse, 10^k and the
 ;;; product check to a fraction of that. Operands are non-negative here; anything
 ;;; else takes the built-in multiply.
 (defconstant +kmul-threshold-bits+ 8192)
@@ -118,7 +118,7 @@
      ;; is a LOWER bound (LO, so N >= 10^(LO-1)) within a few dozen of the true
      ;; one, and the rest is found by multiplying that power by ten, which is
      ;; linear, where asking POW10 for each candidate exponent built a new
-     ;; million-digit power every time (LISP-P2).
+     ;; million-digit power every time.
      (let* ((lo (1+ (floor (* (1- (integer-length n)) 30102) 100000)))
             (d lo)
             (q (* (pow10 (1- lo)) 10)))
@@ -189,7 +189,7 @@ No trimming, no sign but a leading minus, no exponent, no leading or trailing do
 ;;; digits and an unsigned 64-bit accumulator cannot overflow): accumulate the
 ;;; digits and check the grammar as it goes, instead of the five scans
 ;;; (DEC-NUMBER-STRING-P, POSITION, SUBSEQ, CONCATENATE, POSITION-IF) plus a
-;;; bignum parse the general path pays (LISP-P6: 472 ns for "12345.67").
+;;; bignum parse the general path pays (472 ns for "12345.67").
 ;;; Answers NIL for anything it does not handle -- a longer numeral, anything that
 ;;; is not exactly -?digits[.digits], a non-simple string -- and the general path
 ;;; decides. The result is what the general path builds: DEC-MAKE normalises a
@@ -273,7 +273,7 @@ ISNUM's probe -- catch it and answer no."
 
 ;;; The text of a number whose digits fit an unsigned 62-bit integer and whose scale
 ;;; is at most 19: the digits are written straight into the result, right to left,
-;;; with no intermediate strings (LISP-P6: 286 ns for 12345.67 through
+;;; with no intermediate strings (286 ns for 12345.67 through
 ;;; WRITE-TO-STRING, SUBSEQ and CONCATENATE). Same output as the general path.
 (defun dec-format-small (neg digits scale)
   (declare (optimize (speed 3) (safety 0))
@@ -456,7 +456,7 @@ ISNUM's probe -- catch it and answer no."
         (db (dec-digits b)))
     ;; Refuse what the guard would refuse, BEFORE the multiply: the product has at
     ;; least as many digits as the bit lengths force, and multiplying two
-    ;; million-digit operands only to be told so cost tens of seconds (LISP-P2).
+    ;; million-digit operands only to be told so cost tens of seconds.
     ;; The messages and their order are DEC-GUARD's.
     (when (and (plusp da) (plusp db))
       (when (> scale +max-frac-digits+)
@@ -545,7 +545,7 @@ ISNUM's probe -- catch it and answer no."
          (neg (not (eq (dec-neg a) (dec-neg b)))))
     (multiple-value-bind (q r)
         ;; Two word-sized operands divide with the machine's divide: the generic
-        ;; TRUNCATE was two thirds of the time of an ordinary division (LISP-P27).
+        ;; TRUNCATE was two thirds of the time of an ordinary division.
         (if (and (typep n '(unsigned-byte 62)) (typep d '(unsigned-byte 62)))
             (truncate (the (unsigned-byte 62) n) (the (unsigned-byte 62) d))
             (truncate n d))
@@ -556,7 +556,7 @@ ISNUM's probe -- catch it and answer no."
             (if (typep digits '(unsigned-byte 62))
                 ;; A word-sized quotient strips its zeros with word arithmetic
                 ;; (division by a constant is a multiply): the generic MOD and
-                ;; TRUNCATE here were most of an exact division (LISP-P27).
+                ;; TRUNCATE here were most of an exact division.
                 (let ((word digits))
                   (declare (type (unsigned-byte 62) word) (type fixnum scale))
                   (loop while (and (plusp scale) (zerop (mod word 10)))

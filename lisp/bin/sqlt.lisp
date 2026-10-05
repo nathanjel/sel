@@ -231,8 +231,7 @@ optimiser, and after the physical optimiser RUN uses."
     ;; the same SQL, or the same refusal at the same place, or a startup error
     ;; again. A translator that keeps state between calls -- a dialect marked as
     ;; checked before it was checked, a parameter list that grows -- passes one
-    ;; translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
-    ;; LISP-C42, GO-C18).
+    ;; translation and fails here.
     (when (and program binds)
       (flet ((describe-outcome (sql err thrown)
                (cond (thrown (format nil "a signalled ~a (~a)" (type-of thrown) thrown))
@@ -277,7 +276,7 @@ optimiser, and after the physical optimiser RUN uses."
     ;; the public full-delegation entry point, which must say exactly what
     ;; TRANSLATE says -- the same text, or the same refusal at the same column.
     ;; Two hosts ran the logical optimiser in that lane and three did not, and
-    ;; only a twin check can see it (review 2026-09-15 finding C).
+    ;; only a twin check can see it.
     (when (and (equal as "statement") program)
       (let ((twin-sql nil) (twin-err nil))
         (handler-case

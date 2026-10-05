@@ -98,7 +98,7 @@ invalid sequence, so an overlong or truncated one is reported where it begins."
 (defun bytes-to-hex (bytes)
   "Lower-case hexadecimal, two characters per byte. Filled into a preallocated
 string from a digit table: `format ~2,'0x` per byte through a string stream, and
-then a STRING-DOWNCASE over the result, cost 0.48 s per MB (LISP-P18)."
+then a STRING-DOWNCASE over the result, cost 0.48 s per MB."
   (let* ((n (length bytes))
          (digits "0123456789abcdef")
          (out (make-string (* 2 n) :element-type 'character)))

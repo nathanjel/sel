@@ -191,7 +191,7 @@ only an alist record walks its entries."
                    ;; A `,` list, a `;` sequence and an assignment read whatever
                    ;; their parts read -- an assignment's target included, which it
                    ;; reads as a variable: skipping them let an operand over BOTH
-                   ;; binders pass for one-sided (LISP-C16).
+                   ;; binders pass for one-sided.
                    ((:list :seq)
                     (dolist (item (node-items n)) (walk item)))
                    (:assign
@@ -233,7 +233,7 @@ when the operator's left operand reads the right side."
   "The canonical spelling of the parsed number D: no trailing fraction zeros, no
 negative zero. Trailing zeros are dropped from the FORMATTED text, because
 stripping them from the integer by `(floor digits 10)` was a bignum division per
-zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
+zero -- quadratic in the zeros, 20 s for a key with 100,000 of them."
   (if (zerop (dec-digits d))
       "0"
       (let ((text (dec-format d)))
@@ -270,7 +270,7 @@ zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
 ;; -- `==` through AS-DEC, `$==` through AS-BYTES, the coercions the evaluator
 ;; uses -- so a BIN meets the TEXT of its bytes and a list its scalar. NIL for
 ;; NULL (never compared); (:BAD . value) for a value the coercion rejects, whose
-;; pair must raise as the comparison would (review 2026-09-25 SEM-06).
+;; pair must raise as the comparison would.
 (defun extract-join-key (val is-numeric)
   (when (and val (not (value-null-p val)))
     (handler-case
@@ -284,7 +284,7 @@ zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
 
 ;; Names compare ASCII-case-insensitively (spec §2, §7.4): this file folds them
 ;; with ASCII-UPCASE, never STRING-UPCASE, which SBCL applies to every 1:1 Unicode
-;; case pair -- "é" and "É" collided in joined rows (review 2026-09-25 SEM-04).
+;; case pair -- "é" and "É" collided in joined rows.
 (defun join-key-bad-p (key) (and (consp key) (eq (car key) :bad)))
 
 ;; What the left keys are checked against: whether any right key is live (not
@@ -315,7 +315,7 @@ zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
     (when (jrf-bad facts)
       (coerce-join-operand is-numeric (jrf-bad facts) right-expr))))
 
-;;; LINK with `key-equality AND residual...` (LISP-P9). The predicate is not a bare
+;;; LINK with `key-equality AND residual...`. The predicate is not a bare
 ;;; `==`, so the hash join above does not apply, and the nested loop ran the
 ;;; evaluator on every (left, right) pair: n*m. When the LEADING conjunct is an
 ;;; equality between an expression over the left element and one over the right,
@@ -728,7 +728,7 @@ holds for every flat row of its shape."
              ;; data the host converted) is read through a shaped twin made once:
              ;; the same keys in the same order holding the same values. Without
              ;; it every pair of such rows took MAKE-JOINED-ROW, which builds two
-             ;; hash tables and several lists per pair (LISP-P8: 3-6x slower).
+             ;; hash tables and several lists per pair (3-6x slower).
              (cond ((null row) nil)
                    ((and (value-shape row) (value-storage row)) row)
                    (t (multiple-value-bind (twin found) (gethash row twins)
@@ -1156,7 +1156,7 @@ carry is promoted from neither, spec §7.4)."
     ;; However this join ends, an error caught above it (`??`) must not leave a
     ;; prefilter or a report in the context for an unrelated join later in the
     ;; same run to pick up: they are consumed by the join they were meant for, and
-    ;; only a normal return proves that one was (LISP-C44, a hardening rule).
+    ;; only a normal return proves that one was (a hardening rule).
     (let ((completed nil))
       (unwind-protect
            (multiple-value-prog1
@@ -1264,7 +1264,7 @@ carry is promoted from neither, spec §7.4)."
                                    (push r2 (gethash key ht))))))
                         (ctx-pop-frame ctx))
                       ;; Buckets were built by PUSH, newest first. Put them in row order
-                      ;; once, here, and not with a REVERSE per probing left row (LISP-P19).
+                      ;; once, here, and not with a REVERSE per probing left row.
                       (maphash (lambda (k v) (setf (gethash k ht) (nreverse v))) ht)
                       (setf (car facts) flat))
                     ;; The pre-filter, decided from the rows themselves

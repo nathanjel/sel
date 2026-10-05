@@ -45,7 +45,7 @@
     vec)
   "The canonical key strings \"1\" .. \"10000\" of a list's positions, made once: a
 `(format nil \"~d\" i)` per element was about 133 ns each, charged on every list
-key, hash and flatten (LISP-P20).")
+key, hash and flatten.")
 
 (declaim (inline format-index-string))
 (defun format-index-string (n)
@@ -57,7 +57,7 @@ key, hash and flatten (LISP-P20).")
 
 (defun keys-distinct-p (keys)
   "True when no two of the strings KEYS are equal. The quadratic REMOVE-DUPLICATES
-this replaces took 7.7 s over 16,000 RECORD keys (LISP-P14); a few keys are
+this replaces took 7.7 s over 16,000 RECORD keys; a few keys are
 compared pairwise, many through a hash table."
   (if (< (length keys) 24)
       (loop for tail on keys never (member (car tail) (cdr tail) :test #'string=))
@@ -131,7 +131,7 @@ compared pairwise, many through a hash table."
         ;; storage position and is shared by every value of that shape; using
         ;; it here answered %value-cell with an integer, and adding a key to a
         ;; 16-field record wrote its cell into the shared map, so the next record
-        ;; built from those 16 keys inherited a key it never had (LISP-C2).
+        ;; built from those 16 keys inherited a key it never had.
         (when (>= (value-count v) +index-threshold+)
           (%build-index v))))))
 
@@ -183,13 +183,12 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-none () (%make-value :none nil nil nil))
 (defun make-null () (%make-value :none nil nil nil))
 
-;;; The host boundary (spec §8; review 2026-09-25 HOST-02..06): a constructor
+;;; The host boundary (spec §8): a constructor
 ;;; checks what it is given and keeps a COPY -- SBCL strings and octet vectors
 ;;; are mutable, and a caller that changed one afterwards changed the value (a
 ;;; mutated key left the record unable to find it under either spelling).
 ;;; A constructor called with something it does not take (spec §8): E_BAD_ARG,
-;;; a SEL-ERROR like every other boundary failure, never a CL TYPE-ERROR
-;;; (review 2026-09-28 HOST-20).
+;;; a SEL-ERROR like every other boundary failure, never a CL TYPE-ERROR.
 (defun bad-arg (control &rest args)
   (fail "E_BAD_ARG" (apply #'format nil control args)))
 
@@ -218,7 +217,7 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-num (d)
   "D is a DEC or a decimal string. A string is canonicalised: 007 becomes 7.
 A DEC is checked like one: well formed, within the digit caps, and canonical --
-a negative zero loses its sign (spec §8; review 2026-09-28 HOST-13, HOST-14)."
+a negative zero loses its sign (spec §8)."
   (typecase d
     (dec (unless (and (>= (dec-digits d) 0) (>= (dec-scale d) 0))
            (bad-arg "not a decimal: the digits and the scale must be non-negative"))
@@ -262,7 +261,7 @@ kept in step with the limit by hand.")
 
 ;;; Fast list value backed by simple-vector.
 ;;; A list keeps no structure of the caller's: a vector is copied as a list is
-;;; by COERCE (spec §8; review 2026-09-28 HOST-16).
+;;; by COERCE (spec §8).
 (defun make-list-value (values)
   (unless (typep values 'sequence) (bad-arg "a list is built from a sequence of values, not ~(~a~)" (type-of values)))
   (let ((vec (if (typep values 'simple-vector)
@@ -384,7 +383,7 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
 
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
-  ;; A key is text too (spec §8; review 2026-09-25 HOST-05).
+  ;; A key is text too (spec §8).
   (unless (stringp key) (bad-arg "a key must be a string, not ~(~a~)" (type-of key)))
   (when (and (find-if (lambda (c) (> (char-code c) 127)) key) (not (valid-utf8-string-p key)))
     (fail "E_UTF8" "key carries an unpaired surrogate"))
@@ -411,7 +410,7 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
        (if cell
            (setf (cdr cell) child)
            ;; A new key is copied: an SBCL string is mutable, and the caller's
-           ;; would rename the key under the value (review 2026-09-28 HOST-15).
+           ;; would rename the key under the value.
            (let* ((key (copy-seq key))
                   (new (list (cons key child))))
              (if (value-tail v)
@@ -527,7 +526,7 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
           ;; The octets are shared, as a TEXT scalar's string is: nothing in a program
           ;; writes into a built BIN (every builtin fills a fresh vector), and the
           ;; boundary copies on the way in (MAKE-BIN) and out (TO-NATIVE). Copying
-          ;; 500 KB per assignment cost 0.24 ms for nothing (LISP-P27).
+          ;; 500 KB per assignment cost 0.24 ms for nothing.
           (%make-value-raw :bin (value-%scalar v) nil nil 0 nil nil nil nil nil))
          (:bool
           (%make-value-raw :bool (value-%scalar v) nil nil 0 nil nil nil nil nil))
@@ -630,7 +629,7 @@ same keys in the same order, pairwise EQL."
 (defun value-hash (v &optional (depth 1))
   "Computes a fast structural hash for a SEL value."
   ;; A value nested past the cap cannot be hashed any more than dumped: answering
-  ;; 0 let DEDUPE pass one it could not compare (review 2026-09-25 HOST-07).
+  ;; 0 let DEDUPE pass one it could not compare.
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply"))
   (let ((h (sxhash (value-kind v))))
@@ -645,7 +644,7 @@ same keys in the same order, pairwise EQL."
        (let ((b (value-scalar v)))
          ;; Every octet goes into the hash. Hashing the length alone put every
          ;; BIN of one size in one bucket, so DEDUPE over N distinct BINs was
-         ;; quadratic (LISP-P7: 8,000 four-byte BINs took 5.8 s). FNV-1a, 32 bit.
+         ;; quadratic (8,000 four-byte BINs took 5.8 s). FNV-1a, 32 bit.
          (when (typep b 'vector)
            (let ((x 2166136261))
              (declare (type (unsigned-byte 32) x))
@@ -756,7 +755,7 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     (value x)
     ((member t) (make-bool t))
     ;; NIL is NULL (and the empty list), so FALSE needs a spelling of its own
-    ;; (spec §8; review 2026-09-25 HOST-09).
+    ;; (spec §8).
     ((member :false) (make-bool nil))
     (string (make-text x))
     (integer (make-int x))
@@ -801,8 +800,8 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
 (defun to-native-at (v depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
-  ;; What it returns is the host's own: strings and octet vectors are copies
-  ;; (review 2026-09-25 HOST-03), and FALSE is :false, not the NIL that is NULL.
+  ;; What it returns is the host's own: strings and octet vectors are copies,
+  ;; and FALSE is :false, not the NIL that is NULL.
   (let ((scalar (case (value-kind v)
                   ((:text :bin) (copy-seq (value-scalar v)))
                   (:bool (if (value-scalar v) t :false))
@@ -815,7 +814,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                                  (keys (record-shape-keys shape))
                                  (storage (value-storage v)))
                             ;; Copies: the shape's key strings are shared by every
-                            ;; value of that shape (review 2026-09-28 HOST-15).
+                            ;; value of that shape.
                             (loop for k in keys
                                   for i from 0
                                   collect (cons (copy-seq k) (to-native-at (svref storage i) (1+ depth))))))
@@ -830,7 +829,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
           (cond
             ((and (null scalar) (not (eq (value-kind v) :bool))) entries)
             ;; A value's own scalar travels under "_"; with a child of that name
-            ;; too, one of them would be lost (review 2026-09-25 HOST-01).
+            ;; too, one of them would be lost.
             ((assoc "_" entries :test #'string=)
              (fail "E_BAD_ARG" "a value with both a scalar and a child named \"_\" has no native form"))
             (t (cons (cons "_" scalar) entries)))))))

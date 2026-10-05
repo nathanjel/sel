@@ -36,7 +36,7 @@
   (keys-unobserved nil)
   ;; A :bin node's operator as a keyword, filled on first evaluation (EVAL's
   ;; BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
-  ;; STRING= on every evaluation (LISP-P3). Never copied: a copy re-derives it.
+  ;; STRING= on every evaluation. Never copied: a copy re-derives it.
   (opc nil)
   ;; On a :var node the hybrid planner builds: this read is of the variable's
   ;; BINDING (the relation, or the rows a SQL prefix returned), even where a
@@ -437,8 +437,8 @@ left to the run."
                 (n (make-node :num (token-pos tok))))
            ;; A numeral with no leading zero in its integer part is already its own
            ;; canonical text: rendering it again only to get the same characters
-           ;; is what made a million-digit literal cost seconds to compile
-           ;; (LISP-P2). (The token has no sign, so `0` and `0.5` are canonical
+           ;; is what made a million-digit literal cost seconds to compile.
+           ;; (The token has no sign, so `0` and `0.5` are canonical
            ;; and `007` is not.)
            (setf (node-dec-val n) parsed
                  (node-s n) (if (or (char/= (char text 0) #\0)
@@ -534,7 +534,7 @@ left to the run."
 
 ;;; The binding forms of one builtin, by name, in table order. BINDING-FORM runs for
 ;;; every call the dependency walker and the SQL layer visit, and filtered the whole
-;;; table (a STRING= per builtin) each time (LISP-P15). The table is data set once at
+;;; table (a STRING= per builtin) each time. The table is data set once at
 ;;; load; the index is keyed on that list, so a reloaded manifest rebuilds it.
 (defvar *binding-forms-index* nil)   ; (data . hash-table)
 

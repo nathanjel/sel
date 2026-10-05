@@ -92,7 +92,7 @@ gap, however small, and the gap is where \"1 OR 1=1\" lived."
 (defvar *escape-plans* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "ESCAPE-PLAN per textEscape rule list, by the identity of the list the dialect's
 lexical table returns: the table (and so the list) is dropped whenever a dialect is
-registered or reset, which drops the plan with it (LISP-P24).")
+registered or reset, which drops the plan with it.")
 
 (defun escape-plan-for (escape)
   (or (gethash escape *escape-plans*)
@@ -306,7 +306,7 @@ is structural and does not normalise numbers."
 (defvar *template-segments* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "The parsed form of each mapping template, keyed by the identity of its string: the
 map's entries and a dialect's lexical values are stable strings, so each is scanned
-once and not at every node it is filled into (LISP-P15).")
+once and not at every node it is filled into.")
 
 (defun template-segments (tpl)
   "TPL as a list of segments, in order: a string (literal text, `{{` and `}}` already
@@ -437,7 +437,7 @@ expression asks for argument ~a, which it was not given" k) pos))
 (defvar *lexical-expansions* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "For a lexical template VALUE, the segments of its expansion for each argument
 spelling ONE (an alist): `{key:one}` is VALUE with `{0}` replaced by `{one}`, which
-was rebuilt and re-scanned at every use (LISP-P15).")
+was rebuilt and re-scanned at every use.")
 
 (defun lexical-expansion (val one)
   (let ((cell (assoc one (gethash val *lexical-expansions*) :test #'string=)))

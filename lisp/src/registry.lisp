@@ -156,8 +156,8 @@ tests use it to leave the process as they found it."
 (declaim (inline registry-lookup-canonical))
 (defun registry-lookup-canonical (name)
   "REGISTRY-LOOKUP for a name the lexer already spelled in canonical (upper) case:
-STRING-UPCASE allocates a fresh string even when nothing changes, once per call node
-(LISP-P27)."
+STRING-UPCASE allocates a fresh string even when nothing changes, once per call
+node."
   (gethash name *registry*))
 
 (defun function-names ()

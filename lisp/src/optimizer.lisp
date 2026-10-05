@@ -25,7 +25,7 @@
           (node-keys-unobserved copy) (node-keys-unobserved n)
           ;; The parsed decimal of a numeral travels with the copy: dropping it made
           ;; every optimised literal re-parse its text at run time, which is why an
-          ;; optimised `A > 1` ran slower than the plain tree (LISP-P5).
+          ;; optimised `A > 1` ran slower than the plain tree.
           (node-dec-val copy) (node-dec-val n))
     copy))
 
@@ -192,7 +192,7 @@ text is not a number)."
 (defun keep-last-step-pos (steps pos)
   "STEPS with the last one carrying POS, the position of the pipeline's original
 outermost step. A parent that rejects the pipeline's value reports the error at
-that node, and a fused or reordered replacement must not move it (GO-C33)."
+that node, and a fused or reordered replacement must not move it."
   (if (and steps (not (eq (node-pos (car (last steps))) pos)))
       (let ((copy (copy-node-shallow (car (last steps)))))
         (setf (node-pos copy) pos)
@@ -444,8 +444,7 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 ;; Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 ;; that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 ;; two FILTERs changes which rows reach what, so it may only pass over
-;; expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-;; SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+;; expressions that cannot raise on any of them (spec §7.3). Literals, _K and the binder itself never raise. On the
 ;; logical path the rows are a bound relation's, which always carry their typed
 ;; columns, so a field read through the binder cannot raise either, nor a
 ;; comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -481,8 +480,7 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 ;; row: cannot-raise-p is about the expression, this is about its VALUE too. A
 ;; bare binder, a literal number or text, NULL and _K cannot raise as
 ;; expressions, but as predicates each is E_NOT_BOOL -- and a FILTER fused behind
-;; another would raise it before the first FILTER had seen its later rows
-;; (PHP-C11, LISP-C14).
+;; another would raise it before the first FILTER had seen its later rows.
 (defparameter +comparison-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
 
@@ -517,8 +515,8 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 that replace the pair and how many of the two were consumed -- or NIL when no
 rule fires. S3 is the step after the pair (NIL at the end of the pipeline),
 which only the three FILTER-moving rules look at (KEYS-RENUMBERED-BY-P). The
-rules, and their order, are the other four hosts' single left-to-right sweep
-(review 2026-09-15 finding V: this host ran them as ten ordered passes, and
+rules, and their order, are the other hosts' single left-to-right sweep (this
+host once ran them as ten ordered passes, and
 `MAP .> SORT_BY .> TAKE` reached the translator in a different shape than
 everywhere else)."
   (let ((n1 (node-s s1))
@@ -691,7 +689,7 @@ needs."
                 ;; A typed-column read cannot raise only while the rows are still
                 ;; the bound relation's, or a field a preceding MAP RECORD built:
                 ;; after BUCKET, SELECT_COLS, LINK or a MAP of another shape they
-                ;; are whatever that step built (LISP-C14).
+                ;; are whatever that step built.
                 (let* ((shape (rows-shape new-steps))
                        (*shape-fields* shape))
                   (logical-step-pair source i s1 s2 s3

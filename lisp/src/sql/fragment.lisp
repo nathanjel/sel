@@ -61,7 +61,7 @@ SQLite outright, where 1 = '1' is 0. BIN, because a BIN parameter is bytes and a
 driver sends them through the connection's text encoding: on PostgreSQL 130 of
 the 256 single-byte values then failed."
   ;; KINDS is the fragment's kind list, or a vector of it: a render reads a slot's
-  ;; kind once per slot, and NTH over the list made every render O(P^2) (LISP-P12).
+  ;; kind once per slot, and NTH over the list made every render O(P^2).
   (let ((k (if (vectorp kinds) (and (< (1- slot) (length kinds)) (aref kinds (1- slot))) (nth (1- slot) kinds))))
     (and k (member k '(:num :bool :bin)) t)))
 
@@ -69,7 +69,7 @@ the 256 single-byte values then failed."
   "An unknown mode is a caller's mistake and is refused whether or not the
 fragment has a slot to render: a fragment with no parameter reached the join
 loop without ever consulting the mode, so `:bogus` was accepted on exactly the
-statements where it could not be seen (PHP-C57, PY-C46)."
+statements where it could not be seen."
   (unless (member mode '(:inline :params :debug))
     (bad "render mode ~s is not one of :inline, :params or :debug" mode)))
 

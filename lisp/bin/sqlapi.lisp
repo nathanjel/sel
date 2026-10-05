@@ -119,7 +119,7 @@
   (say "host.spell.after-reset" (attempt (host-translate "HSLUG(T)" "postgresql")))
   (say "host.spell.after-reset.local" (sel:as-text (sel:evaluate "HSLUG(\"A\")"))))
 
-;;; --- rendering and registration state (T10) ----------------------------------
+;;; --- rendering and registration state ---------------------------------------
 ;;; The questions a snapshot of ONE translation cannot ask: what an unknown render
 ;;; mode does when there is nothing to bind, and whether a refused dialect stays
 ;;; refused. REFUSES collapses the host's own condition classes, which differ, to

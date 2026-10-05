@@ -332,7 +332,7 @@ chain ends in nothing (NULL)."
 ;;; order and, within a rank, the value to compare (BOOL as 0/1, a number as its
 ;;; DEC, other text and BIN as octets). COMPARE-VALUES re-derived all of that on
 ;;; every comparison -- re-encoding both texts to UTF-8 and re-parsing both as
-;;; decimals, n log n times (LISP-P4: 50k text keys took 0.9 s and 200 MB).
+;;; decimals, n log n times (50k text keys took 0.9 s and 200 MB).
 ;;; Nothing here can signal: the leaf is a BOOL/TEXT/BIN scalar or nothing.
 (defstruct (sort-key (:constructor %make-sort-key (rank payload)))
   (rank 0 :type fixnum)
@@ -656,7 +656,7 @@ chain ends in nothing (NULL)."
   ;; and the text spelt the same are one key, and a decimal cache warmed on one of
   ;; them by arithmetic changes nothing). So it hashes the spelling, never the
   ;; cache: hashing the decimal fields put `X` and `"5"` in different buckets once
-  ;; `X * 1` had been evaluated (LISP-C1).
+  ;; `X * 1` had been evaluated.
   (let ((k (value-kind v)))
     (case k
       (:text (logxor (sxhash k) (sxhash (value-scalar v))))
@@ -667,7 +667,7 @@ chain ends in nothing (NULL)."
 
 ;; A scalar key is hashed by its scalar alone, but a list or record key -- whose
 ;; kind is NONE, hashed 0 above -- is walked, and the walk must meet the depth
-;; cap as every other one does (spec §6.4; review 2026-09-25 HOST-07).
+;; cap as every other one does (spec §6.4).
 (defun bucket-key-hash (v)
   (if (zerop (value-size v)) (eval-key-hash v) (value-hash v)))
 

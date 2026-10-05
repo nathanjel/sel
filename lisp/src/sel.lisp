@@ -56,7 +56,7 @@ is mutated in place by any assignment the program performs."
   "Compile SOURCE and run it once. A program that runs once never pays back the
 optimiser (about 7 us to build the physical tree of a rule that runs in 2 us), so
 this evaluates the tree as written: the optimiser is a pure optimisation, held to
-that by the plain-versus-optimised probe (LISP-P23)."
+that by the plain-versus-optimised probe."
   (let ((program (compile-source source)))
     (eval-node (program-ast program) (make-context (coerce-context context)))))
 

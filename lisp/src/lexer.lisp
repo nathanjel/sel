@@ -236,7 +236,7 @@
     (dolist (op (reverse +operators+))
       (push op (svref table (char-code (char op 0)))))
     table)
-  "+OPERATORS+ indexed by the first character of each operator (LISP-P22): testing
+  "+OPERATORS+ indexed by the first character of each operator: testing
 33 strings for every operator token cost more than the rest of lexing it.")
 
 (defun match-operator (lx i to)

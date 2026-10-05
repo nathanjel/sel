@@ -101,7 +101,7 @@
     (say "program.run.reads.context" (sel:value-dump (sel:evaluate "TOTAL > 10.00" ctx)))
     (sel:evaluate "SEEN = TOTAL * 2" ctx)
     (say "program.run.mutates.context" (sel:as-text (sel:value-get ctx "SEEN"))))
-  ;; A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+  ;; A BOOL a host hands in is an ordinary value (see tools/api.mjs).
   (let ((a (sel:make-none)) (b (sel:make-none)))
     (sel:value-set a "FLAG" (sel:make-bool t))
     (sel:value-set b "FLAG" (sel:make-bool t))
@@ -129,7 +129,7 @@
   (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
     (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
-  ;; Every public constructor holds the same rules (spec §8, review 2026-09-28):
+  ;; Every public constructor holds the same rules (spec §8):
   ;; the decimal form within the caps and canonical, keys checked, a malformed
   ;; call E_BAD_ARG -- each host through its own spelling of the constructor.
   (loop for (name . build)
@@ -233,7 +233,7 @@
     (say "host.fn.replace" (format nil "~a ~a" (sel:as-text (sel:run early))
                                    (sel:as-text (sel:evaluate "HOST_V()")))))
 
-  ;; --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md 8): a variable is a
+  ;; --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md 8): a variable is a
   ;; dependency when some read of it can happen before the program has definitely
   ;; assigned it, in evaluation order. Assignments under a condition, a short
   ;; circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -262,7 +262,7 @@
     (say "program.deps.top-arg-is-not-a-binder-in-the-three-argument-form" (deps "L = LIST(1,2); TOP(L, A, (A = 1; 1))"))
     (say "program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection" (deps "L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)")))
 
-  ;; --- T12: a Program is reusable: after a caught error it runs again, and two
+  ;; --- a Program is reusable: after a caught error it runs again, and two
   ;; contexts are independent whatever the interleaving.
   (let* ((divide (sel:compile-source "A / B"))
          (bad (sel:make-none))
@@ -285,7 +285,7 @@
                  (sel:as-text (sel:run bump a)) (sel:as-text (sel:run bump c))
                  (sel:as-text (sel:run bump a)) (sel:as-text (sel:run bump c)))))
 
-  ;; --- T12: input the API cannot take is E_BAD_ARG, never a host condition or a
+  ;; --- input the API cannot take is E_BAD_ARG, never a host condition or a
   ;; different SEL error (spec/SPEC.md 8). A statically typed host cannot be handed
   ;; a non-string source and prints n/a; tools/check-api.sh leaves an n/a line out
   ;; of the diff for that host. (Lisp is dynamically typed: all four are posed.)
@@ -305,7 +305,7 @@
     (say "host.fn.arg.out-of-range" (code (lambda () (sel:evaluate "HOST_OOB(\"x\")")))))
 
 
-  ;; --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+  ;; --- a host-supplied value nested past the cap, handed to RECORD beside a
   ;; key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md 6.2),
   ;; so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
   ;; arguments are known good. C++ built the pair in one expression and let the copy run first.
