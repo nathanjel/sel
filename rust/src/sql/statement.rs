@@ -4,7 +4,7 @@ use crate::ast::{Node, NodeType};
 use crate::optimizer::is_pipeline_op;
 use crate::program::Program;
 use crate::sql::binding::{Binding, ColumnSpec, FieldEntry};
-use crate::sql::constants::{identity_loss_before_grouping, is_binder_name, NeededFields};
+use crate::sql::constants::{call_roles, identity_loss_before_grouping, is_binder_name, NeededFields};
 use crate::sql::errors::{refuse, SqlError};
 use crate::sql::map::{entry, EntryKind};
 use crate::sql::node::{SNode, SNodeType};
@@ -393,182 +393,100 @@ impl Translator {
     ) -> Result<(), SqlError> {
         let name = &step.str;
         let args = &step.kids;
-        let top = name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
-        if top && args.is_empty() {
-            unreachable!("{}: the manifest's arity rule ran at compile time", name);
-        }
-        let count = if top { args.len() - 1 } else { args.len() };
+        // Which argument is the binder, the key, the direction and the count
+        // is the manifest's form, decided off the call as written: a text
+        // literal written third in SORT_BY wins over a bare name second (the
+        // guarded form comes first), and a helper inlined there is not a written
+        // one, so a name second is then the binder and the helper the key
+        // (stmt.order-by.helper-in-the-key-slot-...). Where no bare name gives
+        // the binder form, a helper's text is the direction
+        // (stmt.order-by.helper-in-the-direction-slot-is-a-direction).
+        let roles = crate::manifest::sort_roles(name, args)
+            .unwrap_or_else(|| unreachable!("{}: the manifest's arity rule ran at compile time", name));
 
-        if top {
-            let lim = self.eval_int_param(&args[args.len() - 1], name)?;
+        if let Some(i) = roles.limit {
+            let lim = self.eval_int_param(&args[i], name)?;
             if plan.limit.is_none() || lim < plan.limit.unwrap() {
                 plan.limit = Some(lim);
             }
             plan.limit_pos = step.pos;
         }
 
-        if name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC" {
-            let dir = if name == "SORT_DESC" || name == "TOP_DESC" {
-                SortDirection::Desc
-            } else {
-                SortDirection::Asc
-            };
-            if count == 1 {
-                if let Some(ref src_rel) = plan.source_relation {
-                    if let Some(ref rel) = src_rel.relation {
-                        if !rel.scalar.is_empty() {
-                            let mut var_node = Node::new(NodeType::Var, step.pos);
-                            var_node.s = "_".to_string();
-                            let var_snode = SNode::leaf(&var_node);
-                            let mut idx_node = Node::new(NodeType::Text, step.pos);
-                            idx_node.s = rel.scalar.clone();
-                            let idx_snode = SNode::leaf(&idx_node);
-                            let index_shape = Node::new(NodeType::Index, step.pos);
-                            let index_snode =
-                                SNode::rewritten(&index_shape, vec![var_snode, idx_snode]);
-                            plan.order_by.push(RelationalOrder {
-                                binder: "_".to_string(),
-                                node: index_snode,
-                                dir,
-                                pos: step.pos,
-                                over_groups: false,
-                            });
-                            return Ok(());
-                        }
-                        if rel.fields.len() == 1 {
-                            let field_name = rel.fields.keys().next().unwrap().clone();
-                            let mut var_node = Node::new(NodeType::Var, step.pos);
-                            var_node.s = "_".to_string();
-                            let var_snode = SNode::leaf(&var_node);
-                            let mut idx_node = Node::new(NodeType::Text, step.pos);
-                            idx_node.s = field_name;
-                            let idx_snode = SNode::leaf(&idx_node);
-                            let index_shape = Node::new(NodeType::Index, step.pos);
-                            let index_snode =
-                                SNode::rewritten(&index_shape, vec![var_snode, idx_snode]);
-                            plan.order_by.push(RelationalOrder {
-                                binder: "_".to_string(),
-                                node: index_snode,
-                                dir,
-                                pos: step.pos,
-                                over_groups: false,
-                            });
-                            return Ok(());
-                        }
-                    }
-                }
+        let binder = match roles.binder {
+            None => "_",
+            Some(i) if is_binder_name(Some(&args[i])) => args[i].str.as_str(),
+            Some(i) => {
                 return refuse(
                     "E_SQL_SHAPE",
-                    "SORT on a multi-field relation requires a key expression; use SORT_BY",
-                    step.pos,
-                );
-            } else if count == 2 {
-                plan.order_by.push(RelationalOrder {
-                    binder: "_".to_string(),
-                    node: args[1].clone(),
-                    dir,
-                    pos: step.pos,
-                    over_groups: false,
-                });
-            } else if count == 3 {
-                if !is_binder_name(Some(&args[1])) {
+                    format!("the binder of {} must be a bare name", name),
+                    args[i].pos,
+                )
+            }
+        };
+        let dir = match roles.dir {
+            None if name.ends_with("_DESC") => SortDirection::Desc,
+            None => SortDirection::Asc,
+            Some(i) => {
+                // A direction the evaluator would compute is one SQL cannot.
+                if args[i].t != SNodeType::Text {
                     return refuse(
                         "E_SQL_SHAPE",
-                        format!("the binder of {} must be a bare name", name),
-                        args[1].pos,
+                        "a sort direction must be a text literal here: SQL cannot compute one",
+                        args[i].pos,
                     );
                 }
-                plan.order_by.push(RelationalOrder {
-                    binder: args[1].str.clone(),
-                    node: args[2].clone(),
-                    dir,
-                    pos: step.pos,
-                    over_groups: false,
-                });
-            } else {
-                unreachable!("{}: the manifest's arity rule ran at compile time", name);
-            }
-            return Ok(());
-        }
-
-        // SORT_BY or TOP_BY. A text literal in the third place is a direction
-        // and wins over a bare name in the second (`text-direction-wins-over-
-        // bare-name`); otherwise a bare name there is the binder.
-        let binder;
-        let key;
-        let dir;
-
-        if count == 2 {
-            binder = "_";
-            key = &args[1];
-            dir = SortDirection::Asc;
-        } else if count == 3 {
-            // Decided off the call as written: a helper inlined into the third
-            // slot is that slot's name, so the second is the binder and the
-            // helper the key (stmt.order-by.helper-in-the-key-slot-...). With no
-            // name there, a helper's text is the direction, as written
-            // (stmt.order-by.helper-in-the-direction-slot-is-a-direction).
-            if args[2].is_written_text()
-                || (args[2].t == SNodeType::Text && !is_binder_name(Some(&args[1])))
-            {
-                binder = "_";
-                key = &args[1];
-                if args[2].str.eq_ignore_ascii_case("ASC") {
-                    dir = SortDirection::Asc;
-                } else if args[2].str.eq_ignore_ascii_case("DESC") {
-                    dir = SortDirection::Desc;
+                if args[i].str.eq_ignore_ascii_case("ASC") {
+                    SortDirection::Asc
+                } else if args[i].str.eq_ignore_ascii_case("DESC") {
+                    SortDirection::Desc
                 } else {
-                    return refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].pos);
+                    return refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[i].pos);
                 }
-            } else if is_binder_name(Some(&args[1])) {
-                binder = &args[1].str;
-                key = &args[2];
-                dir = SortDirection::Asc;
-            } else {
-                // A direction the evaluator would compute is one SQL cannot.
-                return refuse(
-                    "E_SQL_SHAPE",
-                    "a sort direction must be a text literal here: SQL cannot compute one",
-                    args[2].pos,
-                );
             }
-        } else if count == 4 {
-            if !is_binder_name(Some(&args[1])) {
-                return refuse(
-                    "E_SQL_SHAPE",
-                    "the binder of SORT_BY must be a bare name",
-                    args[1].pos,
-                );
+        };
+
+        let Some(key) = roles.key else {
+            // No key: a relation sorts by its scalar, or by its only field.
+            if let Some(ref src_rel) = plan.source_relation {
+                if let Some(ref rel) = src_rel.relation {
+                    let field = if !rel.scalar.is_empty() {
+                        Some(rel.scalar.clone())
+                    } else if rel.fields.len() == 1 {
+                        rel.fields.keys().next().cloned()
+                    } else {
+                        None
+                    };
+                    if let Some(field) = field {
+                        let mut var_node = Node::new(NodeType::Var, step.pos);
+                        var_node.s = "_".to_string();
+                        let mut idx_node = Node::new(NodeType::Text, step.pos);
+                        idx_node.s = field;
+                        let index_shape = Node::new(NodeType::Index, step.pos);
+                        let index_snode = SNode::rewritten(
+                            &index_shape,
+                            vec![SNode::leaf(&var_node), SNode::leaf(&idx_node)],
+                        );
+                        plan.order_by.push(RelationalOrder {
+                            binder: "_".to_string(),
+                            node: index_snode,
+                            dir,
+                            pos: step.pos,
+                            over_groups: false,
+                        });
+                        return Ok(());
+                    }
+                }
             }
-            binder = &args[1].str;
-            key = &args[2];
-            // A helper's text in the direction slot is a direction: the four-
-            // argument form does not depend on it.
-            if args[3].t != SNodeType::Text {
-                return refuse(
-                    "E_SQL_SHAPE",
-                    "a sort direction must be a text literal here: SQL cannot compute one",
-                    args[3].pos,
-                );
-            }
-            if args[3].str.eq_ignore_ascii_case("ASC") {
-                dir = SortDirection::Asc;
-            } else if args[3].str.eq_ignore_ascii_case("DESC") {
-                dir = SortDirection::Desc;
-            } else {
-                return refuse(
-                    "E_BAD_ARG",
-                    "sort direction must be 'ASC' or 'DESC'",
-                    args[3].pos,
-                );
-            }
-        } else {
-            unreachable!("{}: the manifest's arity rule ran at compile time", name);
-        }
+            return refuse(
+                "E_SQL_SHAPE",
+                "SORT on a multi-field relation requires a key expression; use SORT_BY",
+                step.pos,
+            );
+        };
 
         plan.order_by.push(RelationalOrder {
             binder: binder.to_string(),
-            node: key.clone(),
+            node: args[key].clone(),
             dir,
             pos: step.pos,
             over_groups: false,
@@ -654,24 +572,8 @@ impl Translator {
                     // commutes with a stable sort).
                     plan = self.ensure_derived(plan, need_derived)?;
 
-                    let binder;
-                    let pred;
-                    if args.len() == 2 {
-                        binder = "_";
-                        pred = &args[1];
-                    } else if args.len() == 3 {
-                        if !is_binder_name(Some(&args[1])) {
-                            return refuse(
-                                "E_SQL_SHAPE",
-                                "the binder of FILTER must be a bare name",
-                                args[1].pos,
-                            );
-                        }
-                        binder = &args[1].str;
-                        pred = &args[2];
-                    } else {
-                        unreachable!("FILTER: the manifest's arity rule ran at compile time");
-                    }
+                    let (roles, binder) = call_roles(&step)?;
+                    let pred = &args[roles.body.expect("a FILTER form has a predicate")];
 
                     if plan.group_by.is_some() {
                         plan.having.push(RelationalFilter {
@@ -709,31 +611,11 @@ impl Translator {
                     let need_derived = self.plan_has_rows_above(&plan);
                     plan = self.ensure_derived(plan, need_derived)?;
 
-                    let binder;
-                    let key_node;
-                    let agg_node;
-                    if args.len() == 2 {
-                        binder = "_";
-                        key_node = &args[1];
-                        agg_node = None;
-                    } else if args.len() == 3 {
-                        binder = "_";
-                        key_node = &args[1];
-                        agg_node = Some(&args[2]);
-                    } else if args.len() == 4 {
-                        if !is_binder_name(Some(&args[1])) {
-                            return refuse(
-                                "E_SQL_SHAPE",
-                                "the binder of BUCKET must be a bare name",
-                                args[1].pos,
-                            );
-                        }
-                        binder = &args[1].str;
-                        key_node = &args[2];
-                        agg_node = Some(&args[3]);
-                    } else {
-                        unreachable!("BUCKET: the manifest's arity rule ran at compile time");
-                    }
+                    // The key and the projection are the form's first and
+                    // second scoped arguments.
+                    let (roles, binder) = call_roles(&step)?;
+                    let key_node = &args[roles.body.expect("a BUCKET form has a key")];
+                    let agg_node = roles.extra.map(|i| &args[i]);
 
                     let several_keys = (key_node.t == SNodeType::Call
                         && (key_node.str == "LIST" || key_node.str == "RECORD"))
@@ -872,24 +754,8 @@ impl Translator {
                             step.pos,
                         );
                     }
-                    let binder;
-                    let expr;
-                    if args.len() == 2 {
-                        binder = "_";
-                        expr = &args[1];
-                    } else if args.len() == 3 {
-                        if !is_binder_name(Some(&args[1])) {
-                            return refuse(
-                                "E_SQL_SHAPE",
-                                "the binder of MAP must be a bare name",
-                                args[1].pos,
-                            );
-                        }
-                        binder = &args[1].str;
-                        expr = &args[2];
-                    } else {
-                        unreachable!("MAP: the manifest's arity rule ran at compile time");
-                    }
+                    let (roles, binder) = call_roles(&step)?;
+                    let expr = &args[roles.body.expect("a MAP form has a body")];
 
                     if plan.bucket == BucketState::Open {
                         plan.bucket = BucketState::None;
@@ -1064,27 +930,32 @@ impl Translator {
                         pos: step.pos,
                     };
 
-                    if args.len() == 5 {
-                        if !is_binder_name(Some(&args[2])) || !is_binder_name(Some(&args[3])) {
+                    // The manifest's form: explicit binders name the sides,
+                    // else the variables joined do (spec §7.4).
+                    let roles = crate::manifest::arg_roles(name, args)
+                        .unwrap_or_else(|| unreachable!("{}: the manifest's arity rule ran at compile time", name));
+                    let pred = &args[roles.body.expect("a LINK form has a predicate")];
+                    if let (Some(b1), Some(b2)) = (roles.binder, roles.binder2) {
+                        if !is_binder_name(Some(&args[b1])) || !is_binder_name(Some(&args[b2])) {
                             return refuse(
                                 "E_SQL_SHAPE",
                                 "join binders must be bare names",
-                                args[2].pos,
+                                args[b1].pos,
                             );
                         }
-                        join.left_names = vec![args[2].str.clone()];
-                        join.right_names = vec![args[3].str.clone()];
-                        join.on_pred = Some(args[4].clone());
+                        join.left_names = vec![args[b1].str.clone()];
+                        join.right_names = vec![args[b2].str.clone()];
+                        join.on_pred = Some(pred.clone());
                     } else {
                         if plan.joins.is_empty() && plan.root_name.is_some() {
                             join.left_names = vec![plan.root_name.as_ref().unwrap().clone()];
                         }
                         join.right_names = vec![right_node.str.clone()];
-                        join.on_pred = Some(args[2].clone());
+                        join.on_pred = Some(pred.clone());
                     }
 
                     if join.source_alias.is_empty() {
-                        if args.len() == 5 {
+                        if roles.binder2.is_some() {
                             join.source_alias = join.right_names[0].clone();
                         } else {
                             join.source_alias = "_2".to_string();

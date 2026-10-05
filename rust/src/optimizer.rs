@@ -279,24 +279,20 @@ struct OptMapInfo<'a> {
     body: Option<&'a Node>,
 }
 
-fn get_opt_map_info(step: &Node) -> OptMapInfo<'_> {
+/// The binder and body of a MAP/FILTER step, from its manifest form; `None`
+/// when the binder slot is not a bare name (E_EXPECT_SYMBOL when it runs), a
+/// step no rewrite reasons about.
+fn opt_binder_and_body(step: &Node) -> Option<(String, &Node)> {
     let args = &step.items;
-    let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
-    let b = if explicit {
-        args[1].s.clone()
-    } else {
-        "_".to_string()
-    };
-    let body = if explicit {
-        args.get(2)
-    } else if args.len() > 1 {
-        args.get(1)
-    } else {
-        None
-    };
-    OptMapInfo {
-        binder: b,
-        body,
+    let roles = crate::manifest::arg_roles(&step.s, args)?;
+    let binder = roles.binder_name(args).ok()?;
+    Some((binder.to_string(), args.get(roles.body?)?))
+}
+
+fn get_opt_map_info(step: &Node) -> OptMapInfo<'_> {
+    match opt_binder_and_body(step) {
+        Some((binder, body)) => OptMapInfo { binder, body: Some(body) },
+        None => OptMapInfo { binder: "_".to_string(), body: None },
     }
 }
 
@@ -308,26 +304,10 @@ struct OptFilterInfo<'a> {
 }
 
 fn get_opt_filter_info(step: &Node) -> OptFilterInfo<'_> {
-    let args = &step.items;
-    let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
-    let b = if explicit {
-        args[1].s.clone()
-    } else {
-        "_".to_string()
-    };
-    let pred = if explicit {
-        args.get(2)
-    } else if args.len() > 1 {
-        args.get(1)
-    } else {
-        None
-    };
-    let valid = args.len() == 2 || explicit;
-    OptFilterInfo {
-        binder: b,
-        predicate: pred,
-        explicit_binder: explicit,
-        valid,
+    let explicit_binder = step.items.len() == 3;
+    match opt_binder_and_body(step).filter(|_| step.s == "FILTER") {
+        Some((binder, predicate)) => OptFilterInfo { binder, predicate: Some(predicate), explicit_binder, valid: true },
+        None => OptFilterInfo { binder: "_".to_string(), predicate: None, explicit_binder, valid: false },
     }
 }
 
@@ -342,9 +322,10 @@ struct OptSortInfo<'a> {
 }
 
 fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
+    use crate::manifest::FormArg;
     let args = &step.items;
-    let is_name = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Var && !a.grouped);
-    let is_text = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Text);
+    let is_name = |i: usize| args[i].is_bare_name();
+    let is_text = |i: usize| args[i].t == NodeType::Text;
     let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
     // The manifest's form decides the roles (a text literal in the
     // direction's place wins over a bare name in the binder's). The rewrite
@@ -385,7 +366,8 @@ fn opt_map_cannot_raise(step: &Node, logical: bool) -> bool {
         }
         return opt_cannot_raise(body, &info.binder, logical);
     }
-    true
+    // No body: the binder slot is not a bare name, which raises.
+    false
 }
 
 fn opt_map_passthroughs(step: &Node) -> Vec<String> {
