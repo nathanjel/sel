@@ -1066,14 +1066,7 @@ impl Value {
             Kind::Text => {
                 format!("t{}", quote_dump(&inner.text_cow()))
             }
-            Kind::Bin => {
-                let mut hex_str = String::with_capacity(inner.bin().len() * 2);
-                for &b in inner.bin() {
-                    use std::fmt::Write;
-                    let _ = write!(hex_str, "{:02x}", b);
-                }
-                format!("b{}", hex_str)
-            }
+            Kind::Bin => format!("b{}", crate::utf8::hex_lower(inner.bin())),
             Kind::Bool => {
                 if inner.bool_val {
                     "TRUE".to_string()

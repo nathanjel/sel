@@ -8,6 +8,8 @@ bash build-inputs.sh > "$stage/inputs.sha256"
 cargo build --release --workspace
 # The worked examples (../examples/<category>/rust.rs) that need only the host;
 # the database-backed ones (LIVE) are built by tools/check-usage.sh in its image.
+# The binaries tools/impls.sh runs, published to build/ under these names.
+bins=(conformance sqlt sqlreplay check-decimal batch e2e sel sqlapi api regex-verdict scale-bench sqlfuzz hybrid-driver)
 examples=()
 for dir in ../examples/*/; do
   cat="$(basename "$dir")"
@@ -22,7 +24,7 @@ cmp -s "$stage/inputs.sha256" "$stage/inputs-after.sha256" || {
   echo 'Rust build inputs changed during compilation; rerun the build' >&2
   exit 1
 }
-for bin in conformance sqlt sqlreplay check-decimal batch e2e sel sqlapi api regex-verdict scale-bench sqlfuzz hybrid-driver; do
+for bin in "${bins[@]}"; do
   cp "target/release/$bin" "$stage/$bin"
 done
 for cat in "${examples[@]}"; do
@@ -30,7 +32,7 @@ for cat in "${examples[@]}"; do
 done
 mkdir -p build
 # Publish the identity last, after every required binary has been copied.
-for bin in conformance sqlt sqlreplay check-decimal batch e2e sel sqlapi api regex-verdict scale-bench sqlfuzz hybrid-driver; do
+for bin in "${bins[@]}"; do
   mv "$stage/$bin" "build/$bin"
 done
 for cat in "${examples[@]}"; do

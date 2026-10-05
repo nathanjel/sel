@@ -26,12 +26,7 @@ pub fn fn_from_utf8(args: &mut Args) -> Result<Value, SelError> {
 pub fn fn_to_hex(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     cap_text((b.len() as u128) * 2, args.pos())?;
-    let mut out = String::with_capacity(b.len() * 2);
-    for byte in b {
-        use std::fmt::Write;
-        let _ = write!(out, "{:02x}", byte);
-    }
-    Ok(Value::text_owned(out))
+    Ok(Value::text_owned(crate::utf8::hex_lower(&b)))
 }
 
 pub fn fn_from_hex(args: &mut Args) -> Result<Value, SelError> {

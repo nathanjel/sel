@@ -29,6 +29,17 @@ pub(crate) fn canonical_index(key: &str, max_digits: usize) -> Option<usize> {
     Some(val)
 }
 
+/// Bytes as lower-case hex, two digits each: TO_HEX and the `b…` dump.
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(DIGITS[(b >> 4) as usize] as char);
+        out.push(DIGITS[(b & 15) as usize] as char);
+    }
+    out
+}
+
 /// True when `s` holds nothing but SEL whitespace (the empty text included):
 /// the "blank" of `IS_BLANK` and `???`.
 pub(crate) fn is_sel_blank(s: &str) -> bool {
