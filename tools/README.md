@@ -15,6 +15,7 @@ tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
 tools/check-cli-source.sh   every `sel` CLI: source bytes and the CLI contract (docs/usage/repl.md)
 tools/check-corpus-bytes.sh every batch runner on byte fixtures (CR, CRLF, final blank line)
+tools/check-runners.sh      every runner refuses a bad path and an empty run (the runner contract)
 tools/check-registry.sh     every roster configuration has an arm in every role of impls.sh
 tools/check-budgets.sh      output/work budgets refused cheaply, per host, under ceilings
 tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceilings
@@ -81,18 +82,26 @@ rather than a comparison of the standard library with itself.
 
 | Role | Reads | Writes | Exit |
 |---|---|---|---|
-| `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
-| `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
+| `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure, and when it ran no case |
+| `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus or the corpus holds no program |
 | `sqlreplay` | nothing | the shipped map rebuilt through the public registration API, and diffed against itself | 0 unless the API cannot express the map |
 | `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program, three `\|\|`-separated lanes: `translate` (the inline SQL, the `params` SQL and the bound values, or a refusal), `translate_statement` likewise, and `plan_hybrid` (the classification, then the prefix statement in `params` mode); every runner binds the same ORDERS and CUSTOMERS relations, which `gen-programs.mjs --sql` writes pipelines over (the AMOUNT field declares no table, so a join must qualify it by the relation's alias — SEL-0042) | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `sqlapi` | nothing | the planner's contract, one `NN name = value` line per probe (tools/check-sqlapi.sh); **0 and silent** for a host with no SQL layer | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
-| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
+| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure and when no case ran; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
 | `regex_verdict [i]` | one pattern per stdin line | `A` (accepted) or `R` (refused with `E_REGEX_SYNTAX`) per line | 0 |
 | `sqldoc [file.md…]` | `docs/internals/sql-translation.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
+
+**The runner contract.** Every runner given a path it cannot read — missing,
+unreadable, or a directory — exits non-zero with one line containing
+`cannot read <path>`, never a stack trace. A `conformance`, `batch` or `sql` run
+that executed **zero** cases (an empty file, a filter that matched nothing)
+exits non-zero and says so: a mistyped path that reports `0 passed` is a gate
+that went green having run nothing. `tools/check-runners.sh` holds every host
+to both.
 
 The first five are required. `sql` and `oracle` are optional in the same way
 `unit` is: a host with no SQL layer succeeds silently and the harness moves on.

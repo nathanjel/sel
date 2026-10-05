@@ -120,9 +120,10 @@ fi
 case " $IMPLS " in *" lisp "*)
   echo "started  lisp warm-up"
   t0="$(date +%s)"
-  # The SQL case runner loads the language and the SQL system; with a filter
-  # nothing matches it runs no case, so this is the compile alone.
-  lisp/bin/sqlt warm-up-no-such-case > "$LOGS/warmup.log" 2>&1 \
+  # The SQL case runner loads the language and the SQL system; filtered to one
+  # case, this is the compile and little else. (Not a filter that matches
+  # nothing: the runner contract makes an empty run a failure.)
+  lisp/bin/sqlt lex.number.canonical-form-survives > "$LOGS/warmup.log" 2>&1 \
     || { status=1; cat "$LOGS/warmup.log"; }
   echo "done     lisp warm-up ($(( $(date +%s) - t0 ))s)"
   ;;
@@ -270,6 +271,8 @@ step "output and work budgets" ./tools/check-budgets.sh
 step "regex resources" sel_slot python3 tools/check-regex-resources.py
 step "regex validator vs reference, every host" ./tools/check-regex-ambiguity-diff.sh
 step "CLI source bytes and contract" ./tools/check-cli-source.sh
+# Every runner refuses a path it cannot read and a run that executed nothing.
+step "runner contract" ./tools/check-runners.sh
 # Every batch runner reads a corpus as bytes and removes exactly one newline per
 # record: CR and CRLF fixtures, and final records with and without a blank line.
 step "corpus bytes, every batch runner" ./tools/check-corpus-bytes.sh
