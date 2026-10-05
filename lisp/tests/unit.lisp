@@ -2261,10 +2261,10 @@ run of the program that built it, not a value set with the caller's string."
     (is (not (find #\~ msg)))
     (is (not (find #\Newline msg)))))
 
-;;; --- T12 (LISP-C12): process-global caches under threads ------------------------
+;;; --- process-global caches under threads (spec §8.1) ---------------------------
 ;;;
-;;; The record-shape table, the decimal caches and the regex/alias caches are
-;;; process-global. A host embedded in a threaded server compiles and runs from
+;;; The record-shape table, the decimal caches, the regex cache, LINK's alias-plan
+;;; cache and the function registry are process-global. A host embedded in a threaded server compiles and runs from
 ;;; several threads at once; with unsynchronised hash tables that gave SBCL's
 ;;; "Unsafe concurrent operations", corrupt chains, and -- worst -- the wrong
 ;;; record shape (a silently wrong E_NO_KEY). Each worker uses DISTINCT programs
@@ -2348,6 +2348,61 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
 
 
+;;; Spec §8.1: registering a function while other threads compile and run is
+;;; safe. The function table is written under a lock and read through a
+;;; synchronised table, so a compile never misses a builtin while a host
+;;; function is being added.
+#+sb-thread
+(test threads-register-while-compiling
+  (let ((names '()))
+    (unwind-protect
+         (let ((problems
+                 (run-threads
+                  6 (lambda (w)
+                      (if (zerop w)
+                          (dotimes (k 3000)
+                            (let ((name (format nil "T12_REG_~d" k)))
+                              (push name names)
+                              (sel:register-function name 0 0
+                                                     (lambda (a) (declare (ignore a)) (sel:from-native 1)))))
+                          (dotimes (k 3000)
+                            (let ((v (sel:evaluate "LEN(\"abc\") + ABS(-1) + COUNT(LIST(1, 2))")))
+                              (unless (string= (sel:as-text v) "6")
+                                (return (format nil "worker ~d: wrong ~a" w (sel:as-text v)))))))))))
+           (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))
+           (is (string= "1" (sel:as-text (sel:evaluate "T12_REG_2999()")))))
+      (dolist (name names) (sel::unregister-function name)))))
+
+;;; LINK extends each row with its table name through a process-global cache of
+;;; alias plans. Every iteration below has a fresh row shape, so the threads keep
+;;; inserting into (and clearing) that cache while the others read it; the
+;;; result must stay right, and LINK must still work on one thread afterwards.
+#+sb-thread
+(test threads-link-alias-plans
+  (let ((program (sel:compile-source
+                  "JOIN(MAP(LINK(X, Y, L, R, L[\"id\"] == R[\"id\"]), _[\"L\"][\"v\"] & \":\" & _[\"R\"][\"w\"]), \",\")")))
+    (flet ((context-for (w k)
+             (let ((extra (format nil "x~d_~d" w k)))
+               (sel:from-native
+                (list (cons "X" (loop for i from 1 to 3
+                                      collect (list (cons "id" i) (cons "v" (format nil "v~d" i))
+                                                    (cons extra 0))))
+                      (cons "Y" (loop for i from 3 downto 1
+                                      collect (list (cons "id" i) (cons "w" (format nil "w~d" i))
+                                                    (cons extra 1)))))))))
+      (let ((problems
+              (run-threads
+               8 (lambda (w)
+                   (dotimes (k 600)
+                     (let ((got (sel:as-text (sel:run program (context-for w k)))))
+                       (unless (string= got "v1:w1,v2:w2,v3:w3")
+                         (return (format nil "worker ~d iter ~d: ~a" w k got)))))))))
+        (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems)))))
+      (is (string= "v1:w1,v2:w2,v3:w3"
+                   (handler-case (sel:as-text (sel:run program (context-for 99 0)))
+                     (error (e) (format nil "~a" e)))))
+      (is (<= sel::*alias-plan-cache-count* 256)))))
+
 ;;; Gate triage: a value with children and no scalar sorts by scalar context
 ;;; (spec 3.2 / 7.3): a record by its first field, ties in input order.
 (test records-sort-by-their-first-field-and-ties-keep-input-order
@@ -2401,8 +2456,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
            (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e)))))
          (handler-case (sel:evaluate "T12_PEEK()")
            (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e))))))
-    (remhash "T12_PEEK" sel::*registry*)
-    (remhash "T12_PEEK" sel::*host-functions*)))
+    (sel::unregister-function "T12_PEEK")))
 
 (test cli-misuse-is-one-plain-diagnostic
   (dolist (line '("lisp/bin/sel -e"

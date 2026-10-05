@@ -341,7 +341,7 @@ zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
              (or (null n) (not (node-p n))
                  (and (case (node-kind n)
                         (:assign nil)
-                        (:call (and (member (node-s n) *shipped-builtins* :test #'string=) t))
+                        (:call (shipped-call-p n))
                         (t t))
                       (pure (node-l n))
                       (pure (node-r n))
@@ -405,9 +405,38 @@ NULL. VALUE-SET on a key that exists keeps its place."
 ;; Keep ownership global, not on record shapes: source/destination chains must
 ;; remain bounded. Two lookup levels avoid a fresh composite key on every hit
 ;; while preserving multiple table names per source shape.
-;; Rebuild derived metadata on reload, including upgrades from older layouts.
+;;
+;; Spec §8.1 lets several threads run programs at once, and this cache is read
+;; once per joined row, so readers take no lock: both levels are copy-on-write.
+;; A table is never written once it is reachable from *ALIAS-PLAN-CACHE*; a
+;; writer, holding *ALIAS-PLAN-LOCK*, builds a new inner and outer table and
+;; publishes the outer one with a single store. SBCL allows any number of
+;; concurrent readers on an unsynchronised table that nobody writes.
 (defparameter *alias-plan-cache* (make-hash-table :test #'eq))
 (defparameter *alias-plan-cache-count* 0)
+(defvar *alias-plan-lock* (sb-thread:make-mutex :name "sel alias plan cache"))
+
+(defun copy-hash-table-adding (table test key value)
+  (let ((new (make-hash-table :test test :size (1+ (if table (hash-table-count table) 0)))))
+    (when table
+      (maphash (lambda (k v) (setf (gethash k new) v)) table))
+    (setf (gethash key new) value)
+    new))
+
+(defun publish-alias-plan (old-shape tbl-name plan)
+  "Add PLAN for (OLD-SHAPE, TBL-NAME), starting over once the cache holds
++SHAPE-CACHE-ENTRIES+ plans."
+  (sb-thread:with-mutex (*alias-plan-lock*)
+    (let ((cache *alias-plan-cache*))
+      (when (>= *alias-plan-cache-count* +shape-cache-entries+)
+        (setf cache nil *alias-plan-cache-count* 0))
+      (let* ((plans (and cache (gethash old-shape cache)))
+             (fresh (not (and plans (gethash tbl-name plans))))
+             (new-plans (copy-hash-table-adding plans #'equal tbl-name plan))
+             (new-cache (copy-hash-table-adding cache #'eq old-shape new-plans)))
+        (sb-thread:barrier (:write))
+        (setf *alias-plan-cache* new-cache)
+        (when fresh (incf *alias-plan-cache-count*))))))
 
 (defun ensure-row-table-alias (row tbl-name)
   (if (or (null tbl-name) (positional-binder-p tbl-name) (value-has row tbl-name))
@@ -433,14 +462,7 @@ NULL. VALUE-SET on a key that exists keeps its place."
                      (when (and (<= (length new-keys) +shape-cache-max-keys+)
                                 (<= (loop for key in new-keys sum (length key))
                                     +shape-cache-max-chars+))
-                       (when (>= *alias-plan-cache-count* +shape-cache-entries+)
-                         (clrhash *alias-plan-cache*)
-                         (setf *alias-plan-cache-count* 0 plans nil))
-                       (unless plans
-                         (setf plans (make-hash-table :test #'equal)
-                               (gethash old-shape *alias-plan-cache*) plans))
-                       (setf (gethash tbl-name plans) (list ns diff olen))
-                       (incf *alias-plan-cache-count*))
+                       (publish-alias-plan old-shape tbl-name (list ns diff olen)))
                      (values ns diff olen)))
              (let* ((old-storage (value-storage row))
                     (new-storage (make-array (record-shape-size new-shape))))
@@ -856,8 +878,8 @@ assignment, sequence, host function or ABORT -- so it may run out of order."
         ((:index :bin) (and (join-pure-source-p (node-l node)) (join-pure-source-p (node-r node))))
         (:un (join-pure-source-p (node-l node)))
         (:list (every #'join-pure-source-p (node-items node)))
-        (:call (and (manifest-entry (ascii-upcase (node-s node)))
-                    (not (string-equal (node-s node) "ABORT"))
+        (:call (and (shipped-call-p node)
+                    (not (string= (node-s node) "ABORT"))
                     (every #'join-pure-source-p (node-items node))))
         (t nil))))
 

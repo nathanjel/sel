@@ -21,20 +21,19 @@
       (t nil))))
 
 ;;; Whether evaluating NODE might write into a value: it holds an assignment or
-;;; calls a host function. A collector copies an element when it collects it
+;;; calls a function the library does not ship (SHIPPED-CALL-P). A collector copies an element when it collects it
 ;;; (SPEC 3.4); while nothing below the body can write, deferring the copy to the
 ;;; end is unobservable, so only a body that might write copies at collection.
 ;;; Iterative: a body can be a flat chain as long as the source.
 (defun node-may-write-p (node)
-  (let ((stack (list node))
-        (hosts (and (boundp '*host-functions*) (symbol-value '*host-functions*))))
+  (let ((stack (list node)))
     (loop while stack
           do (let ((n (pop stack)))
                (when (and n (node-p n))
                  (case (node-kind n)
                    (:assign (return-from node-may-write-p t))
                    (:call
-                    (when (and hosts (node-s n) (gethash (string-upcase (node-s n)) hosts))
+                    (unless (shipped-call-p n)
                       (return-from node-may-write-p t))
                     (dolist (it (node-items n)) (push it stack)))
                    ((:seq :list) (dolist (it (node-items n)) (push it stack)))

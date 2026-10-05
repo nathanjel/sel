@@ -39,6 +39,15 @@
   ;; STRING= on every evaluation (LISP-P3). Never copied: a copy re-derives it.
   (opc nil))
 
+(declaim (inline shipped-call-p))
+(defun shipped-call-p (node)
+  "Whether the call NODE names a function the library ships -- the one answer to
+\"may this call do something other than return a value?\" (an application's
+function may write into its argument, or anything else). Read from the spec the
+node was compiled with, so it costs no table lookup."
+  (let ((spec (node-spec node)))
+    (and spec (spec-shipped spec))))
+
 ;;; The operator families, named once for the PARSER. The precedence table below
 ;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
 ;;; +compare-ops+ whether an operator is a numeric comparison -- so the parser and

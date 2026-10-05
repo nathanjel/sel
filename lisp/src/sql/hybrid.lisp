@@ -920,7 +920,7 @@ may read; WRAP puts a tree behind the assignments it depends on."
              (and n (sel::node-p n)
                   (or (eq (sel::node-kind n) :assign)
                       (and (eq (sel::node-kind n) :call)
-                           (not (member (sel::node-s n) sel::*shipped-builtins* :test #'string=)))
+                           (not (sel::shipped-call-p n)))
                       (walk (sel::node-l n))
                       (walk (sel::node-r n))
                       (some #'walk (sel::node-items n))))))
