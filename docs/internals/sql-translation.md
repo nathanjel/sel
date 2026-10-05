@@ -1697,7 +1697,7 @@ template whose three-argument form emits `(?si)`, plus the rule that the flag
 must be a **literal**, for the same reason the pattern must be (below). The
 literal's content picks the template, and only two contents translate: `""`
 (the two-argument form) and `"i"`. Anything else is `E_SQL_UNSUPPORTED` at the
-flags — `"zzz"`, and `"I"`, which SEL raises `E_BAD_ARG` for and which six hosts
+flags — `"zzz"`, and `"I"`, which SEL raises `E_BAD_ARG` for and which every host but Rust
 once translated case-insensitively because the test was a case fold
 (`review.regex.uppercase-i-is-not-the-i-flag`).
 

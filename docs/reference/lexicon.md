@@ -32,16 +32,16 @@ binds tighter).
 | 3 | 15 | `*` `/` `%` | left | Arithmetic (§5.1) |
 | 4 | 14 | `+` `-` | left | Arithmetic (§5.1) |
 | 5 | 13 | `&` | left | Concatenation (§5.2) |
-| 6 | 12 | `BAND` | left | Bitwise (§5.7) |
-| 7 | 11 | `BXOR` | left | Bitwise (§5.7) |
-| 8 | 10 | `BOR` | left | Bitwise (§5.7) |
+| 6 | 12 | `BAND` | left | Bitwise (§5.6) |
+| 7 | 11 | `BXOR` | left | Bitwise (§5.6) |
+| 8 | 10 | `BOR` | left | Bitwise (§5.6) |
 | 9 | 9 | `??` `???` | right | Coalescing (§5.5) |
 | 10 | 8 | `==` `!=` `<` `<=` `>` `>=` `$==` `$!=` `$<` `$<=` `$>` `$>=` `EQL` `IN` | **none** | Numeric comparison (§4.5), Text comparison (bytewise) (§5.3), Deep comparison (§5.4) |
 | 11 | 7 | `NOT` | prefix | Logic (§5.6) |
 | 12 | 6 | `AND` | left | Logic (§5.6) |
 | 13 | 5 | `XOR` | left | Logic (§5.6) |
 | 14 | 4 | `OR` | left | Logic (§5.6) |
-| 15 | 3 | `=` `+=` `-=` `*=` `/=` `%=` `&=` | right | Assignment (§5.8) |
+| 15 | 3 | `=` `+=` `-=` `*=` `/=` `%=` `&=` | right | Assignment (§5.7) |
 | 16 | 2 | `,` | left | List building (§5.9) |
 | 17 | 1 | `;` | left | Sequence (§5.8) |
 
