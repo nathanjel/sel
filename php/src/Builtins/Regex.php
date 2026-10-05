@@ -60,9 +60,11 @@ final class Regex
     }
 
     /** The message quotes the pattern; a 65 000-character one is not quoted whole. */
+    /** At most 80 code points of the pattern, cut between code points so the message stays UTF-8. */
     private static function excerpt(string $pattern): string
     {
-        return strlen($pattern) > 80 ? substr($pattern, 0, 77) . '...' : $pattern;
+        if (strlen($pattern) <= 80 || Utf8::length($pattern) <= 80) return $pattern;
+        return substr($pattern, 0, Utf8::advance($pattern, 77)) . '...';
     }
 
     /** @param array<string,mixed>|null $pos */

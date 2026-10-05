@@ -100,6 +100,12 @@ $expect('Value::text rejects malformed UTF-8', fn() => $code(fn() => Value::text
 $expect('fromNative rejects malformed UTF-8', fn() => $code(fn() => Value::fromNative("\xFF")) === 'E_UTF8');
 $expect('fromNative rejects a malformed key', fn() => $code(fn() => Value::fromNative(["\xFF" => 'x'])) === 'E_UTF8');
 $expect('Value::set rejects a malformed key', fn() => $code(fn() => Value::none()->set("\xC3", Value::text('x'))) === 'E_UTF8');
+// A regex error quotes an excerpt of the pattern; it is cut between code
+// points, so the message is UTF-8 however the pattern ends.
+$expect('a long non-ASCII regex excerpt stays valid UTF-8', function () {
+    try { \Sel\Sel::evaluate('RMATCH("' . str_repeat('é', 90) . '(", "x")'); return 'no error'; }
+    catch (SelError $e) { return \Sel\Utf8::firstInvalid($e->getMessage()) === null && json_encode($e->getMessage()) !== false; }
+});
 $expect('a supplementary character is text', fn() => Value::text("\u{1F600}")->dump() === "t\"\u{1F600}\"");
 // HOST-08 / HOST-09: toNative and fromNative are inverses, except the one
 // spec/SPEC.md §8 names: a record keyed "0" … "n-1" is a PHP list.
