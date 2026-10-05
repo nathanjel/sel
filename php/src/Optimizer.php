@@ -33,6 +33,35 @@ final class Optimizer
     }
 
     /**
+     * How deep an expression goes, its root counted as 1, and never more than
+     * `$cap` + 1 (the walk stops there), so it is bounded whatever the source's
+     * length.
+     *
+     * @param array<string,mixed> $root
+     */
+    private static function boundedDepth(array $root, int $cap): int
+    {
+        $deepest = 0;
+        $level = [$root];
+        while ($level !== [] && $deepest <= $cap) {
+            $deepest++;
+            $next = [];
+            foreach ($level as $node) {
+                foreach (['args', 'items'] as $key) {
+                    foreach ($node[$key] ?? [] as $item) {
+                        if (is_array($item)) $next[] = $item;
+                    }
+                }
+                foreach (['l', 'r', 'x', 'obj', 'idx', 'value'] as $key) {
+                    if (isset($node[$key]) && is_array($node[$key])) $next[] = $node[$key];
+                }
+            }
+            $level = $next;
+        }
+        return $deepest;
+    }
+
+    /**
      * Whether any node of the tree lies past the evaluator's depth cap, counted
      * the way the evaluator counts: the root at 1, every child one deeper, an
      * assignment's target excluded (the evaluator walks it iteratively). The walk
@@ -98,8 +127,13 @@ final class Optimizer
             $unwound = self::unwindPipeline($node);
             $source = self::optimizeTree($unwound['source'], $physical, $depth + 1, $options, false);
             $steps = [];
-            foreach ($unwound['steps'] as $step) {
+            $last = count($unwound['steps']) - 1;
+            foreach ($unwound['steps'] as $at => $step) {
                 $copy = self::copyNode($step);
+                // Where this step stands in the tree as written, for the rules that
+                // would deepen a subtree (FILTER fusion): the outermost step is the
+                // node itself.
+                $copy['stepDepth'] = $depth + ($last - $at);
                 $copy['args'] = [$copy['args'][0]];
                 foreach (array_slice($step['args'], 1, null, true) as $index => $arg) {
                     $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, self::stepArgOptions($step, $index, $options), false);
@@ -159,7 +193,7 @@ final class Optimizer
             $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options, false);
         }
         // Only an explicit false disables folding, as in JS and Python.
-        $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
+        $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy, $physical);
         if ($physical && !$inMath && MathPlan::isMathOp($folded)) {
             $plan = MathPlan::compile($folded);
             if ($plan !== null) {
@@ -214,7 +248,7 @@ final class Optimizer
     }
 
     /** @param array<string,mixed> $node @return array<string,mixed> */
-    private static function foldNode(array $node): array
+    private static function foldNode(array $node, bool $physical): array
     {
         $type = $node['t'] ?? null;
         if ($type === 'un') {
@@ -280,10 +314,13 @@ final class Optimizer
                 }
             }
 
-            // Two text literals joined by `&` are one text literal (PHP-P29): the
-            // fold cannot fail, since the result is shorter than the cap unless the
-            // source itself was enormous, and then the node is left for the evaluator.
-            if ($op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
+            // Two text literals joined by `&` are one text literal: the fold cannot
+            // fail, since the result is shorter than the cap unless the source itself
+            // was enormous, and then the node is left for the evaluator. Only in the
+            // PHYSICAL tree, which the evaluator alone runs: the logical tree is what
+            // the SQL planner renders, and every host's planner leaves `&` to the
+            // dialect's concatenation (sql/cases plan.fold.text-concat-is-not-folded).
+            if ($physical && $op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
                 && strlen((string) $left['v']) + strlen((string) $right['v']) <= Limits::MAX_TEXT_LEN) {
                 return ['t' => 'text', 'v' => (string) $left['v'] . (string) $right['v'], 'pos' => $node['pos']];
             }
@@ -487,7 +524,13 @@ final class Optimizer
                     $right = self::filterDetails($second);
                     // Fused, the second predicate runs on a row before the first
                     // has seen the rows after it: only one that cannot raise.
-                    if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)) {
+                    // Fused, the second predicate also sits one level deeper: under
+                    // the AND. A fused pair must spend what the two stages spent
+                    // (SPEC 6.4), so a predicate that would reach the cap that way
+                    // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+                    if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)
+                        && !(isset($second['stepDepth'])
+                            && $second['stepDepth'] + self::boundedDepth($right['predicate'], MAX_DEPTH) + 1 > MAX_DEPTH)) {
                         $predicate = Utf8::casecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
