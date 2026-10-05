@@ -328,8 +328,8 @@ export class Emit {
   //
   // The cycle is refused rather than a depth capped, because the cycle is the
   // actual mistake and a depth cap would need a number nobody can justify. With
-  // cycles refused the chain is bounded by the number of lexical keys, which is
-  // fifteen.
+  // cycles refused the chain is bounded by the number of lexical keys
+  // (RULES.lexicalTypes).
   fill(tpl, args, pos = null, expanding = null) {
     const parts = [];
 
@@ -395,13 +395,6 @@ export class Emit {
           + `entry of dialect ${this._dialect}`, pos);
       }
       if (arg === null || arg === '') { push(val); continue; }
-      // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
-      // already BIN needs no conversion, and on PostgreSQL converting it is
-      // destructive: text::bytea parses its input as a bytea *literal*, where \\
-      // is one backslash and \x41 is a byte, so the round trip changes the bytes
-      // or fails the query. Every other cast is idempotent and applied
-      // unconditionally; this is the one whose input kind decides whether it
-      // means anything.
       if (expanding !== null && expanding.has(key)) {
         refuse('E_SQL_UNSUPPORTED',
           `the ${key} lexical entry of dialect ${this._dialect} expands into `
@@ -411,6 +404,13 @@ export class Emit {
       const each = arg === '*' ? args.map((_, n) => String(n)) : [arg];
       each.forEach((one, at2) => {
         if (at2 > 0) push(', ');
+        // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
+        // already BIN needs no conversion, and on PostgreSQL converting it is
+        // destructive: text::bytea parses its input as a bytea *literal*, where \\
+        // is one backslash and \x41 is a byte, so the round trip changes the bytes
+        // or fails the query. Every other cast is idempotent and applied
+        // unconditionally; this is the one whose input kind decides whether it
+        // means anything.
         const castArg = key === 'binaryCast' ? slotIndex(one) : null;
         if (castArg !== null && castArg < args.length
             && args[castArg] instanceof Fragment && args[castArg].kind === 'BIN') {

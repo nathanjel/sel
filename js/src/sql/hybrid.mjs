@@ -297,12 +297,6 @@ function collectFieldReferences(node, binder = '_') {
   return refs;
 }
 
-// The steps the MAP fall-through may push past the MAP. Each keeps the rows
-// as they are -- the same records, fewer or reordered -- so the custom half of
-// the projection still runs over its own input. A step that changes the row
-// shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
-// the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
-// the dependency columns SQL carries where SEL compares the custom values.
 // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
 // The rows the database returns are a rowset numbered 1..n. run() has those keys
 // only when the last step that decides them renumbers: every step except FILTER
@@ -313,6 +307,13 @@ function collectFieldReferences(node, binder = '_') {
 // continuation can observe them: it reads `_K` before something renumbers, or the
 // keys are the answer itself.
 const KEY_RETAINING = new Set(['FILTER']);
+
+// The steps the MAP fall-through may push past the MAP. Each keeps the rows
+// as they are -- the same records, fewer or reordered -- so the custom half of
+// the projection still runs over its own input. A step that changes the row
+// shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something else, and
+// the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
+// the dependency columns SQL carries where SEL compares the custom values.
 const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
 
 function argsReadKey(step) {

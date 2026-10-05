@@ -144,18 +144,18 @@ function listIndex(key, length) {
   return n <= length ? n - 1 : -1;
 }
 
+// The shape of the last call, with keys already known to be distinct: rows built one after
+// another by the same expression have the same keys in the same order, so comparing the
+// keys to this shape (length and one pointer compare each) replaces the duplicate check
+// and the JSON signature (2.4 us per row before, 0.6 after).
+let lastUniqueShape = null;
+
 // The shared half of fromEntries and fromEntriesPreserveDuplicates: split the
 // pairs into key and value arrays and, when every key is distinct, the packed
 // record they shape. Null means a duplicate key, and the two callers then
 // diverge on purpose -- ordinary records overwrite, joined rows keep the
 // ordered duplicates -- so that fallback is theirs, not this helper's. Measured
-// against the inlined loop the call boundary costs nothing (WL-001 SEL-0016).
-// The shape of the last call, with keys already known to be distinct: rows built one after
-// another by the same expression have the same keys in the same order, so comparing the
-// keys to this shape (length and one pointer compare each) replaces the duplicate check
-// and the JSON signature (JS-P9; 2.4 us per row before, 0.6 after).
-let lastUniqueShape = null;
-
+// against the inlined loop the call boundary costs nothing.
 function shapedFromUniqueEntries(entries) {
   const n = entries.length;
   const values = new Array(n);
@@ -344,9 +344,6 @@ export class Value {
     return v;
   }
 
-  // A string is canonicalised and validated: "007" becomes "7", and anything
-  // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
-  // later somewhere else. Internal callers pass a decimal record, not a string.
   // A whole number 0..255 (a byte) without a BigInt: the 256 decimals are built
   // once and shared, the way cloneAt already shares a decimal between copies --
   // nothing writes into a decimal record.
@@ -357,6 +354,9 @@ export class Value {
     return v;
   }
 
+  // A string is canonicalised and validated: "007" becomes "7", and anything
+  // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
+  // later somewhere else. Internal callers pass a decimal record, not a string.
   static num(d) {
     let parsed = d;
     if (typeof d === 'string') {
@@ -835,11 +835,8 @@ export class Value {
   }
 }
 
-// Structural hashing is only a prefilter: callers must still use eql() inside
-// the bucket because collisions are allowed.  It deliberately walks the flat
-// storage directly so DEDUPE does not serialize every row just to find a bucket.
 // The hash of the key a packed list's element i has ("1", "2", ...), so a packed list
-// hashes like its keyed twin without building the key text per element per call (JS-P28).
+// hashes like its keyed twin without building the key text per element per call.
 const LIST_KEY_HASHES = [];
 function listKeyHash(i) {
   if (i >= 65536) return stringHash(String(i + 1));
@@ -848,10 +845,12 @@ function listKeyHash(i) {
   return h;
 }
 
+// Structural hashing is only a prefilter: callers must still use eql() inside
+// the bucket because collisions are allowed.  It deliberately walks the flat
+// storage directly so DEDUPE does not serialize every row just to find a bucket.
 export function structuralHash(value, depth = 1) {
   // A value nested past the cap cannot be hashed any more than dumped (spec
-  // §6.4): answering 0 let DEDUPE pass one it could not compare (review
-  // 2026-09-25 HOST-07).
+  // §6.4): answering 0 let DEDUPE pass one it could not compare.
   if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
   let h = value.kind === TEXT ? 17 : value.kind === BIN ? 31 : value.kind === BOOL ? 47 : 61;
   if (value.kind === TEXT) h = mixHash(h, stringHash(value.scalar));
@@ -919,11 +918,7 @@ function mixHash(a, b) {
 }
 
 // JS numbers are doubles and SEL has none, so the host boundary is where the
-// conversion has to be pinned down. Integers pass through exactly; anything with
-// a fraction goes via its shortest round-trip form, which is what the author
-// literally wrote in source.
-//
-// Only whole numbers: spec §8 lists a float among the things a constructor does
+// conversion has to be pinned down. Only whole numbers: spec §8 lists a float among the things a constructor does
 // not take, and PHP and Python refuse one. JS cannot tell `3` from `3.0`, so a
 // whole-valued double is accepted; a fraction is not, because 0.1 + 0.2 is
 // 0.30000000000000004 and turning that into a decimal is the silent guess §8

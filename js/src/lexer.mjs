@@ -32,9 +32,8 @@ const isAlpha = (c) => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c ===
 const isIdent = (c) => isAlpha(c) || isDigit(c);
 const isSpace = (c) => c === ' ' || c === '\t' || c === '\r' || c === '\n';
 
-// The kinds of work lexRange keeps on its explicit stack.
 // A token is a literal with a fixed shape: the same keys in the same order the spread
-// produced, without building the spread's intermediate object (JS-P2).
+// produced, without building the spread's intermediate object.
 function mk(type, value, pos) {
   return { type, value, line: pos.line, col: pos.col, offset: pos.offset };
 }
@@ -48,6 +47,7 @@ for (const op of OPERATORS) {
   OPS_BY_FIRST.get(k).push(op);
 }
 
+// The kinds of work lexRange keeps on its explicit stack.
 const T_RANGE = 0, T_PART = 1, T_CLOSE = 2, T_END = 3;
 
 class Lexer {

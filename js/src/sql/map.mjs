@@ -52,6 +52,9 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 
 // --- registration ------------------------------------------------------------
 
+// Every key defineDialect() accepts. sql/MAP.md §3 is the normative list.
+const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
 // Declare a dialect.
 //
 // The usual reason is an older or newer server than the shipped map assumes,
@@ -62,9 +65,6 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 //
 // Throws Error, not SqlError: a malformed registration is a mistake in the
 // application's startup, and `tryTranslate` must not swallow it.
-// Every key defineDialect() accepts. sql/MAP.md §3 is the normative list.
-const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
-
 export function defineDialect(name, spec) {
   // A registered dialect may be declared again under the same parent -- the
   // later declaration replaces it -- but a name never changes what it extends,

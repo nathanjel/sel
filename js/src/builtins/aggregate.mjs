@@ -80,9 +80,8 @@ function mayWrite(node) {
 }
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
-// from `visit` stops the walk and becomes the result.
-// `tentative`: a body that raises keeps the element -- the visitor sees null
-// -- for the FILTER above to decide (a pushed conjunct, spec §7.4).
+// from `visit` stops the walk and becomes the result. `bodyOverride`, when
+// given, is evaluated per element instead of the written body.
 function walk(args, ctx, visit, bodyOverride = null) {
   const { binder, body: written } = shape(args);
   const body = bodyOverride ?? written;
@@ -183,8 +182,6 @@ define({
   },
 });
 
-// The one aggregate that preserves keys — a filtered list should still be
-// addressable the way the original was.
 const TEXT_COMPARE = new Set(['$==', '$!=', '$<', '$<=', '$>', '$>=']);
 const NUM_COMPARE = new Set(['==', '!=', '<', '<=', '>', '>=']);
 
@@ -251,6 +248,8 @@ export function leadingFieldConjuncts(body, binder) {
   });
 }
 
+// The one aggregate that preserves keys — a filtered list should still be
+// addressable the way the original was.
 define({
   name: 'FILTER', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {

@@ -44,13 +44,13 @@ function listKey(k) {
   return LIST_KEY.test(k) ? Number(k) : null;
 }
 
-// Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 // The largest LIMIT/OFFSET every dialect's server accepts.
 const INT64_MAX = 9223372036854775807n;
 
 // Above this many operands an unrolled associative fold is a balanced tree.
 const FOLD_LEFT = 256;
 
+// Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
 // The optimiser's list, not a second copy: one vocabulary of pipeline operators
 // per host, or the planner and the translator drift apart.
@@ -264,6 +264,20 @@ export class Translator {
 
   // --- the walk ------------------------------------------------------------
 
+  // The size of what has been walked, charged as it is walked: a subtree is
+  // charged again for every occurrence (an inlined helper read, an unrolled
+  // element), so a program that expands to millions of nodes is refused after
+  // MAX_SQL_NODES of work and not after rendering all of them (§7.4).
+  charge(nodes, pos) {
+    this.nodeCount += nodes;
+    if (this.nodeCount > MAX_SQL_NODES) {
+      refuse('E_SQL_SIZE',
+        `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
+        + 'read and every unrolled element is counted, and the translation stops '
+        + 'there', pos);
+    }
+  }
+
   // Ask SEL whether the expression is valid before asking the map whether it is
   // translatable, wherever the arguments are literals and SEL can answer.
   //
@@ -290,20 +304,6 @@ export class Translator {
   // PHP rendered it, and Python happened to die of its own stack at around 510
   // terms, which is an implementation accident rather than a decision. The guard
   // reads eval's MAX_DEPTH rather than repeating 200, so the two cannot drift.
-  // The size of what has been walked, charged as it is walked: a subtree is
-  // charged again for every occurrence (an inlined helper read, an unrolled
-  // element), so a program that expands to millions of nodes is refused after
-  // MAX_SQL_NODES of work and not after rendering all of them (§7.4).
-  charge(nodes, pos) {
-    this.nodeCount += nodes;
-    if (this.nodeCount > MAX_SQL_NODES) {
-      refuse('E_SQL_SIZE',
-        `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
-        + 'read and every unrolled element is counted, and the translation stops '
-        + 'there', pos);
-    }
-  }
-
   node(n) {
     this.charge(1, n.pos);
     this.depth += 1;
@@ -1297,10 +1297,11 @@ export class Translator {
     // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An empty
     // flag string is dropped so the two-argument template applies.
     const text = String(flags.v);
-    // Spelled as the two strings that pass rather than as a case fold: PHP's
-    // strtolower is ASCII-only and JS's toLowerCase is not ("İ".toLowerCase() is
-    // two code points), and `!== 'i'` admits exactly "i" and "I". Naming them is
-    // byte-exact and needs no asciiLower.
+    // Spelled as literal strings rather than a case fold: JS's toLowerCase is
+    // not ASCII-only ("İ".toLowerCase() is two code points). NB this admits "I"
+    // as well as "i", and the evaluator refuses "I" with E_BAD_ARG (conformance
+    // re.flag.uppercase-i-is-not-i): a column-subject call with "I" translates
+    // where SEL raises. That is a known disagreement, not a decision.
     if (text !== '' && text !== 'i' && text !== 'I') {
       refuse('E_SQL_UNSUPPORTED',
         `${n.name} accepts only the i flag here, and SEL accepts only i at all; `
@@ -3385,8 +3386,6 @@ function aggShape(n) {
   return ['_', n.args[1]];
 }
 
-// The alias a relation binding renders under — its own, or the table name when it
-// declares none. The same rule Bindings.checkAliases applies.
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
 function binderKeys(names) {
   const out = [];
@@ -3413,6 +3412,8 @@ function scalarFields(row) {
     .map(([u, spec]) => [u, { spec, table: row.table, qualify: row.qualify, optional: false }]);
 }
 
+// The alias a relation binding renders under — its own, or the table name when it
+// declares none. The same rule Bindings.checkAliases applies.
 function relationAlias(rel) {
   const alias = rel.alias ?? null;
   if (typeof alias === 'string' && alias !== '') return alias;

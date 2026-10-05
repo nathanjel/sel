@@ -277,8 +277,6 @@ function isPositionalBinder(name) {
   return name === '_1' || name === '_2';
 }
 
-// Keyed by the row shape and held weakly: a plan lives as long as its shape does, so the
-// cache needs no size bound of its own and a wide shape costs nothing once it is gone.
 // True when evaluating `node` cannot change any value: no assignment anywhere in it and
 // no call to a host function (which is handed values and may do what it likes). An
 // iterative walk: a predicate is a tree as deep as its source is long.
@@ -303,6 +301,8 @@ function isPureNode(node) {
   return true;
 }
 
+// Keyed by the row shape and held weakly: a plan lives as long as its shape does, so the
+// cache needs no size bound of its own and a wide shape costs nothing once it is gone.
 const ALIAS_PLANS = new WeakMap();
 
 function ensureRowTableAlias(row, tableName) {

@@ -4,9 +4,7 @@ import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
 
 // spec/SPEC.md §6.4. Without these, a size argument nobody meant to write takes
-// down the host instead of failing as a rule error — and POWER quietly returned
-// a wrong answer here, because `e >>= 1` in the decimal core truncates the
-// exponent to 32 bits.
+// down the host instead of failing as a rule error.
 export const MAX_SCALE = 1000000;
 export const MAX_POWER = 100000;
 
