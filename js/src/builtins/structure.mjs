@@ -58,7 +58,10 @@ define({
 
 define({
   name: 'LIST', min: 0, max: Infinity,
-  fn: (args) => Value.listOwned(Array.from({ length: args.count() }, (_, i) => args.val(i).cloneAt(2, args.pos))),
+  fn: (args) => {
+    checkCollection(args.count(), args.pos);
+    return Value.listOwned(Array.from({ length: args.count() }, (_, i) => args.val(i).cloneAt(2, args.pos)));
+  },
 });
 
 function recordWithShape(args, shape) {
@@ -80,6 +83,7 @@ function recordWithShape(args, shape) {
 }
 
 function recordFromArgs(args) {
+  checkCollection(args.count() / 2, args.pos);
   if (args.recordShape) return recordWithShape(args, args.recordShape);
   const entries = [];
   for (let i = 0; i < args.count(); i += 2) {
