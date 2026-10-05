@@ -114,7 +114,7 @@ define({
     if (sep === '') fail('E_BAD_ARG', 'SPLIT separator must not be empty', args.posOf(1));
     const pieces = hay.split(sep);
     checkCollection(pieces.length, args.pos, 'SPLIT result');
-    return Value.list(pieces.map((piece) => Value.textOwned(piece)));
+    return Value.listOwned(pieces.map((piece) => Value.textOwned(piece)));
   },
 });
 

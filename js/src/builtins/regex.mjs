@@ -580,8 +580,8 @@ define({
       const m = re.exec(subject);
       if (!m) return Value.none();
       const out = [];
-      for (let i = 0; i < m.length; i++) out.push(Value.text(m[i] === undefined ? '' : m[i]));
-      return Value.list(out);
+      for (let i = 0; i < m.length; i++) out.push(Value.textOwned(m[i] === undefined ? '' : m[i]));
+      return Value.listOwned(out);
     });
   },
 });
@@ -612,7 +612,7 @@ define({
       }
       const tail = subject.slice(last);
       if (tail.length > 0) checkText(size + cpLength(tail), args.pos, 'RREPLACE result');
-      return Value.text(out + tail);
+      return Value.textOwned(out + tail);
     });
   },
 });

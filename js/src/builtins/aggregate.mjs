@@ -277,7 +277,7 @@ define({
       total = D.add(total, r.asDecimal(body.pos), body.pos);
       return undefined;
     });
-    return Value.num(total);
+    return Value.numOwned(total);
   },
 });
 
@@ -367,7 +367,7 @@ function doSort(args, ctx, forcedDir) {
   let indexed;
   // The direction was evaluated and checked above whether or not there is
   // anything to sort (SPEC 7.4): an empty list does not excuse a bad one.
-  if (entries.length === 0) return Value.list([]);
+  if (entries.length === 0) return Value.listOwned([]);
 
   if (body === null) {
     indexed = entries.map(([, item]) => ({ item, info: keyInfo(item) }));
@@ -414,7 +414,7 @@ function doTop(args, ctx, forcedDir) {
   // The count is the last slot; a direction, when there is one, precedes it.
   const { binder, body, dir } = sortArgs(args, forcedDir, 1);
   // Count and direction are evaluated and checked first, empty source or not.
-  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
+  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.listOwned([]);
 
   const compare = (a, b) => {
     let c = compareInfo(a.info, b.info);
@@ -535,7 +535,7 @@ function doBucket(args, ctx) {
   const value = args.val(0);
   // NULL and an empty collection group nothing; a scalar is a one-element list
   // (SPEC 3.2), so it makes one group.
-  if (value.kind === NONE && value.size() === 0) return Value.list([]);
+  if (value.kind === NONE && value.size() === 0) return Value.listOwned([]);
 
   const roles = callRoles(args.name, args.nodes);
   const binder = roles.binder < 0 ? '_' : args.symbol(roles.binder);

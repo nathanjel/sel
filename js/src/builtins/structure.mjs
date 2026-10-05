@@ -97,7 +97,7 @@ define({
   fn: (args) => {
     const value = args.val(0);
     const count = args.nonNegInt(1);
-    if (count === 0 || value.isNull()) return Value.list([]);
+    if (count === 0 || value.isNull()) return Value.listOwned([]);
     if (value.isList && value.storage !== null) return Value.listOwned(value.storage.slice(0, count));
     return Value.listOwned(elements(value).slice(0, count).map(([, item]) => item));
   },
@@ -108,7 +108,7 @@ define({
   fn: (args) => {
     const value = args.val(0);
     const count = args.nonNegInt(1);
-    if (value.isNull()) return Value.list([]);
+    if (value.isNull()) return Value.listOwned([]);
     if (value.isList && value.storage !== null) return Value.listOwned(value.storage.slice(count));
     return Value.listOwned(elements(value).slice(count).map(([, item]) => item));
   },
@@ -118,7 +118,7 @@ define({
   name: 'SELECT_COLS', min: 2, max: Infinity,
   fn: (args) => {
     const value = args.val(0);
-    if (value.isNull()) return Value.list([]);
+    if (value.isNull()) return Value.listOwned([]);
     const columns = [];
     for (let i = 1; i < args.count(); i++) columns.push(args.text(i));
     const rows = elements(value).map(([, row]) => {
@@ -134,7 +134,7 @@ define({
 
 function doDedupe(args) {
   const value = args.val(0);
-  if (value.isNull()) return Value.list([]);
+  if (value.isNull()) return Value.listOwned([]);
   const buckets = new Map();
   const seen = new Set();
   const out = [];
@@ -904,12 +904,12 @@ function doLink(args, ctx, leftJoin) {
   }
   const appliedBelow = below !== null && !below.errored ? below.applied : new Set();
   let dropped = below !== null && below.dropped;
-  if (leftValue.isNull()) return Value.list([]);
+  if (leftValue.isNull()) return Value.listOwned([]);
 
   const firstLeft = firstCollectionItem(leftValue);
   const firstRight = firstCollectionItem(rightValue);
   if (!firstLeft || !firstRight) {
-    if (!leftJoin || !firstLeft) return Value.list([]);
+    if (!leftJoin || !firstLeft) return Value.listOwned([]);
   }
   // Every row is built from its own pair (spec §7.4): nothing is decided from
   // a first element except the shape of LINK_LEFT's null record.
