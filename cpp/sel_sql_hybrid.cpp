@@ -696,6 +696,100 @@ bool key_safe_split(const std::vector<NodePtr>& steps, std::size_t count) {
   return count == 0 || steps[count - 1]->s != "FILTER" || !continuation_observes_keys(steps, count);
 }
 
+using MapPairs = std::vector<std::pair<NodePtr, NodePtr>>;
+
+// The columns the custom half of a split MAP reads that the pushable half
+// does not project, to be projected beside it; nothing when a read cannot be
+// served. A dependency may share a projected column only when that column IS
+// the field: `"customer_id", _["amount"]` projects amount under the name the
+// custom half would read customer_id by. Names are compared exactly, as SEL
+// compares them; and a dependency that differs from a projected key only by
+// case is not projected beside it, because SQL aliases are not
+// case-sensitive everywhere.
+std::optional<std::vector<std::string>> fallthrough_dependencies(const MapPairs& pushable, const MapPairs& custom,
+                                                                 const std::vector<std::string>& projected,
+                                                                 const std::string& binder) {
+  const auto has_name = [](const std::vector<std::string>& names, const std::string& name) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+  };
+  const auto has_name_folded = [](const std::vector<std::string>& names, const std::string& name) {
+    return std::any_of(names.begin(), names.end(), [&](const std::string& value) {
+      return ascii_upper(value) == ascii_upper(name);
+    });
+  };
+  std::vector<std::string> own;
+  for (const auto& pair : pushable) {
+    if (is_own_field_read(pair, binder)) own.push_back(pair.first->s);
+  }
+  std::vector<std::string> dependencies;
+  for (const auto& pair : custom) {
+    std::vector<std::string> refs;
+    collect_field_references(pair.second, binder, refs);
+    for (const std::string& ref : refs) {
+      if (has_name(projected, ref)) {
+        if (!has_name(own, ref)) return std::nullopt;
+      } else if (has_name_folded(projected, ref)) {
+        return std::nullopt;
+      } else if (!has_name(dependencies, ref)) {
+        // Two dependencies must not differ only by case either.
+        if (has_name_folded(dependencies, ref)) return std::nullopt;
+        dependencies.push_back(ref);
+      }
+    }
+  }
+  return dependencies;
+}
+
+// MAP_STEP with BODY as its record: the same source, the same binder.
+NodePtr fallthrough_map(const NodePtr& map_step, const MapRecordDetails& details, NodePtr source, NodePtr body) {
+  auto map = copy_node(map_step);
+  map->items.clear();
+  map->items.push_back(std::move(source));
+  if (details.explicit_binder) map->items.push_back(map_step->items[1]);
+  map->items.push_back(std::move(body));
+  return map;
+}
+
+// The MAP the SQL computes: the pushable pairs, then each dependency column
+// under its own name.
+NodePtr fallthrough_prefix_map(const NodePtr& map_step, const MapRecordDetails& details, const MapPairs& pushable,
+                               const std::vector<std::string>& dependencies) {
+  auto record = copy_node(details.body);
+  record->items.clear();
+  for (const auto& pair : pushable) {
+    record->items.push_back(pair.first);
+    record->items.push_back(pair.second);
+  }
+  for (const std::string& dependency : dependencies) {
+    const NodePtr key = text_node(dependency, map_step->pos);
+    record->items.push_back(key);
+    record->items.push_back(index_node(var_node(details.binder, map_step->pos), key, map_step->pos));
+  }
+  return fallthrough_map(map_step, details, map_step->items[0], std::move(record));
+}
+
+// The continuation re-applies the projection to the rows that come back: a
+// pushable pair is passed through BY KEY -- the SQL already computed it,
+// under that name -- and a custom pair is evaluated as written, over the
+// dependency columns projected beside it.
+NodePtr fallthrough_continuation_map(const NodePtr& map_step, const MapRecordDetails& details,
+                                     const MapPairs& pushable) {
+  auto record = copy_node(details.body);
+  record->items.clear();
+  for (const auto& pair : details.pairs) {
+    record->items.push_back(pair.first);
+    const bool is_pushable = std::any_of(pushable.begin(), pushable.end(), [&](const auto& p) {
+      return p.first == pair.first;
+    });
+    if (is_pushable) {
+      record->items.push_back(index_node(var_node(details.binder, pair.second->pos), pair.first, pair.second->pos));
+    } else {
+      record->items.push_back(pair.second);
+    }
+  }
+  return fallthrough_map(map_step, details, var_node("_INPUT", map_step->pos), std::move(record));
+}
+
 std::optional<HybridPlan> try_plan_fallthrough(
     const NodePtr& source, const std::vector<NodePtr>& steps,
     const std::string& dialect, const Bindings& bindings, const Options& options,
@@ -710,8 +804,8 @@ std::optional<HybridPlan> try_plan_fallthrough(
   const auto details = map_record_details(map_step);
   if (!details) return std::nullopt;
 
-  std::vector<std::pair<NodePtr, NodePtr>> pushable;
-  std::vector<std::pair<NodePtr, NodePtr>> custom;
+  MapPairs pushable;
+  MapPairs custom;
   std::map<std::string, bool> unsupported_memo;
   for (const auto& pair : details->pairs) {
     if (contains_unsupported_sql(pair.second, dialect, &helpers.defs, {}, &unsupported_memo)) custom.push_back(pair);
@@ -730,11 +824,6 @@ std::optional<HybridPlan> try_plan_fallthrough(
   // in the SQL but not in SEL's row.
   const auto has_name = [](const std::vector<std::string>& names, const std::string& name) {
     return std::find(names.begin(), names.end(), name) != names.end();
-  };
-  const auto has_name_folded = [](const std::vector<std::string>& names, const std::string& name) {
-    return std::any_of(names.begin(), names.end(), [&](const std::string& value) {
-      return ascii_upper(value) == ascii_upper(name);
-    });
   };
   std::vector<std::string> projected;
   for (const auto& pair : pushable) projected.push_back(pair.first->s);
@@ -764,85 +853,20 @@ std::optional<HybridPlan> try_plan_fallthrough(
     }
   }
 
-  // A dependency may share a projected column only when that column IS the
-  // field: `"customer_id", _["amount"]` projects amount under the name the
-  // custom half would read customer_id by. Names are compared exactly, as SEL
-  // compares them; and a dependency that differs from a projected key only by
-  // case is not projected beside it, because SQL aliases are not
-  // case-sensitive everywhere.
-  std::vector<std::string> own;
-  for (const auto& pair : pushable) {
-    if (is_own_field_read(pair, details->binder)) own.push_back(pair.first->s);
-  }
-  std::vector<std::string> dependencies;
-  for (const auto& pair : custom) {
-    std::vector<std::string> refs;
-    collect_field_references(pair.second, details->binder, refs);
-    for (const std::string& ref : refs) {
-      if (has_name(projected, ref)) {
-        if (!has_name(own, ref)) return std::nullopt;
-      } else if (has_name_folded(projected, ref)) {
-        return std::nullopt;
-      } else if (!has_name(dependencies, ref)) {
-        // Two dependencies must not differ only by case either.
-        if (has_name_folded(dependencies, ref)) return std::nullopt;
-        dependencies.push_back(ref);
-      }
-    }
-  }
-
-  auto rewritten_record = copy_node(details->body);
-  rewritten_record->items.clear();
-  for (const auto& pair : pushable) {
-    rewritten_record->items.push_back(pair.first);
-    rewritten_record->items.push_back(pair.second);
-  }
-  for (const std::string& dependency : dependencies) {
-    const NodePtr key = text_node(dependency, map_step->pos);
-    rewritten_record->items.push_back(key);
-    rewritten_record->items.push_back(
-        index_node(var_node(details->binder, map_step->pos), key, map_step->pos));
-  }
-
-  auto rewritten_map = copy_node(map_step);
-  rewritten_map->items.clear();
-  rewritten_map->items.push_back(map_step->items[0]);
-  if (details->explicit_binder) rewritten_map->items.push_back(map_step->items[1]);
-  rewritten_map->items.push_back(std::move(rewritten_record));
+  const auto dependencies = fallthrough_dependencies(pushable, custom, projected, details->binder);
+  if (!dependencies) return std::nullopt;
 
   std::vector<NodePtr> rewritten_steps;
   rewritten_steps.reserve(steps.size());
   rewritten_steps.insert(rewritten_steps.end(), steps.begin(), map_it);
-  rewritten_steps.push_back(std::move(rewritten_map));
+  rewritten_steps.push_back(fallthrough_prefix_map(map_step, *details, pushable, *dependencies));
   if (!custom_raises) rewritten_steps.insert(rewritten_steps.end(), map_it + 1, steps.end());
   const NodePtr rewritten_ast = helpers.wrap(build_pipeline(source, rewritten_steps));
   const Program rewritten_program("", rewritten_ast);
   auto sql = Sql::try_translate_statement(rewritten_program, dialect, bindings, options);
   if (!sql) return std::nullopt;
 
-  // The continuation re-applies the projection to the rows that come back: a
-  // pushable pair is passed through BY KEY -- the SQL already computed it,
-  // under that name -- and a custom pair is evaluated as written, over the
-  // dependency columns projected beside it.
-  auto continuation_record = copy_node(details->body);
-  continuation_record->items.clear();
-  for (const auto& pair : details->pairs) {
-    continuation_record->items.push_back(pair.first);
-    const bool is_pushable = std::any_of(pushable.begin(), pushable.end(), [&](const auto& p) {
-      return p.first == pair.first;
-    });
-    if (is_pushable) {
-      continuation_record->items.push_back(index_node(
-          var_node(details->binder, pair.second->pos), pair.first, pair.second->pos));
-    } else {
-      continuation_record->items.push_back(pair.second);
-    }
-  }
-  auto continuation_map = copy_node(map_step);
-  continuation_map->items.clear();
-  continuation_map->items.push_back(var_node("_INPUT", map_step->pos));
-  if (details->explicit_binder) continuation_map->items.push_back(map_step->items[1]);
-  continuation_map->items.push_back(std::move(continuation_record));
+  const NodePtr continuation_map = fallthrough_continuation_map(map_step, *details, pushable);
   // What stayed behind the MAP runs over the rows the continuation's MAP made.
   std::vector<NodePtr> continuation_steps{continuation_map};
   if (custom_raises) continuation_steps.insert(continuation_steps.end(), map_it + 1, steps.end());
