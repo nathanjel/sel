@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { compile, Value, RecordShape } from '../js/src/sel.mjs';
+import { compile, Value } from '../js/src/sel.mjs';
 import { parse } from '../js/src/parser.mjs';
 import { evalNode, Context } from '../js/src/eval.mjs';
 import { optimizeAstLogical, unwindPipeline } from '../js/src/optimizer.mjs';
 import { decodeSource, fromCodePoints, toCodePoints } from '../js/src/utf8.mjs';
-import { structuralHash } from '../js/src/value.mjs';
+import { structuralHash, RecordShape } from '../js/src/value.mjs';
 import * as DEC from '../js/src/decimal.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -509,6 +509,27 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
   });
   expectOk('register refuses a reserved word', () => {
     assert.throws(() => register('NULL', 0, 0, () => Value.text('x')), RangeError);
+  });
+  // The deprecated public register is registerFunction's strict path (spec §8.1).
+  expectOk('register refuses a lazy or binding host function', () => {
+    assert.throws(() => register('T04_LAZY', 1, 2, () => Value.text('x'), { lazy: true }), TypeError);
+    assert.throws(() => register({ name: 'T04_BINDS', min: 2, max: 2, binds: true, fn: () => Value.text('x') }), TypeError);
+    assert.throws(() => register({ name: 'T04_RULE', min: 1, max: 3, arityError: () => null, fn: () => Value.text('x') }), TypeError);
+    assert.throws(() => compile('T04_LAZY(1)'), (e) => e.code === 'E_UNKNOWN_FUNC');
+  });
+  expectOk('register refuses a malformed name and an inverted arity', () => {
+    assert.throws(() => register('bad name!', 0, 0, () => Value.text('x')), TypeError);
+    assert.throws(() => register('T04_ARX', 3, 1, () => Value.text('x')), RangeError);
+    assert.throws(() => register('T04_INF', 0, Infinity, () => Value.text('x')), RangeError);
+  });
+  expectOk('register: a native return value is a TypeError, never a result', () => {
+    register('T04_NUMRET', 0, 0, () => 42);
+    assert.throws(() => compile('T04_NUMRET()').run(), TypeError);
+  });
+  expectOk('register: a missing max is min, and overwrite: false refuses a repeat', () => {
+    register({ name: 'T04_ONE', min: 1, fn: (a) => a.val(0) });
+    assert.throws(() => compile('T04_ONE(1, 2)'), (e) => e.code === 'E_ARITY');
+    assert.throws(() => register({ name: 'T04_ONE', min: 1, overwrite: false, fn: (a) => a.val(0) }), Error);
   });
 }
 

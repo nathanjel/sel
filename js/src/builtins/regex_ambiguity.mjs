@@ -59,7 +59,7 @@ const has = (rs, c) => {
 
 // `i`: simple case folding restricted to what an ASCII pattern can reach -- the
 // ASCII case mirror, plus U+212A with k/K and U+017F with s/S.
-export function fold(rs) {
+function fold(rs) {
   const extra = [];
   for (let i = 0; i < rs.length; i += 2) {
     const a = rs[i];

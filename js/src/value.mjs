@@ -96,15 +96,13 @@ const SHAPE_CACHE_MAX_CHARS = 262144;
 const SHAPE_CACHE_TOTAL_CHARS = 4194304;
 let shapeCacheChars = 0;
 
-// The one shape object for these keys (interned while the cache holds it), so
-// rows built by different calls share their shape and shape-keyed caches hit.
-export function internRecordShape(keys) { return recordShape(keys); }
-
 // The shape last asked for by key list: a run of rows with the same keys matches it by
-// length and pointer compares, without building the JSON signature (JS-P9).
+// length and pointer compares, without building the JSON signature.
 let lastKeyedShape = null;
 
-function recordShape(keys) {
+// The one shape object for these keys (interned while the cache holds it), so
+// rows built by different calls share their shape and shape-keyed caches hit.
+export function recordShape(keys) {
   const last = lastKeyedShape;
   if (last !== null && last.keys.length === keys.length) {
     let i = 0;

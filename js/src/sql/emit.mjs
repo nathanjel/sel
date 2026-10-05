@@ -43,7 +43,7 @@ function slotIndex(s) {
 //
 // split/join is literal and global, which is exactly str.replace's contract.
 // Emit.ident already used this idiom for the same reason; these sites did not.
-export function fillSlot(tpl, slot, value) {
+function fillSlot(tpl, slot, value) {
   return tpl.split(slot).join(value);
 }
 

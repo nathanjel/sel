@@ -5,8 +5,9 @@ import { BUILTIN_MANIFEST, BINDING_FORMS } from './_builtin_manifest.mjs';
 import { RESERVED, asciiUpper } from './lexer.mjs';
 import { Value } from './value.mjs';
 
-// A host's own binding function (register(..., { binds: true }), examples/
-// fn-complex) has no manifest forms; it gets the two classic shapes.
+// A binding function the manifest does not know (one defined in place, as
+// examples/fn-complex does with define()) has no manifest forms; it gets the
+// two classic shapes.
 const GENERIC_FORMS = Object.freeze([
   { scopes: ['outer', 'inner'], when: null, binds: ['_', '_K'] },
   { scopes: ['outer', 'binder', 'inner'], when: { arg: 1, is: 'name' }, binds: ['_K'] },
@@ -91,29 +92,33 @@ export function assertManifestCovered() {
   }
 }
 
+// DEPRECATED public spelling, kept for one release: use registerFunction().
+// It used to register anything -- a lazy or binding function, any name, an
+// arity with min > max, an fn whose native return value leaked out of
+// evaluate() -- which SPEC §8.1 does not allow a host function. It now takes
+// the same strict, validated path: `{ lazy, binds, arityError, compileCheck }`
+// are refused, a missing max means max = min, and `overwrite: false` still
+// refuses a name already registered.
 export function register(nameOrSpec, min, max, fn, options = {}) {
   const spec = typeof nameOrSpec === 'string'
     ? { ...options, name: nameOrSpec, min, max, fn }
     : nameOrSpec;
-  const name = spec.name.toUpperCase();
-  // A shipped builtin is not replaceable (JS-C42): the optimiser and the math
-  // plan classify a call by its name, so a replacement would run in some
-  // contexts and be ignored in others. Only a host's own names go through here.
-  if (RESERVED.has(name)) throw new RangeError(`${name} is a reserved word`);
-  if (Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, name)
-      || (table.has(name) && !hostNames.has(name))) {
-    throw new RangeError(`${name} is a builtin; a host function cannot replace it`);
+  if (spec === null || typeof spec !== 'object') {
+    throw new TypeError('register takes (name, min, max, fn) or a { name, min, max, fn } spec');
   }
-  if (spec.overwrite === false && table.has(name)) {
-    throw new Error(`SEL function ${name} defined twice`);
+  for (const key of ['lazy', 'binds', 'arityError', 'compileCheck']) {
+    if (spec[key]) {
+      throw new TypeError(`SEL function ${String(spec.name)}: a host function is strict (spec §8.1); `
+        + `'${key}' is not supported`);
+    }
   }
-  table.set(name, makeSpec(spec));
-  hostNames.add(name);
-  return table.get(name);
+  const key = typeof spec.name === 'string' ? spec.name.toUpperCase() : spec.name;
+  if (spec.overwrite === false && hostNames.has(key)) {
+    throw new Error(`SEL function ${key} defined twice`);
+  }
+  registerFunction(spec.name, spec.min, spec.max === undefined ? spec.min : spec.max, spec.fn);
+  return table.get(key);
 }
-
-export const registerBuiltin = register;
-
 
 // An application's own strict function (spec/SPEC.md §8.1). It adds to the
 // language and never changes it: a builtin's name or a reserved word is

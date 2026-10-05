@@ -5,8 +5,8 @@ import { parse } from './parser.mjs';
 import { Context, evalNode, MAX_DEPTH } from './eval.mjs';
 import { RecordShape, Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError, fail } from './errors.mjs';
-import { names, register, registerBuiltin, registerFunction, bindingForm } from './registry.mjs';
-import { optimizeAst, optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
+import { names, register, registerFunction, bindingForm } from './registry.mjs';
+import { optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
 
 export class Program {
   constructor(source, ast) {
@@ -38,7 +38,7 @@ export class Program {
   // The optimised tree run() evaluates, built once per `ast`.
   physicalAst() {
     if (this._physicalOf !== this.ast) {
-      this._physical = optimizeAst(this.ast);
+      this._physical = optimizeAstInMemory(this.ast);
       this._physicalOf = this.ast;
     }
     return this._physical;
@@ -231,6 +231,13 @@ export function functionNames() { return names(); }
 // evaluator constructs one, and C++ and Lisp never exposed it. Exporting it in
 // three hosts and not the other two was an accident of what was convenient to
 // import here.
+//
+// DEPRECATED, kept for one release and marked so in sel.d.ts: `register` and
+// its alias `registerBuiltin` (now the same strict path as registerFunction),
+// the optimiser entry points (`optimizeAst` is optimizeAstInMemory under an
+// older name) and `RecordShape`, which no public call accepts or returns.
+const registerBuiltin = register;
+const optimizeAst = optimizeAstInMemory;
 export {
   RecordShape, Value, SelError, NONE, TEXT, BIN, BOOL, register, registerBuiltin, registerFunction,
   optimizeAst, optimizeAstLogical, optimizeAstInMemory,

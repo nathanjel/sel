@@ -158,7 +158,7 @@ const DEC_ONE = { neg: false, digits: 1n, scale: 0 };
 // where the plain tree reads it when the operator runs (SPEC 3.4).
 const asNum = (x, pos) => (x instanceof Value ? x.asDecimal(pos) : x);
 
-export function evalMathPlan(plan, ctx) {
+function evalMathPlan(plan, ctx) {
   const scratchpad = new Array(plan.scratchpadSize);
   for (let i = 0; i < plan.steps.length; i++) {
     const step = plan.steps[i];

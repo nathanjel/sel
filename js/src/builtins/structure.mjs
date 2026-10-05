@@ -1,4 +1,4 @@
-import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, internRecordShape } from '../value.mjs';
+import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, recordShape } from '../value.mjs';
 import * as D from '../decimal.mjs';
 import { define, hostArity } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
@@ -443,7 +443,7 @@ function rowPlan(left, rside, matched, b1, b2) {
       if (rcat[i] === SCALAR && !leftNames.has(upperName(key))) put(key, OP_RIGHT_SLOT, i);
     });
   }
-  return { shape: internRecordShape(keys), ops: Uint8Array.from(ops), slots: Int32Array.from(slots) };
+  return { shape: recordShape(keys), ops: Uint8Array.from(ops), slots: Int32Array.from(slots) };
 }
 
 // Only two facts about a field decide a joined row (spec §7.4): on the left,

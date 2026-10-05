@@ -644,5 +644,4 @@ function optimizeRoot(ast, physical, options) {
 
 export function optimizeAstLogical(ast, options = {}) { return optimizeRoot(ast, false, options); }
 export function optimizeAstInMemory(ast) { return optimizeRoot(ast, true, {}); }
-export function optimizeAst(ast) { return optimizeAstInMemory(ast); }
 export { PIPELINE_OPS, unwindPipeline, buildPipeline };

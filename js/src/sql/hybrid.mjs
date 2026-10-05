@@ -23,7 +23,7 @@
 
 import { Program, Value } from '../sel.mjs';
 import { MAX_DEPTH } from '../eval.mjs';
-import { optimizeAstLogical, unwindPipeline, buildPipeline, PIPELINE_OPS } from '../optimizer.mjs';
+import { optimizeAstLogical, unwindPipeline, buildPipeline } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
@@ -988,4 +988,3 @@ export function executeHybrid(plan, dbRunner, context = null) {
   return plan.continuationProgram.run(root);
 }
 
-export { PIPELINE_OPS };
