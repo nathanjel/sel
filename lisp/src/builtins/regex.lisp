@@ -1094,27 +1094,27 @@ subject this long is where it happens."
           (call-with-regex-stack
            (length folded)
            (lambda ()
-          (%text
-           (with-output-to-string (out)
-             (let ((last 0)
-                   (from 0)
-                   (size 0)          ; what has been written so far, for the cap
-                   (n (length folded)))
-               (loop
-                 (when (> from n) (return))
-                 (multiple-value-bind (start end reg-starts reg-ends)
-                     (regex-scan (if (zerop from) scanner (funcall tail-scanner))
-                                 folded :start from)
-                   (when (null start) (return))
-                   (let ((expansion (expand-replacement repl subject start end
-                                                        reg-starts reg-ends at)))
-                     ;; Refused as soon as the result would pass MAX_TEXT_LEN
-                     ;; (SPEC 6.4), before more of it is built.
-                     (incf size (+ (- start last) (length expansion)))
-                     (check-text-cap size (args-pos a))
-                     (write-string subject out :start last :end start)
-                     (write-string expansion out))
-                   (setf last end)
-                   ;; Advance a whole code point so a zero-width match cannot loop.
-                   (setf from (if (= start end) (1+ start) end))))
-               (write-string (subseq subject (min last (length subject))) out)))))))))))
+             (%text
+              (with-output-to-string (out)
+                (let ((last 0)
+                      (from 0)
+                      (size 0)          ; what has been written so far, for the cap
+                      (n (length folded)))
+                  (loop
+                    (when (> from n) (return))
+                    (multiple-value-bind (start end reg-starts reg-ends)
+                        (regex-scan (if (zerop from) scanner (funcall tail-scanner))
+                                    folded :start from)
+                      (when (null start) (return))
+                      (let ((expansion (expand-replacement repl subject start end
+                                                           reg-starts reg-ends at)))
+                        ;; Refused as soon as the result would pass MAX_TEXT_LEN
+                        ;; (SPEC 6.4), before more of it is built.
+                        (incf size (+ (- start last) (length expansion)))
+                        (check-text-cap size (args-pos a))
+                        (write-string subject out :start last :end start)
+                        (write-string expansion out))
+                      (setf last end)
+                      ;; Advance a whole code point so a zero-width match cannot loop.
+                      (setf from (if (= start end) (1+ start) end))))
+                  (write-string (subseq subject (min last (length subject))) out)))))))))))

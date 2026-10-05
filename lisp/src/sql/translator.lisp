@@ -2881,401 +2881,401 @@ can say about a bucket on its own."
               ;; its groups, and is rendered in the bucket's own frame
               ;; (with-group).
               (let ((over-groups (eq (relational-plan-bucket plan) :open)))
-              (when (and (eq (relational-plan-bucket plan) :open)
-                         (not (member sname '("FILTER" "MAP") :test #'equal)))
-                (setf (relational-plan-bucket plan) :sealed))
-              (cond
-                ((equal sname "FILTER")
-                 ;; A FILTER over a bare bucket whose members are spent: SQL
-                 ;; has only the keys left, and SEL's value is still a map of
-                 ;; groups.
-                 (when (eq (relational-plan-bucket plan) :sealed)
-                   (refuse "E_SQL_SHAPE"
-                           "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping"
-                           pos))
-                 ;; A FILTER after a LIMIT or OFFSET is a WHERE over the rows
-                 ;; that survived them, grouped or not -- SEL applies the TAKE
-                 ;; first, and a HAVING would run before it. Otherwise a FILTER
-                 ;; directly after a grouping is its HAVING, and an ORDER BY in
-                 ;; between changes nothing (HAVING then ORDER BY is
-                 ;; sort-then-filter's rows).
-                 (when (or (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (and (null (relational-plan-group-by plan))
-                                ;; (A sort does NOT force the wrap: the WHERE goes in the
-                                ;; same SELECT, beside the ORDER BY, because a derived table
-                                ;; does not keep an ORDER BY that has no LIMIT beside it and
-                                ;; the rows would come back in no order; a filter commutes
-                                ;; with a stable sort, so the rows and their order are the same.)
-                                (or (relational-plan-projections plan)
-                                    (relational-plan-select-cols plan)
-                                    (relational-plan-distinct plan))))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let (binder pred)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" pred (second args)))
-                     ((= (length args) 3)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args)) pred (third args)))
-                     (t
-                      (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
-                   (if (relational-plan-group-by plan)
-                       (setf (relational-plan-having plan)
-                             (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
-                       (setf (relational-plan-filters plan)
-                             (append (relational-plan-filters plan) (list (list binder pred pos)))))))
-
-                ((equal sname "BUCKET")
-                 ;; A bucket over a bare bucket's rows: SQL has only the keys
-                 ;; (open) or has spent the members (sealed); either way SEL's
-                 ;; value is a map of groups and re-grouping it is a different
-                 ;; program.
-                 (when (relational-plan-bucket plan)
-                   (refuse "E_SQL_SHAPE"
-                           "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
-                           pos))
-                 ;; Groups appear in order of their first member, and the members
-                 ;; were sorted: a GROUP BY returns its groups in no order at all,
-                 ;; and the ORDER BY beneath it is dropped by the servers. The sort
-                 ;; cannot survive, so the step is refused here, at the call and
-                 ;; before its arguments (the first refusal in source order), and a
-                 ;; hybrid plan keeps the sorted rows in SQL and groups them in
-                 ;; memory.
-                 (when (or (relational-plan-order-by plan) (relational-plan-order-dropped plan))
-                   (refuse "E_SQL_SHAPE"
-                           "a BUCKET over sorted rows would return its groups in no order, where SEL has them in the order of their first member in the sorted list"
-                           pos))
-                 (when (or (relational-plan-group-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (relational-plan-distinct plan)
-                           (relational-plan-order-by plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let (binder key-node agg-node)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" key-node (second args) agg-node nil))
-                     ((= (length args) 3)
-                      (setf binder "_" key-node (second args) agg-node (third args)))
-                     ((= (length args) 4)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sname) (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args))
-                            key-node (third args)
-                            agg-node (fourth args)))
-                     (t
-                      (refuse "E_ARITY" (format nil "~a takes 2 to 4 arguments" sname) pos)))
-
-                   ;; A bare bucket's key is an index key (spec §7.4): one text
-                   ;; or number. A list or record key is refused by the
-                   ;; evaluator, and the boolean and binary kinds are refused
-                   ;; below, once known.
-                   (when (and (null agg-node) (not (clist-p key-node))
-                              (or (eq (snode-kind key-node) :list)
-                                  (and (eq (snode-kind key-node) :call)
-                                       (member (sel::node-s key-node) '("LIST" "RECORD") :test #'equal))))
+                (when (and (eq (relational-plan-bucket plan) :open)
+                           (not (member sname '("FILTER" "MAP") :test #'equal)))
+                  (setf (relational-plan-bucket plan) :sealed))
+                (cond
+                  ((equal sname "FILTER")
+                   ;; A FILTER over a bare bucket whose members are spent: SQL
+                   ;; has only the keys left, and SEL's value is still a map of
+                   ;; groups.
+                   (when (eq (relational-plan-bucket plan) :sealed)
                      (refuse "E_SQL_SHAPE"
-                             "a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several"
-                             (snode-pos key-node)))
-                   (let ((group-by '()))
+                             "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping"
+                             pos))
+                   ;; A FILTER after a LIMIT or OFFSET is a WHERE over the rows
+                   ;; that survived them, grouped or not -- SEL applies the TAKE
+                   ;; first, and a HAVING would run before it. Otherwise a FILTER
+                   ;; directly after a grouping is its HAVING, and an ORDER BY in
+                   ;; between changes nothing (HAVING then ORDER BY is
+                   ;; sort-then-filter's rows).
+                   (when (or (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (and (null (relational-plan-group-by plan))
+                                  ;; (A sort does NOT force the wrap: the WHERE goes in the
+                                  ;; same SELECT, beside the ORDER BY, because a derived table
+                                  ;; does not keep an ORDER BY that has no LIMIT beside it and
+                                  ;; the rows would come back in no order; a filter commutes
+                                  ;; with a stable sort, so the rows and their order are the same.)
+                                  (or (relational-plan-projections plan)
+                                      (relational-plan-select-cols plan)
+                                      (relational-plan-distinct plan))))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let (binder pred)
                      (cond
-                       ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
-                            (and (not (clist-p key-node)) (eq (snode-kind key-node) :list)))
-                        (dolist (k-arg (sel::node-items key-node))
-                          (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
-                       ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
-                        (loop for (alias . v-node) in (record-fields tr key-node) do
-                          (push (list alias binder v-node (snode-pos v-node)) group-by)))
+                       ((= (length args) 2)
+                        (setf binder "_" pred (second args)))
+                       ((= (length args) 3)
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args)) pred (third args)))
                        (t
-                        (push (list nil binder key-node (snode-pos key-node)) group-by)))
-                     (setf (relational-plan-group-by plan) (nreverse group-by)))
-                   (setf (relational-plan-bucket plan) (if agg-node nil :open))
-                   (setf (relational-plan-bare-key plan) (null agg-node))
-                   (bucket-projection tr plan binder agg-node)))
+                        (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
+                     (if (relational-plan-group-by plan)
+                         (setf (relational-plan-having plan)
+                               (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
+                         (setf (relational-plan-filters plan)
+                               (append (relational-plan-filters plan) (list (list binder pred pos)))))))
 
-                ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
-                 ;; The steps before the LINK refuse first, as written: their
-                 ;; keys (a sort's, say) are otherwise checked only when the
-                 ;; statement is rendered, after the LINK's predicate was --
-                 ;; which reported the LINK's refusal where the other four
-                 ;; hosts report the earlier step's (review 2026-09-25 SQL-03,
-                 ;; found by the SQL fuzzer).
-                 (when (or (relational-plan-order-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-group-by plan))
-                   ;; A check, its fragment discarded: the slots it created are
-                   ;; discarded with it, or `params` mode binds a value the
-                   ;; statement has no place for (CPP-C57, LISP-C40).
-                   (let ((params (translator-params tr))
-                         (kinds (translator-param-kinds tr))
-                         (count (translator-param-count tr)))
-                     (compile-statement tr plan)
-                     (setf (translator-params tr) params
-                           (translator-param-kinds tr) kinds
-                           (translator-param-count tr) count)))
-                 ;; A join returns its rows in no order, and SEL's are the left
-                 ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
-                 ;; derived table drops) cannot pass through a JOIN carrying their
-                 ;; sort. After the earlier steps' own refusals, which come first
-                 ;; as written.
-                 (when (or (relational-plan-order-dropped plan)
-                           (and (relational-plan-order-by plan)
-                                (null (relational-plan-limit plan))
-                                (null (relational-plan-offset plan))))
-                   (refuse "E_SQL_SHAPE"
-                           (format nil "a ~a over sorted rows would return them in no order, where SEL has the left list's order" sname)
-                           pos))
-                 (when (or (relational-plan-group-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (relational-plan-distinct plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let* ((is-left (equal sname "LINK_LEFT"))
-                        (step-args args))
-                   (unless (or (= (length step-args) 3) (= (length step-args) 5))
-                     (refuse "E_ARITY" (format nil "~a takes 2 or 4 arguments" sname) pos))
-                   (let ((right-node (second step-args)))
-                     (unless (and (not (clist-p right-node)) (eq (snode-kind right-node) :var))
-                       (refuse "E_SQL_SHAPE" (format nil "~a requires a relation binding as second argument" sname) (snode-pos right-node)))
-                     (let ((right-name (sel::node-s right-node)))
-                       (unless (bindings-has (translator-bindings tr) right-name)
-                         (refuse "E_SQL_UNBOUND" (format nil "relation ~a is not bound" right-name) (snode-pos right-node)))
-                       (let ((right-b (bindings-get (translator-bindings tr) right-name (snode-pos right-node))))
-                         (unless (eq (binding-kind right-b) :relation)
-                           (refuse "E_SQL_SHAPE" (format nil "~a is not a relation binding" right-name) (snode-pos right-node)))
-                         (let* ((right-spec (binding-spec right-b))
-                                left-names right-names pred)
-                           (cond
-                             ((= (length step-args) 3)
-                              ;; The evaluator names a three-argument LINK's
-                              ;; sides after the variable their pipeline starts
-                              ;; from, unless an earlier LINK is in the way
-                              ;; (spec §7.4).
-                              (setf left-names (if (and (null (relational-plan-joins plan))
-                                                        (relational-plan-root-name plan))
-                                                   (list (relational-plan-root-name plan))
-                                                   '())
-                                    right-names (list right-name)
-                                    pred (third step-args)))
-                             ((= (length step-args) 5)
-                              (unless (is-binder-name (third step-args))
-                                (refuse "E_SQL_SHAPE" (format nil "the left binder of ~a must be a bare name" sname) (snode-pos (third step-args))))
-                              (unless (is-binder-name (fourth step-args))
-                                (refuse "E_SQL_SHAPE" (format nil "the right binder of ~a must be a bare name" sname) (snode-pos (fourth step-args))))
-                              (setf left-names (list (sel::node-s (third step-args)))
-                                    right-names (list (sel::node-s (fourth step-args)))
-                                    pred (fifth step-args))))
-                           (let ((j-plan (make-join-plan
-                                          :type (if is-left :left :inner)
-                                          :source-name right-name
-                                          :source-relation right-spec
-                                          :source-table (getf right-spec :from)
-                                          ;; The SQL alias of a table the binding
-                                          ;; leaves unaliased: the five-argument
-                                          ;; form's right binder, `_2` otherwise.
-                                          ;; An alias, not a SEL name.
-                                          :source-alias (or (getf right-spec :alias)
-                                                            (if (= (length step-args) 5)
-                                                                (first right-names)
-                                                                "_2"))
-                                          :left-names left-names
-                                          :right-names right-names
-                                          :on-pred pred
-                                          :pos pos)))
-                             ;; One table alias per occurrence: a relation joined
-                             ;; again under an alias the statement already uses
-                             ;; (a self-join, or a chain back to an aliased
-                             ;; relation) rendered it twice, which the server
-                             ;; rejects (review 2026-09-28 SQL-09). The program
-                             ;; stays in memory.
-                             (let ((open (cons (let ((a (relational-plan-source-alias plan)))
-                                                 (if (null a)
-                                                     (relation-alias (relational-plan-source-relation plan))
-                                                     a))
-                                               (mapcar #'join-plan-source-alias (relational-plan-joins plan))))
-                                   (alias (join-plan-source-alias j-plan)))
-                               (when (some (lambda (a) (and (stringp a) (stringp alias)
-                                                            (string= (sel::ascii-upcase a)
-                                                                     (sel::ascii-upcase alias))))
-                                           open)
-                                 (refuse "E_SQL_SHAPE"
-                                         (format nil "~a would be joined under the table alias ~a, which ~
+                  ((equal sname "BUCKET")
+                   ;; A bucket over a bare bucket's rows: SQL has only the keys
+                   ;; (open) or has spent the members (sealed); either way SEL's
+                   ;; value is a map of groups and re-grouping it is a different
+                   ;; program.
+                   (when (relational-plan-bucket plan)
+                     (refuse "E_SQL_SHAPE"
+                             "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
+                             pos))
+                   ;; Groups appear in order of their first member, and the members
+                   ;; were sorted: a GROUP BY returns its groups in no order at all,
+                   ;; and the ORDER BY beneath it is dropped by the servers. The sort
+                   ;; cannot survive, so the step is refused here, at the call and
+                   ;; before its arguments (the first refusal in source order), and a
+                   ;; hybrid plan keeps the sorted rows in SQL and groups them in
+                   ;; memory.
+                   (when (or (relational-plan-order-by plan) (relational-plan-order-dropped plan))
+                     (refuse "E_SQL_SHAPE"
+                             "a BUCKET over sorted rows would return its groups in no order, where SEL has them in the order of their first member in the sorted list"
+                             pos))
+                   (when (or (relational-plan-group-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (relational-plan-distinct plan)
+                             (relational-plan-order-by plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let (binder key-node agg-node)
+                     (cond
+                       ((= (length args) 2)
+                        (setf binder "_" key-node (second args) agg-node nil))
+                       ((= (length args) 3)
+                        (setf binder "_" key-node (second args) agg-node (third args)))
+                       ((= (length args) 4)
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sname) (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args))
+                              key-node (third args)
+                              agg-node (fourth args)))
+                       (t
+                        (refuse "E_ARITY" (format nil "~a takes 2 to 4 arguments" sname) pos)))
+
+                     ;; A bare bucket's key is an index key (spec §7.4): one text
+                     ;; or number. A list or record key is refused by the
+                     ;; evaluator, and the boolean and binary kinds are refused
+                     ;; below, once known.
+                     (when (and (null agg-node) (not (clist-p key-node))
+                                (or (eq (snode-kind key-node) :list)
+                                    (and (eq (snode-kind key-node) :call)
+                                         (member (sel::node-s key-node) '("LIST" "RECORD") :test #'equal))))
+                       (refuse "E_SQL_SHAPE"
+                               "a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several"
+                               (snode-pos key-node)))
+                     (let ((group-by '()))
+                       (cond
+                         ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
+                              (and (not (clist-p key-node)) (eq (snode-kind key-node) :list)))
+                          (dolist (k-arg (sel::node-items key-node))
+                            (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
+                         ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
+                          (loop for (alias . v-node) in (record-fields tr key-node) do
+                            (push (list alias binder v-node (snode-pos v-node)) group-by)))
+                         (t
+                          (push (list nil binder key-node (snode-pos key-node)) group-by)))
+                       (setf (relational-plan-group-by plan) (nreverse group-by)))
+                     (setf (relational-plan-bucket plan) (if agg-node nil :open))
+                     (setf (relational-plan-bare-key plan) (null agg-node))
+                     (bucket-projection tr plan binder agg-node)))
+
+                  ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
+                   ;; The steps before the LINK refuse first, as written: their
+                   ;; keys (a sort's, say) are otherwise checked only when the
+                   ;; statement is rendered, after the LINK's predicate was --
+                   ;; which reported the LINK's refusal where the other four
+                   ;; hosts report the earlier step's (review 2026-09-25 SQL-03,
+                   ;; found by the SQL fuzzer).
+                   (when (or (relational-plan-order-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-group-by plan))
+                     ;; A check, its fragment discarded: the slots it created are
+                     ;; discarded with it, or `params` mode binds a value the
+                     ;; statement has no place for (CPP-C57, LISP-C40).
+                     (let ((params (translator-params tr))
+                           (kinds (translator-param-kinds tr))
+                           (count (translator-param-count tr)))
+                       (compile-statement tr plan)
+                       (setf (translator-params tr) params
+                             (translator-param-kinds tr) kinds
+                             (translator-param-count tr) count)))
+                   ;; A join returns its rows in no order, and SEL's are the left
+                   ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
+                   ;; derived table drops) cannot pass through a JOIN carrying their
+                   ;; sort. After the earlier steps' own refusals, which come first
+                   ;; as written.
+                   (when (or (relational-plan-order-dropped plan)
+                             (and (relational-plan-order-by plan)
+                                  (null (relational-plan-limit plan))
+                                  (null (relational-plan-offset plan))))
+                     (refuse "E_SQL_SHAPE"
+                             (format nil "a ~a over sorted rows would return them in no order, where SEL has the left list's order" sname)
+                             pos))
+                   (when (or (relational-plan-group-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (relational-plan-distinct plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let* ((is-left (equal sname "LINK_LEFT"))
+                          (step-args args))
+                     (unless (or (= (length step-args) 3) (= (length step-args) 5))
+                       (refuse "E_ARITY" (format nil "~a takes 2 or 4 arguments" sname) pos))
+                     (let ((right-node (second step-args)))
+                       (unless (and (not (clist-p right-node)) (eq (snode-kind right-node) :var))
+                         (refuse "E_SQL_SHAPE" (format nil "~a requires a relation binding as second argument" sname) (snode-pos right-node)))
+                       (let ((right-name (sel::node-s right-node)))
+                         (unless (bindings-has (translator-bindings tr) right-name)
+                           (refuse "E_SQL_UNBOUND" (format nil "relation ~a is not bound" right-name) (snode-pos right-node)))
+                         (let ((right-b (bindings-get (translator-bindings tr) right-name (snode-pos right-node))))
+                           (unless (eq (binding-kind right-b) :relation)
+                             (refuse "E_SQL_SHAPE" (format nil "~a is not a relation binding" right-name) (snode-pos right-node)))
+                           (let* ((right-spec (binding-spec right-b))
+                                  left-names right-names pred)
+                             (cond
+                               ((= (length step-args) 3)
+                                ;; The evaluator names a three-argument LINK's
+                                ;; sides after the variable their pipeline starts
+                                ;; from, unless an earlier LINK is in the way
+                                ;; (spec §7.4).
+                                (setf left-names (if (and (null (relational-plan-joins plan))
+                                                          (relational-plan-root-name plan))
+                                                     (list (relational-plan-root-name plan))
+                                                     '())
+                                      right-names (list right-name)
+                                      pred (third step-args)))
+                               ((= (length step-args) 5)
+                                (unless (is-binder-name (third step-args))
+                                  (refuse "E_SQL_SHAPE" (format nil "the left binder of ~a must be a bare name" sname) (snode-pos (third step-args))))
+                                (unless (is-binder-name (fourth step-args))
+                                  (refuse "E_SQL_SHAPE" (format nil "the right binder of ~a must be a bare name" sname) (snode-pos (fourth step-args))))
+                                (setf left-names (list (sel::node-s (third step-args)))
+                                      right-names (list (sel::node-s (fourth step-args)))
+                                      pred (fifth step-args))))
+                             (let ((j-plan (make-join-plan
+                                            :type (if is-left :left :inner)
+                                            :source-name right-name
+                                            :source-relation right-spec
+                                            :source-table (getf right-spec :from)
+                                            ;; The SQL alias of a table the binding
+                                            ;; leaves unaliased: the five-argument
+                                            ;; form's right binder, `_2` otherwise.
+                                            ;; An alias, not a SEL name.
+                                            :source-alias (or (getf right-spec :alias)
+                                                              (if (= (length step-args) 5)
+                                                                  (first right-names)
+                                                                  "_2"))
+                                            :left-names left-names
+                                            :right-names right-names
+                                            :on-pred pred
+                                            :pos pos)))
+                               ;; One table alias per occurrence: a relation joined
+                               ;; again under an alias the statement already uses
+                               ;; (a self-join, or a chain back to an aliased
+                               ;; relation) rendered it twice, which the server
+                               ;; rejects (review 2026-09-28 SQL-09). The program
+                               ;; stays in memory.
+                               (let ((open (cons (let ((a (relational-plan-source-alias plan)))
+                                                   (if (null a)
+                                                       (relation-alias (relational-plan-source-relation plan))
+                                                       a))
+                                                 (mapcar #'join-plan-source-alias (relational-plan-joins plan))))
+                                     (alias (join-plan-source-alias j-plan)))
+                                 (when (some (lambda (a) (and (stringp a) (stringp alias)
+                                                              (string= (sel::ascii-upcase a)
+                                                                       (sel::ascii-upcase alias))))
+                                             open)
+                                   (refuse "E_SQL_SHAPE"
+                                           (format nil "~a would be joined under the table alias ~a, which ~
 this statement already uses; bind the relation a second time under another alias"
-                                                 right-name alias)
-                                         (snode-pos right-node))))
-                             (setf (relational-plan-joins plan)
-                                   (append (relational-plan-joins plan) (list j-plan))))))))))
+                                                   right-name alias)
+                                           (snode-pos right-node))))
+                               (setf (relational-plan-joins plan)
+                                     (append (relational-plan-joins plan) (list j-plan))))))))))
 
-                ((equal sname "SELECT_COLS")
-                 (when (or (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-group-by plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let* ((col-args (rest args))
-                        (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
-                                   (sel::node-items (first col-args))
-                                   col-args))
-                        (cols '()))
-                   (dolist (item items)
-                     (unless (eq (snode-kind item) :text)
-                       (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
-                     (check-alias-name (sel::node-s item) (snode-pos item))
-                     (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
-                                           (getf (relational-plan-source-relation plan) :fields)
-                                           :test #'equal)))
-                       (when (and rawcell (getf (cdr rawcell) :raw))
-                         (refuse "E_SQL_SHAPE"
-                                 "SELECT_COLS cannot name a raw field: it is an expression, ~
-not a column of the relation, so `SELECT alias.name` would name something that is not there"
-                                 (snode-pos item))))
-                     (let* ((col (sel::node-s item))
-                            (uc (sel::ascii-upcase col))
-                            (found nil)
-                            (match-count 0))
-                       (when (getf (relational-plan-source-relation plan) :fields)
-                         (when (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)
-                           (setf found t)
-                           (incf match-count)))
-                       (dolist (j (relational-plan-joins plan))
-                         (when (and (getf (join-plan-source-relation j) :fields)
-                                    (assoc uc (getf (join-plan-source-relation j) :fields) :test #'equal))
-                           (setf found t)
-                           (incf match-count)))
-                       (when (> match-count 1)
-                         (refuse "E_SQL_SHAPE" (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" col) (snode-pos item)))
-                       (when (and (getf (relational-plan-source-relation plan) :fields) (not found))
-                         (refuse "E_SQL_SHAPE" (format nil "relation has no field '~a'" col) (snode-pos item)))
-                       (push col cols)))
-                   (setf (relational-plan-select-cols plan) (nreverse cols)
-                         (relational-plan-projections plan) nil)))
-
-                ((equal sname "MAP")
-                 (block map-step
-                 (when (eq (relational-plan-bucket plan) :sealed)
-                   (refuse "E_SQL_SHAPE" "a MAP over buckets must follow the BUCKET, with at most a ~
-FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping" pos))
-                 (let (binder expr)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" expr (second args)))
-                     ((= (length args) 3)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args)) expr (third args)))
-                     (t
-                      (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
-                   ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
-                   ;; MAP's body is evaluated once per group, so it is the
-                   ;; bucket's projection.
-                   (when (eq (relational-plan-bucket plan) :open)
-                     (setf (relational-plan-bucket plan) nil)
-                     (bucket-projection tr plan binder expr)
-                     (return-from map-step))
-                   ;; Whether a MAP must wrap the plan first. An ORDER BY alone
-                   ;; does not: the projection and the sort can share one
-                   ;; statement (ORDER BY may name the input's columns), and a
-                   ;; derived table is where MariaDB DROPS an ORDER BY that has
-                   ;; no LIMIT beside it -- the statement oracle's sorted rows
-                   ;; came back in table order. Everything else above the rows
-                   ;; still wraps, DISTINCT included: SELECT DISTINCT over the
-                   ;; projection is not the distinct rows projected.
+                  ((equal sname "SELECT_COLS")
                    (when (or (relational-plan-projections plan)
                              (relational-plan-select-cols plan)
                              (relational-plan-group-by plan)
-                             (relational-plan-distinct plan)
                              (relational-plan-limit plan)
                              (relational-plan-offset plan))
                      (setf plan (wrap-plan-as-derived-table tr plan)))
-                   (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
-                            (equal (sel::node-s expr) "RECORD"))
-                       (let ((projs '()))
-                         (loop for (alias . v-node) in (record-fields tr expr) do
-                           (push (list alias binder v-node) projs))
-                         (setf (relational-plan-projections plan) (nreverse projs)))
-                       (setf (relational-plan-projections plan) (list (list nil binder expr))))
-                   (setf (relational-plan-select-cols plan) nil))))
+                   (let* ((col-args (rest args))
+                          (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
+                                     (sel::node-items (first col-args))
+                                     col-args))
+                          (cols '()))
+                     (dolist (item items)
+                       (unless (eq (snode-kind item) :text)
+                         (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
+                       (check-alias-name (sel::node-s item) (snode-pos item))
+                       (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
+                                             (getf (relational-plan-source-relation plan) :fields)
+                                             :test #'equal)))
+                         (when (and rawcell (getf (cdr rawcell) :raw))
+                           (refuse "E_SQL_SHAPE"
+                                   "SELECT_COLS cannot name a raw field: it is an expression, ~
+not a column of the relation, so `SELECT alias.name` would name something that is not there"
+                                   (snode-pos item))))
+                       (let* ((col (sel::node-s item))
+                              (uc (sel::ascii-upcase col))
+                              (found nil)
+                              (match-count 0))
+                         (when (getf (relational-plan-source-relation plan) :fields)
+                           (when (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)
+                             (setf found t)
+                             (incf match-count)))
+                         (dolist (j (relational-plan-joins plan))
+                           (when (and (getf (join-plan-source-relation j) :fields)
+                                      (assoc uc (getf (join-plan-source-relation j) :fields) :test #'equal))
+                             (setf found t)
+                             (incf match-count)))
+                         (when (> match-count 1)
+                           (refuse "E_SQL_SHAPE" (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" col) (snode-pos item)))
+                         (when (and (getf (relational-plan-source-relation plan) :fields) (not found))
+                           (refuse "E_SQL_SHAPE" (format nil "relation has no field '~a'" col) (snode-pos item)))
+                         (push col cols)))
+                     (setf (relational-plan-select-cols plan) (nreverse cols)
+                           (relational-plan-projections plan) nil)))
 
-                ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
-                 (when (or (relational-plan-limit plan)
-                           (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 ;; Field bindings describe accessible reads, not a closed
-                 ;; schema for r.*. Never deduplicate an untyped whole SQL row.
-                 (unless (or (relational-plan-projections plan)
-                             (relational-plan-select-cols plan))
-                   (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
-                 ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
-                 (when (relational-plan-order-by plan)
-                   (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
-                 (setf (relational-plan-distinct plan) t))
+                  ((equal sname "MAP")
+                   (block map-step
+                   (when (eq (relational-plan-bucket plan) :sealed)
+                     (refuse "E_SQL_SHAPE" "a MAP over buckets must follow the BUCKET, with at most a ~
+FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping" pos))
+                   (let (binder expr)
+                     (cond
+                       ((= (length args) 2)
+                        (setf binder "_" expr (second args)))
+                       ((= (length args) 3)
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args)) expr (third args)))
+                       (t
+                        (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
+                     ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
+                     ;; MAP's body is evaluated once per group, so it is the
+                     ;; bucket's projection.
+                     (when (eq (relational-plan-bucket plan) :open)
+                       (setf (relational-plan-bucket plan) nil)
+                       (bucket-projection tr plan binder expr)
+                       (return-from map-step))
+                     ;; Whether a MAP must wrap the plan first. An ORDER BY alone
+                     ;; does not: the projection and the sort can share one
+                     ;; statement (ORDER BY may name the input's columns), and a
+                     ;; derived table is where MariaDB DROPS an ORDER BY that has
+                     ;; no LIMIT beside it -- the statement oracle's sorted rows
+                     ;; came back in table order. Everything else above the rows
+                     ;; still wraps, DISTINCT included: SELECT DISTINCT over the
+                     ;; projection is not the distinct rows projected.
+                     (when (or (relational-plan-projections plan)
+                               (relational-plan-select-cols plan)
+                               (relational-plan-group-by plan)
+                               (relational-plan-distinct plan)
+                               (relational-plan-limit plan)
+                               (relational-plan-offset plan))
+                       (setf plan (wrap-plan-as-derived-table tr plan)))
+                     (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
+                              (equal (sel::node-s expr) "RECORD"))
+                         (let ((projs '()))
+                           (loop for (alias . v-node) in (record-fields tr expr) do
+                             (push (list alias binder v-node) projs))
+                           (setf (relational-plan-projections plan) (nreverse projs)))
+                         (setf (relational-plan-projections plan) (list (list nil binder expr))))
+                     (setf (relational-plan-select-cols plan) nil))))
 
-                ((equal sname "TAKE")
-                 (unless (= (length args) 2)
-                   (refuse "E_ARITY" "TAKE takes 2 arguments" pos))
-                 (let ((lim (eval-int-param tr (second args) "TAKE")))
-                   (setf (relational-plan-limit plan)
-                         (if (relational-plan-limit plan)
-                             (min (relational-plan-limit plan) lim)
-                             lim))))
+                  ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
+                   (when (or (relational-plan-limit plan)
+                             (relational-plan-offset plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   ;; Field bindings describe accessible reads, not a closed
+                   ;; schema for r.*. Never deduplicate an untyped whole SQL row.
+                   (unless (or (relational-plan-projections plan)
+                               (relational-plan-select-cols plan))
+                     (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
+                   ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                   (when (relational-plan-order-by plan)
+                     (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
+                   (setf (relational-plan-distinct plan) t))
 
-                ((equal sname "DROP")
-                 (unless (= (length args) 2)
-                   (refuse "E_ARITY" "DROP takes 2 arguments" pos))
-                 (let ((off (eval-int-param tr (second args) "DROP")))
-                   ;; DROP consumes the bounded slice, not the original source.
-                   ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs
-                   ;; 11.6): DROP(2^63-1) .> DROP(1) is the offset 2^63-1, never a
-                   ;; wrapped or nested one.
-                   (let ((skipped (if (relational-plan-limit plan)
-                                      (min off (relational-plan-limit plan)) off)))
-                     (when (relational-plan-limit plan)
-                       (decf (relational-plan-limit plan) skipped))
-                     (setf (relational-plan-offset plan)
-                           (min (+ (or (relational-plan-offset plan) 0) skipped)
-                                +max-slice-count+)))))
+                  ((equal sname "TAKE")
+                   (unless (= (length args) 2)
+                     (refuse "E_ARITY" "TAKE takes 2 arguments" pos))
+                   (let ((lim (eval-int-param tr (second args) "TAKE")))
+                     (setf (relational-plan-limit plan)
+                           (if (relational-plan-limit plan)
+                               (min (relational-plan-limit plan) lim)
+                               lim))))
 
-                ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
-                 ;; A sort after a LIMIT or OFFSET sorts the rows that survived
-                 ;; them, grouped or not, so those wrap; a sort over a
-                 ;; projection, SELECT_COLS or DISTINCT wraps so its key can
-                 ;; name what they produced. A sort after a sort does not wrap:
-                 ;; the sorts are stable, so the earlier one is the later one's
-                 ;; tie-breaker, and the later one's keys go FIRST in the ORDER
-                 ;; BY (review 2026-09-15 finding V).
-                 (let ((wraps (or (relational-plan-limit plan)
-                                  (relational-plan-offset plan)
-                                  (and (not (relational-plan-group-by plan))
-                                       (or (relational-plan-projections plan)
-                                           (relational-plan-select-cols plan)
-                                           (relational-plan-distinct plan))))))
-                   ;; Sorts are stable, so an earlier sort is the later one's
-                   ;; tie-break; a derived table with no LIMIT beside its ORDER BY
-                   ;; does not keep it, and its keys may not even be columns the
-                   ;; outer level can name.
-                   (when (or (and wraps (relational-plan-order-by plan)
-                                  (null (relational-plan-limit plan))
-                                  (null (relational-plan-offset plan)))
-                             (relational-plan-order-dropped plan))
-                     (refuse "E_SQL_SHAPE"
-                             "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY"
-                             pos))
-                   (when wraps
-                     (setf plan (wrap-plan-as-derived-table tr plan))))
-                 (let ((before (length (relational-plan-order-by plan))))
-                   (analyze-sort-step tr step plan)
-                   (setf (relational-plan-order-by plan)
-                         (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
-                                         (nthcdr before (relational-plan-order-by plan)))
-                                 (subseq (relational-plan-order-by plan) 0 before)))))))))
+                  ((equal sname "DROP")
+                   (unless (= (length args) 2)
+                     (refuse "E_ARITY" "DROP takes 2 arguments" pos))
+                   (let ((off (eval-int-param tr (second args) "DROP")))
+                     ;; DROP consumes the bounded slice, not the original source.
+                     ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs
+                     ;; 11.6): DROP(2^63-1) .> DROP(1) is the offset 2^63-1, never a
+                     ;; wrapped or nested one.
+                     (let ((skipped (if (relational-plan-limit plan)
+                                        (min off (relational-plan-limit plan)) off)))
+                       (when (relational-plan-limit plan)
+                         (decf (relational-plan-limit plan) skipped))
+                       (setf (relational-plan-offset plan)
+                             (min (+ (or (relational-plan-offset plan) 0) skipped)
+                                  +max-slice-count+)))))
+
+                  ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
+                   ;; A sort after a LIMIT or OFFSET sorts the rows that survived
+                   ;; them, grouped or not, so those wrap; a sort over a
+                   ;; projection, SELECT_COLS or DISTINCT wraps so its key can
+                   ;; name what they produced. A sort after a sort does not wrap:
+                   ;; the sorts are stable, so the earlier one is the later one's
+                   ;; tie-breaker, and the later one's keys go FIRST in the ORDER
+                   ;; BY (review 2026-09-15 finding V).
+                   (let ((wraps (or (relational-plan-limit plan)
+                                    (relational-plan-offset plan)
+                                    (and (not (relational-plan-group-by plan))
+                                         (or (relational-plan-projections plan)
+                                             (relational-plan-select-cols plan)
+                                             (relational-plan-distinct plan))))))
+                     ;; Sorts are stable, so an earlier sort is the later one's
+                     ;; tie-break; a derived table with no LIMIT beside its ORDER BY
+                     ;; does not keep it, and its keys may not even be columns the
+                     ;; outer level can name.
+                     (when (or (and wraps (relational-plan-order-by plan)
+                                    (null (relational-plan-limit plan))
+                                    (null (relational-plan-offset plan)))
+                               (relational-plan-order-dropped plan))
+                       (refuse "E_SQL_SHAPE"
+                               "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY"
+                               pos))
+                     (when wraps
+                       (setf plan (wrap-plan-as-derived-table tr plan))))
+                   (let ((before (length (relational-plan-order-by plan))))
+                     (analyze-sort-step tr step plan)
+                     (setf (relational-plan-order-by plan)
+                           (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
+                                           (nthcdr before (relational-plan-order-by plan)))
+                                   (subseq (relational-plan-order-by plan) 0 before)))))))))
           ;; A derived table with no LIMIT beside its ORDER BY does not keep the order, and
           ;; this statement has no other ORDER BY: the rows would come back in no order,
           ;; where SEL's are the sorted list's. Refused at the last step (sql-translation

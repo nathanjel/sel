@@ -370,50 +370,52 @@ actual mistake and a depth cap would need a number nobody can justify."
                         (splice (nth i args))))
              (lexical (slot)
                (let* ((colon (position #\: slot))
-             (key (if colon (subseq slot 0 colon) slot))
-             (arg (if colon (subseq slot (1+ colon)) ""))
-             (val (dialect-lexical dialect key)))
-        (unless (stringp val)
-          (refuse "E_SQL_UNSUPPORTED"
-                  (format nil "a template used {~a}, ~
-      which is neither an argument nor a lexical entry of dialect ~a" slot dialect) pos))
-        (if (equal arg "")
-            (push-str val)
-            (progn
-              (when (member key expanding :test #'equal)
-                (refuse "E_SQL_UNSUPPORTED"
-                        (format nil "the ~a lexical entry ~
-      of dialect ~a expands into itself, so filling it would never finish" key dialect)
-                        pos))
-              ;; binaryCast converts a TEXT or NUM
-              ;; operand to bytes. One already BIN needs
-              ;; no conversion, and on PostgreSQL
-              ;; converting it is destructive:
-              ;; text::bytea parses its input as a bytea
-              ;; LITERAL. Every other cast is idempotent
-              ;; and applied unconditionally; this is the
-              ;; one whose input kind decides whether it
-              ;; means anything.
-              ;; {key:*} is {key:n} for every argument, joined
-              ;; with ", " (sql/MAP.md 4.2).
-              (let ((each (if (equal arg "*")
-                              (loop for n below (length args)
-                                    collect (format nil "~d" n))
-                              (list arg))))
-               (loop for one in each
-                     for at from 0
-                     do (when (> at 0) (push-str ", "))
-                        (let ((ca (and (equal key "binaryCast")
-                                       (slot-index one))))
-                          (if (and ca (< ca (length args))
-                                   (eq (fragment-kind (nth ca args)) :bin))
-                              (splice (nth ca args))
-                              (dolist (p (fill-segments
-                                          dialect
-                                          (lexical-expansion val one)
-                                          args pos (cons key expanding)))
-                                (if (stringp p) (push-str p) (push p parts))))))))))))
-    (dolist (seg segments)
+                      (key (if colon (subseq slot 0 colon) slot))
+                      (arg (if colon (subseq slot (1+ colon)) ""))
+                      (val (dialect-lexical dialect key)))
+                 (unless (stringp val)
+                   (refuse "E_SQL_UNSUPPORTED"
+                           (format nil "a template used {~a}, ~
+                                        which is neither an argument nor a lexical entry of dialect ~a"
+                                   slot dialect)
+                           pos))
+                 (if (equal arg "")
+                     (push-str val)
+                     (progn
+                       (when (member key expanding :test #'equal)
+                         (refuse "E_SQL_UNSUPPORTED"
+                                 (format nil "the ~a lexical entry ~
+                                              of dialect ~a expands into itself, so filling it would never finish"
+                                         key dialect)
+                                 pos))
+                       ;; {key:*} is {key:n} for every argument, joined with ", "
+                       ;; (sql/MAP.md 4.2).
+                       (let ((each (if (equal arg "*")
+                                       (loop for n below (length args)
+                                             collect (format nil "~d" n))
+                                       (list arg))))
+                         (loop for one in each
+                               for at from 0
+                               do (when (> at 0) (push-str ", "))
+                                  ;; binaryCast converts a TEXT or NUM operand to
+                                  ;; bytes. One already BIN needs no conversion,
+                                  ;; and on PostgreSQL converting it is
+                                  ;; destructive: text::bytea parses its input as a
+                                  ;; bytea LITERAL. Every other cast is idempotent
+                                  ;; and applied unconditionally; this is the one
+                                  ;; whose input kind decides whether it means
+                                  ;; anything.
+                                  (let ((ca (and (equal key "binaryCast")
+                                                 (slot-index one))))
+                                    (if (and ca (< ca (length args))
+                                             (eq (fragment-kind (nth ca args)) :bin))
+                                        (splice (nth ca args))
+                                        (dolist (p (fill-segments
+                                                    dialect
+                                                    (lexical-expansion val one)
+                                                    args pos (cons key expanding)))
+                                          (if (stringp p) (push-str p) (push p parts))))))))))))
+      (dolist (seg segments)
         (if (stringp seg)
             (push-str seg)
             (ecase (car seg)

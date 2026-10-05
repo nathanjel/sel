@@ -1511,25 +1511,25 @@ carry is promoted from neither, spec §7.4)."
                                 (ctx-push-frame ctx frame)))
                             (loop for item1 across items1
                                   for i of-type fixnum from 0
-                             do (let ((r1 (ensure-row-table-alias item1 b1))
-                                   (matched nil))
-                               (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
-                                     (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
-                               (when sample-r2
-                                 (flet ((try (item2)
-                                          (let ((r2 (ensure-row-table-alias item2 b2)))
-                                            (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
-                                            (when (as-bool (args-eval a pred-node) (node-pos pred-node))
-                                              (setf matched t)
-                                              (progn (check-collection-cap (incf nout) (args-pos a))
-                                                     (push (funcall projector r1 r2) out))))))
-                                   (if candidates
-                                       (dolist (j (gethash (svref left-keys i) candidates))
-                                         (try (svref items2 j)))
-                                       (loop for item2 across items2 do (try item2)))))
-                               (when (and is-left (not matched))
-                                 (progn (check-collection-cap (incf nout) (args-pos a))
-                                        (push (funcall projector r1 nil) out))))))
+                                  do (let ((r1 (ensure-row-table-alias item1 b1))
+                                           (matched nil))
+                                    (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
+                                          (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
+                                    (when sample-r2
+                                      (flet ((try (item2)
+                                               (let ((r2 (ensure-row-table-alias item2 b2)))
+                                                 (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
+                                                 (when (as-bool (args-eval a pred-node) (node-pos pred-node))
+                                                   (setf matched t)
+                                                   (progn (check-collection-cap (incf nout) (args-pos a))
+                                                          (push (funcall projector r1 r2) out))))))
+                                        (if candidates
+                                            (dolist (j (gethash (svref left-keys i) candidates))
+                                              (try (svref items2 j)))
+                                            (loop for item2 across items2 do (try item2)))))
+                                    (when (and is-left (not matched))
+                                      (progn (check-collection-cap (incf nout) (args-pos a))
+                                             (push (funcall projector r1 nil) out))))))
                         (ctx-pop-frame ctx))))))
             (make-list-value (nreverse out))))))))
 
