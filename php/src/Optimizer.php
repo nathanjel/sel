@@ -285,17 +285,11 @@ final class Optimizer
                     $r = Dec::parse((string) $right['v'], $right['pos'] ?? null);
                     if ($l !== null && $r !== null) {
                         if (in_array($op, ['+', '-', '*', '/', '%'], true)) {
-                            $value = match ($op) {
-                                '+' => Dec::add($l, $r, $node['pos']),
-                                '-' => Dec::sub($l, $r, $node['pos']),
-                                '*' => Dec::mul($l, $r, $node['pos']),
-                                '/' => Dec::div($l, $r, $node['pos']),
-                                '%' => Dec::mod($l, $r, $node['pos']),
-                            };
+                            $value = Dec::arith($op, $l, $r, $node['pos']);
                             return self::numNode(Dec::format($value), $node['pos']);
                         }
                         if (in_array($op, ['==', '!=', '<', '<=', '>', '>='], true)) {
-                            return self::boolNode(self::compareLiteral($op, Dec::cmp($l, $r)), $node['pos']);
+                            return self::boolNode(Evaluator::compareResult($op, Dec::cmp($l, $r), $node['pos']), $node['pos']);
                         }
                     }
                 } catch (\Throwable) {
@@ -317,7 +311,7 @@ final class Optimizer
             if (($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
                 && in_array($op, ['$==', '$!=', '$<', '$<=', '$>', '$>='], true)) {
                 $cmp = strcmp((string) $left['v'], (string) $right['v']) <=> 0;
-                return self::boolNode(self::compareLiteral(substr($op, 1), $cmp), $node['pos']);
+                return self::boolNode(Evaluator::compareResult(substr($op, 1), $cmp, $node['pos']), $node['pos']);
             }
             return $node;
         }
@@ -329,19 +323,6 @@ final class Optimizer
             return self::isLiteral($branch) ? self::hoistLiteral($branch, $node['pos']) : $node;
         }
         return $node;
-    }
-
-    private static function compareLiteral(string $op, int $cmp): bool
-    {
-        return match ($op) {
-            '==' => $cmp === 0,
-            '!=' => $cmp !== 0,
-            '<' => $cmp < 0,
-            '<=' => $cmp <= 0,
-            '>' => $cmp > 0,
-            '>=' => $cmp >= 0,
-            default => false,
-        };
     }
 
     /** @return ?int */

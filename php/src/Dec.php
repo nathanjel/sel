@@ -1163,6 +1163,27 @@ final class Dec
     // --- arithmetic ---------------------------------------------------------
 
     /**
+     * The five arithmetic operators by their spelling (`+ - * / %`): the one
+     * table the compound assignment and the optimizer's constant folding use.
+     * The evaluator's binary switch and the math plan call the five functions
+     * directly, per node, without this extra dispatch.
+     *
+     * @param Decimal $a
+     * @param Decimal $b
+     * @return Decimal
+     */
+    public static function arith(string $op, array $a, array $b, ?array $pos = null): array
+    {
+        return match ($op) {
+            '+' => self::add($a, $b, $pos),
+            '-' => self::sub($a, $b, $pos),
+            '*' => self::mul($a, $b, $pos),
+            '/' => self::div($a, $b, $pos),
+            '%' => self::mod($a, $b, $pos),
+        };
+    }
+
+    /**
      * @param Decimal $a
      * @param Decimal $b
      * @return array{0:string,1:string,2:int}

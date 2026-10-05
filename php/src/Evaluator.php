@@ -335,6 +335,7 @@ final class Evaluator
         $rp = $node['r']['pos'];
 
         switch ($op) {
+            // Dec::arith's table, spelled out: this runs per node.
             case '+': return Value::numTrusted(Dec::add($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
             case '-': return Value::numTrusted(Dec::sub($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
             case '*': return Value::numTrusted(Dec::mul($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
@@ -370,11 +371,12 @@ final class Evaluator
      * a SEL one, so it carried no code and no position and could not be caught
      * where every other failure in this file is caught. The other four hosts
      * answered silently in their own ways; all five now refuse identically.
-     * Unreachable today, since the caller only reaches this with the six.
+     * Unreachable today, since every caller (this file's and the optimizer's
+     * constant folding) reaches it only with the six.
      *
      * @param array<string,mixed>|null $pos
      */
-    private static function compareResult(string $op, int $c, ?array $pos): bool
+    public static function compareResult(string $op, int $c, ?array $pos): bool
     {
         return match ($op) {
             '==' => $c === 0,
@@ -476,13 +478,7 @@ final class Evaluator
             } else {
                 $a = $current->asDecimalLazy($tp);
                 $b = $rhs->asDecimalLazy($vp);
-                $value = Value::numTrusted(match ($binOp) {
-                    '+' => Dec::add($a, $b, $node['pos']),
-                    '-' => Dec::sub($a, $b, $node['pos']),
-                    '*' => Dec::mul($a, $b, $node['pos']),
-                    '/' => Dec::div($a, $b, $node['pos']),
-                    '%' => Dec::mod($a, $b, $node['pos']),
-                });
+                $value = Value::numTrusted(Dec::arith($binOp, $a, $b, $node['pos']));
             }
         }
 
