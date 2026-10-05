@@ -43,6 +43,7 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <optional>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -1364,7 +1365,7 @@ Dec dec_from_words(bool neg, std::vector<std::uint64_t> words, long long scale) 
 std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg) {
   if (digits.size() > 38) return std::nullopt;
   // The same limit either way: -2^127 is not a small mantissa (dec_from_mantissa).
-  const __uint128_t limit = static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
+  const __uint128_t limit = ~(static_cast<__uint128_t>(1) << 127);
   __uint128_t magnitude = 0;
   for (const char ch : digits) {
     const unsigned digit = static_cast<unsigned>(ch - '0');
@@ -2254,9 +2255,7 @@ Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std
   Internals::check_clone_depth(item, 1, Pos{});
   return item;
 }
-}  // namespace
 
-namespace {
 thread_local Internals::ImplFreelist tl_impl_freelist;
 }  // namespace
 
@@ -4650,11 +4649,6 @@ bool probe_eval(const Node& n, Context& ctx, Value& out, int level) {
   out = eval_node(n, ctx);
   return true;
 }
-
-Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
-Value apply_unary(const Node& node, const Value& v);
-int probe_size(const Node& n, int limit);
-bool probe_eval(const Node& n, Context& ctx, Value& out, int level);
 
 Value eval_binary(const Node& node, Context& ctx) {
   const std::string& op = node.s;
@@ -7829,7 +7823,7 @@ void register_text() {
                   if (f < 1) {
                     fail("E_RANGE", "FIND start is 1-based and must be at least 1", a.pos_of(2));
                   }
-                  from = static_cast<long long>(f - 1);
+                  from = f - 1;
                 }
                 if (needle.empty()) fail("E_BAD_ARG", "FIND needle must not be empty", a.pos_of(0));
                 // `from` counts code points and may be enormous: past the end nothing matches.
@@ -9538,11 +9532,11 @@ void register_regex() {
                 const std::size_t n = subject.size();
                 srell::u32smatch m;
                 while (s <= n) {
-                  const auto flags = s > 0 ? srell::regex_constants::match_prev_avail
-                                           : srell::regex_constants::match_default;
+                  const auto match_flags = s > 0 ? srell::regex_constants::match_prev_avail
+                                                 : srell::regex_constants::match_default;
                   if (!guarded_search(a.pos(), [&] {
                         return srell::regex_search(subject.cbegin() + static_cast<std::ptrdiff_t>(s),
-                                                   subject.cend(), m, re, flags);
+                                                   subject.cend(), m, re, match_flags);
                       })) {
                     break;
                   }
@@ -10434,9 +10428,9 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && first->s == "SELECT_COLS" && (*second)->s == "FILTER") {
         const OptFilterInfo info = opt_filter_info(**second);
         const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-        const auto fields = opt_select_fields(*first);
+        const auto selected = opt_select_fields(*first);
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-              return std::find(fields.begin(), fields.end(), f) != fields.end();
+              return std::find(selected.begin(), selected.end(), f) != selected.end();
             }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
             opt_keys_renumbered_by(third)) {
           next.push_back(*second);
@@ -11030,7 +11024,8 @@ int HostArgs::count() const { return args_.count(); }
 // a read past the end of the argument vector: a function registered with
 // min < max that reads an optional argument without testing count() used to get
 // a heap-buffer-overflow.
-static void host_arg_in_range(const Args& args, int i) {
+namespace {
+void host_arg_in_range(const Args& args, int i) {
   if (i < 0 || i >= args.count()) {
     fail("E_BAD_ARG",
          "a host function read argument " + std::to_string(i + 1) + " but the call has " +
@@ -11038,6 +11033,7 @@ static void host_arg_in_range(const Args& args, int i) {
          args.pos());
   }
 }
+}  // namespace
 
 const Value& HostArgs::val(int i) { host_arg_in_range(args_, i); return args_.val(i); }
 const std::string& HostArgs::text(int i) { host_arg_in_range(args_, i); return args_.text(i); }

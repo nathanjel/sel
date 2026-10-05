@@ -1,9 +1,13 @@
 // The SEL → SQL dialect map: the shipped table, and the runtime registration an
 // application extends it with. sql/MAP.md is normative.
 //
-// Internal to the SQL layer, as sel_ast.hpp is to the evaluator. Consumers
-// include sel_sql.hpp; this file is what sel_sql.cpp and the generated table
-// beside it agree on.
+// Installed with the library, because the dialect-registration API lives here:
+// Map::define, Map::define_dialect, DialectSpec, EntrySpec and Map::define_builder
+// (examples/dialect and examples/sql-functions use them; sql/MAP.md §4 is their
+// contract). Translating needs only sel_sql.hpp. The rest of this file -- the
+// generated table's types (Rules, Entry, the designated-initialiser layout and
+// its static_asserts) -- is what sel_sql.cpp and the generated table beside it
+// agree on, and is not a stable surface for applications.
 //
 // **No data file is read at run time, here or in any host.** sql/dialects/*.json
 // is the single place the map is authored, and tools/gen-sql-map.mjs renders it

@@ -9,6 +9,7 @@
 #ifndef SEL_SQL_TRANSLATOR_HPP
 #define SEL_SQL_TRANSLATOR_HPP
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -235,8 +236,8 @@ struct RelationalPlan {
   bool bare_key = false;
   std::vector<RelationalFilter> having;
   std::vector<RelationalOrder> order_by;
-  std::optional<int64_t> limit;
-  std::optional<int64_t> offset;
+  std::optional<std::int64_t> limit;
+  std::optional<std::int64_t> offset;
 };
 
 class Translator {
@@ -248,16 +249,17 @@ class Translator {
 
   Fragment translate(const NodePtr& ast);
   Fragment translate_statement(const NodePtr& ast);
+
+ private:
   // What both entry points do before they differ; see the definition.
   struct Begun { SNodePtr norm; std::optional<RelationalPlan> plan; };
   Begun begin(const NodePtr& ast);
 
   std::optional<RelationalPlan> analyze_pipeline(const SNodePtr& ast);
   Fragment compile_statement(const RelationalPlan& plan);
-  int64_t eval_int_param(const SNodePtr& n, const std::string& op);
+  std::int64_t eval_int_param(const SNodePtr& n, const std::string& op);
   void analyze_sort_step(const SNodePtr& step, RelationalPlan& plan);
 
- private:
   // One frame per element of an unroll, or one for a whole relation.
   using Frame = std::vector<std::pair<std::string, Binder>>;
 

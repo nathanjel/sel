@@ -1,7 +1,9 @@
 // Everything that turns a value or a template into characters. The one place
 // quoting happens, so there is one place to get it right.
 //
-// Internal to the SQL layer.
+// Installed with the library because a registered builder (Map::define_builder,
+// sel_sql_map.hpp) is handed an Emit and returns its parts; examples/dialect
+// uses it. Everything else here is the SQL layer's own and not a stable surface.
 
 #ifndef SEL_SQL_EMIT_HPP
 #define SEL_SQL_EMIT_HPP

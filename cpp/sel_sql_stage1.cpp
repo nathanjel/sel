@@ -321,7 +321,8 @@ bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped);
 // (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
 // computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
 // a text literal too.
-static bool text_literal_results(const SNodePtr& n, int depth = 0) {
+namespace {
+bool text_literal_results(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
   if (!n || depth >= 180 || n->t() != T::Call || (n->s() != "IF" && n->s() != "COND")) return false;
   const auto& args = n->kids();
@@ -339,7 +340,7 @@ static bool text_literal_results(const SNodePtr& n, int depth = 0) {
   return true;
 }
 
-static bool identity_projection(const SNodePtr& n, int depth = 0) {
+bool identity_projection(const SNodePtr& n, int depth = 0) {
   if (!n || depth >= 180) return false;
   using T = SNode::T;
   if (n->t() == T::Var || n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return true;
@@ -360,9 +361,11 @@ static bool identity_projection(const SNodePtr& n, int depth = 0) {
   }
   return false;
 }
+}  // namespace
 
 struct IdentityInputs { bool whole = false; std::set<std::string> fields; };
-static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
+namespace {
+IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
   if (!n || depth >= 180) return {true, {}};
   if (n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return {};
@@ -391,6 +394,7 @@ static IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
   }
   return {true, {}};
 }
+}  // namespace
 
 bool identity_loss_before_grouping(const SNodePtr& root, bool needed) {
   IdentityInputs needs{needed, {}};
@@ -435,7 +439,8 @@ struct ConstMemo {
 ConstMemo* new_const_memo() { return new ConstMemo; }
 void free_const_memo(ConstMemo* m) { delete m; }
 
-static bool is_constant_uncached(const SNode& n, const std::set<std::string>& bound,
+namespace {
+bool is_constant_uncached(const SNode& n, const std::set<std::string>& bound,
                                  ConstMemo* memo) {
   switch (n.t()) {
     case SNode::T::Num:
@@ -468,6 +473,7 @@ static bool is_constant_uncached(const SNode& n, const std::set<std::string>& bo
       return false;
   }
 }
+}  // namespace
 
 bool is_constant(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo) {
   if (!memo || n.kids().empty()) return is_constant_uncached(n, bound, memo);

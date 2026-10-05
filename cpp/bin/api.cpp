@@ -199,13 +199,13 @@ int main() {
   // probed two lines up is the same shape of rule.
   {
     const auto nest = [](int n) {
-      Value v = Value::text("x");
+      Value leaf = Value::text("x");
       for (int i = 0; i < n; i++) {
-        Value p = Value::none();
-        p.set("1", v);
-        v = p;
+        Value parent = Value::none();
+        parent.set("1", leaf);
+        leaf = parent;
       }
-      return v;
+      return leaf;
     };
     say("value.depth.under", nest(199).dump().empty() ? "no" : "ok");
     try {
@@ -338,9 +338,9 @@ int main() {
     compile("A = 1; B = 0; 0").run(bad);
     Value good = Value::none();
     compile("A = 6; B = 3; 0").run(good);
-    const auto attempt = [&](Value& ctx) {
+    const auto attempt = [&](Value& context) {
       try {
-        return divide.run(ctx).dump();
+        return divide.run(context).dump();
       } catch (const SelError& e) {
         return e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());
       }
@@ -422,17 +422,17 @@ int main() {
   // so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
   // arguments are known good. C++ built the pair in one expression and let the copy run first.
   {
-    Value v = Value::text("x");
+    Value deep = Value::text("x");
     for (int i = 0; i < 300; i++) {
-      Value p = Value::none();
-      p.set("1", v);
-      v = p;
+      Value parent = Value::none();
+      parent.set("1", deep);
+      deep = parent;
     }
-    Value ctx = Value::none();
-    ctx.set("V", v);
+    Value deep_ctx = Value::none();
+    deep_ctx.set("V", deep);
     const auto at = [&](const std::string& src) {
       try {
-        compile(src).run(ctx);
+        compile(src).run(deep_ctx);
         return std::string("no error");
       } catch (const SelError& e) {
         return e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());

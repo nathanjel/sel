@@ -25,7 +25,7 @@
 # harness for a consumer's own checks); this Makefile is the full harness.
 
 CXX      ?= c++
-CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic
+CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic -Wshadow
 BUILD    := build
 # Header dependencies are tracked by the compiler: every rule writes <target>.d
 # beside its target, and the -include at the end of this file reads them, so an

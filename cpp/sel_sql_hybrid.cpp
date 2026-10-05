@@ -871,77 +871,130 @@ std::optional<HybridPlan> try_plan_fallthrough(
 }
 
 std::optional<std::string> latest_field_name(const NodePtr& n) {
-  if (n && n->t == NT::Index && n->l && n->l->t == NT::Var && n->l->s == "_"
-      && n->r && n->r->t == NT::Text) return n->r->s;
+  if (n && n->t == NT::Index && n->l && n->l->t == NT::Var && n->l->s == "_" &&
+      n->r && n->r->t == NT::Text) {
+    return n->r->s;
+  }
   return std::nullopt;
 }
 
 std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::vector<NodePtr>& steps,
-    const std::string& dialect, const Bindings& catalog, const Options& opts, const Helpers& helpers) {
-  if (dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite") return std::nullopt;
+                                            const std::string& dialect, const Bindings& catalog,
+                                            const Options& opts, const Helpers& helpers) {
+  if (dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite") {
+    return std::nullopt;
+  }
   const auto& rel = catalog.get(source->s, source->pos).as_relation();
-  const auto it = std::find_if(steps.begin(), steps.end(), [](const auto& s) { return s->s == "BUCKET"; });
-  if (!rel.unique_key || it == steps.end() || rel.from_is_raw || (rel.correlate && !rel.correlate->empty())) return std::nullopt;
+  const auto it = std::find_if(steps.begin(), steps.end(),
+                               [](const auto& s) { return s->s == "BUCKET"; });
+  if (!rel.unique_key || it == steps.end() || rel.from_is_raw ||
+      (rel.correlate && !rel.correlate->empty())) {
+    return std::nullopt;
+  }
   const auto at = static_cast<std::size_t>(it - steps.begin());
   const std::string& revision = *rel.unique_key;
+
+  // BUCKET(_["partition"], RECORD(...)) or BUCKET(_["partition"]) .> MAP(RECORD(...)).
   const auto& ba = steps[at]->items;
-  const auto partition = ba.size() == 2 || ba.size() == 3 ? latest_field_name(ba[1]) : std::nullopt;
+  const auto partition =
+      ba.size() == 2 || ba.size() == 3 ? latest_field_name(ba[1]) : std::nullopt;
   NodePtr body = ba.size() == 3 ? ba[2] : nullptr;
-  if (!body && at + 1 < steps.size() && steps[at + 1]->s == "MAP" && steps[at + 1]->items.size() == 2)
+  if (!body && at + 1 < steps.size() && steps[at + 1]->s == "MAP" &&
+      steps[at + 1]->items.size() == 2) {
     body = steps[at + 1]->items[1];
+  }
   const auto* pf = rel.field(upper_ascii(partition.value_or("")));
   const auto* rf = rel.field(upper_ascii(revision));
-  if (!partition || !body || body->t != NT::Call || body->s != "RECORD" || body->items.size() != 4
-      || !pf || !rf || (pf->type != SqlKind::Num && pf->type != SqlKind::Text) || rf->type != SqlKind::Num
-      || pf->column != *partition || rf->column != revision || pf->is_raw || rf->is_raw || rf->guard) return std::nullopt;
+  if (!partition || !body || body->t != NT::Call || body->s != "RECORD" ||
+      body->items.size() != 4 || !pf || !rf ||
+      (pf->type != SqlKind::Num && pf->type != SqlKind::Text) || rf->type != SqlKind::Num ||
+      pf->column != *partition || rf->column != revision || pf->is_raw || rf->is_raw || rf->guard) {
+    return std::nullopt;
+  }
+
+  // The record holds _K and TOP_BY(_, _["revision"], "DESC", 1), in either order.
   const auto& ra = body->items;
   if (ra[0]->t != NT::Text || ra[2]->t != NT::Text || ra[0]->s == ra[2]->s) return std::nullopt;
-  NodePtr top; bool has_key = false;
+  NodePtr top;
+  bool has_key = false;
   for (const auto& v : {ra[1], ra[3]}) {
     if (v->t == NT::Call && v->s == "TOP_BY") top = v;
     if (v->t == NT::Var && v->s == "_K") has_key = true;
   }
   if (!top || !has_key) return std::nullopt;
   const auto& ta = top->items;
-  if (ta.size() != 4 || ta[0]->t != NT::Var || ta[0]->s != "_" || latest_field_name(ta[1]) != revision
-      || ta[2]->t != NT::Text || ta[2]->s != "DESC" || ta[3]->t != NT::Num || ta[3]->s != "1") return std::nullopt;
+  if (ta.size() != 4 || ta[0]->t != NT::Var || ta[0]->s != "_" ||
+      latest_field_name(ta[1]) != revision || ta[2]->t != NT::Text || ta[2]->s != "DESC" ||
+      ta[3]->t != NT::Num || ta[3]->s != "1") {
+    return std::nullopt;
+  }
+
+  // Before the BUCKET: FILTERs, and ascending sorts by the revision only.
   for (std::size_t i = 0; i < at; ++i) {
     const auto& s = steps[i];
     if (s->s == "FILTER") continue;
-    if (s->s != "SORT_BY" || (s->items.size() != 2 && s->items.size() != 3) || latest_field_name(s->items[1]) != revision
-        || (s->items.size() == 3 && (s->items[2]->t != NT::Text || s->items[2]->s != "ASC"))) return std::nullopt;
+    if (s->s != "SORT_BY" || (s->items.size() != 2 && s->items.size() != 3) ||
+        latest_field_name(s->items[1]) != revision ||
+        (s->items.size() == 3 && (s->items[2]->t != NT::Text || s->items[2]->s != "ASC"))) {
+      return std::nullopt;
+    }
   }
   std::vector<NodePtr> input_steps(steps.begin(), it);
   if (input_steps.empty()) {
-    auto truth = std::make_shared<Node>(); truth->t = NT::Bool; truth->b = true; truth->pos = source->pos;
-    auto dummy = std::make_shared<Node>(); dummy->t = NT::Call; dummy->s = "FILTER"; dummy->pos = source->pos;
-    dummy->items = {source, truth}; input_steps.push_back(dummy);
+    auto truth = std::make_shared<Node>();
+    truth->t = NT::Bool;
+    truth->b = true;
+    truth->pos = source->pos;
+    auto dummy = std::make_shared<Node>();
+    dummy->t = NT::Call;
+    dummy->s = "FILTER";
+    dummy->pos = source->pos;
+    dummy->items = {source, truth};
+    input_steps.push_back(dummy);
   }
   const NodePtr prefix = helpers.wrap(build_pipeline(source, input_steps));
   auto sql = Sql::try_translate_statement(Program("", prefix), dialect, catalog, opts);
   if (!sql) return std::nullopt;
   try {
     Emit emit(dialect);
-    std::string input = "_sel_input", groups = "_sel_latest";
+    std::string input = "_sel_input";
+    std::string groups = "_sel_latest";
     while (upper_ascii(input) == upper_ascii(rel.from)) input += "_";
-    while (upper_ascii(groups) == upper_ascii(rel.from) || upper_ascii(groups) == upper_ascii(input)) groups += "_";
-    const auto qi = emit.ident(input), qg = emit.ident(groups), qr = emit.ident(revision),
-      qmax = emit.ident("_sel_revision"), qfirst = emit.ident("_sel_first");
-    auto key = emit.text_operand(Fragment({{false, emit.ident(*partition), 0}}, pf->type, dialect)).as_value();
+    while (upper_ascii(groups) == upper_ascii(rel.from) || upper_ascii(groups) == upper_ascii(input)) {
+      groups += "_";
+    }
+    const auto qi = emit.ident(input);
+    const auto qg = emit.ident(groups);
+    const auto qr = emit.ident(revision);
+    const auto qmax = emit.ident("_sel_revision");
+    const auto qfirst = emit.ident("_sel_first");
+    auto key =
+        emit.text_operand(Fragment({{false, emit.ident(*partition), 0}}, pf->type, dialect)).as_value();
     std::vector<Fragment::Part> parts{{false, "WITH " + qi + " AS (", 0}};
     parts.insert(parts.end(), sql->parts().begin(), sql->parts().end());
-    parts.push_back({false, "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " + qfirst
-      + " FROM " + qi + " GROUP BY " + key + ") SELECT " + qi + ".* FROM " + qi + " JOIN " + qg
-      + " ON " + qi + "." + qr + " = " + qg + "." + qmax + " ORDER BY " + qg + "." + qfirst + " ASC", 0});
+    parts.push_back({false,
+                     "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " +
+                         qfirst + " FROM " + qi + " GROUP BY " + key + ") SELECT " + qi + ".* FROM " +
+                         qi + " JOIN " + qg + " ON " + qi + "." + qr + " = " + qg + "." + qmax +
+                         " ORDER BY " + qg + "." + qfirst + " ASC",
+                     0});
     const std::vector<NodePtr> remaining(it, steps.end());
-    const auto continuation = helpers.wrap(build_pipeline(var_node("_INPUT", steps[at]->pos), remaining));
+    const auto continuation =
+        helpers.wrap(build_pipeline(var_node("_INPUT", steps[at]->pos), remaining));
     HybridPlan plan;
-    plan.dialect = dialect; plan.is_hybrid = true;
-    plan.sql_statement = Fragment(parts, SqlKind::Statement, dialect, sql->params(), sql->param_kinds(), sql->caveats());
-    plan.sql_prefix_ast = prefix; plan.continuation_ast = continuation; plan.continuation_program = Program("", continuation);
-    plan.source_tables = {rel.from}; plan.selected_member = SelectedMember{*partition, revision};
+    plan.dialect = dialect;
+    plan.is_hybrid = true;
+    plan.sql_statement = Fragment(parts, SqlKind::Statement, dialect, sql->params(),
+                                  sql->param_kinds(), sql->caveats());
+    plan.sql_prefix_ast = prefix;
+    plan.continuation_ast = continuation;
+    plan.continuation_program = Program("", continuation);
+    plan.source_tables = {rel.from};
+    plan.selected_member = SelectedMember{*partition, revision};
     return plan;
-  } catch (const SqlError&) { return std::nullopt; }
+  } catch (const SqlError&) {
+    return std::nullopt;
+  }
 }
 
 // The plan for a program nothing of which reaches the database. The
@@ -963,8 +1016,10 @@ HybridPlan pure_memory_plan(const Program& program, std::string dialect,
 HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
                             const Bindings& bindings, const Options& options) {
   Map::require_target(dialect);
-  Bindings checked = bindings;
-  checked.check_aliases();
+  // Checked in place: a copy of every binding just to call a const method cost
+  // more than planning a small rule against a big catalogue.
+  bindings.check_aliases();
+  const Bindings& checked = bindings;
 
   // Stage 1 first, exactly as the translator runs it, for its verdict. A
   // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
@@ -1029,10 +1084,10 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
 
   if (auto latest = try_latest_member(source, steps, dialect, checked, options, helpers)) return std::move(*latest);
   if (!identity_barrier) {
-  if (auto fallthrough =
-          try_plan_fallthrough(source, steps, dialect, checked, options, helpers)) {
-    return std::move(*fallthrough);
-  }
+    if (auto fallthrough =
+            try_plan_fallthrough(source, steps, dialect, checked, options, helpers)) {
+      return std::move(*fallthrough);
+    }
   }
 
   // Test prefixes from longest to shortest.  A rejected suffix is normal: the

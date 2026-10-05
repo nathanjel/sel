@@ -28,6 +28,8 @@
 #ifndef SEL_SQL_STAGE1_HPP
 #define SEL_SQL_STAGE1_HPP
 
+#include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 

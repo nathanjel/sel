@@ -346,7 +346,8 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
 // An alias or column name that comes from a SEL text literal is held to the rules a
 // binding's own names already meet: not empty, no NUL (which no dialect can
 // quote, and a C-string client truncates at). E_SQL_UNSUPPORTED at the literal.
-static void check_program_name(const std::string& name, Pos pos) {
+namespace {
+void check_program_name(const std::string& name, Pos pos) {
   if (name.empty()) {
     refuse("E_SQL_UNSUPPORTED",
            "an empty name cannot be quoted as a SQL identifier (PostgreSQL and "
@@ -357,13 +358,15 @@ static void check_program_name(const std::string& name, Pos pos) {
     refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be quoted by any dialect", pos);
   }
 }
+}  // namespace
 
 // The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
 // evaluator would: a name that is not a text literal, at the name (an odd count
 // never gets here: compile() refuses it). The planner reads RECORD in three places -- a bucket's
 // projection, a bucket's key, a MAP's projection -- and each used to walk the
 // pairs itself.
-static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
+namespace {
+std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
                                                                     const std::string& dialect) {
   const auto& args = node->kids();
   if (args.size() % 2 != 0) {
@@ -398,6 +401,7 @@ static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePt
   }
   return fields;
 }
+}  // namespace
 
 Fragment Translator::translate(const NodePtr& ast) {
   Begun b = begin(ast);
@@ -3192,6 +3196,8 @@ bool Translator::plan_has_rows_above(const RelationalPlan& plan) const {
 // the row before: the left table's columns, which a continuation read where
 // SEL has no key, and which made a derived table over a join name columns
 // it did not have.
+namespace {
+
 struct JoinedRowField {
   std::string name;          // ASCII-upper, as the relation keys it
   ColumnSpec spec;
@@ -3206,6 +3212,8 @@ std::vector<JoinedRowField> joined_row_fields(const RelationalPlan& plan) {
   }
   return out;
 }
+
+}  // namespace
 
 std::vector<std::string> Translator::output_field_names(const RelationalPlan& plan) const {
   std::vector<std::string> names;

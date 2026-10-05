@@ -399,7 +399,7 @@ void test_karatsuba_and_early_range() {
            "a doomed POWER is E_RANGE at the call, without computing it");
   selt::eq(code_of([&] { dec_power(parse("10"), 99999, at); }), std::string("ok"),
            "a POWER that fits (100,000 digits) is still computed");
-  selt::eq(code_of([&] { Dec big = dec_power(parse("99999999"), 65000, at); dec_mul(big, big, at); }), std::string("E_RANGE@1:7"),
+  selt::eq(code_of([&] { Dec huge = dec_power(parse("99999999"), 65000, at); dec_mul(huge, huge, at); }), std::string("E_RANGE@1:7"),
            "a product past 1,000,000 integer digits is E_RANGE");
 }
 
@@ -790,7 +790,7 @@ void test_round2_fast_paths() {
     }
     selt::eq(got, "t\"" + want + "\"", "replacement pieces, long subject (pre-split path)");
   }
-  selt::eq(run("RREPLACE(\"a\", \"$3\", \"" + std::string(300, 'b') + "\")"), std::string("t\"" + std::string(300, 'b') + "\""),
+  selt::eq(run("RREPLACE(\"a\", \"$3\", \"" + std::string(300, 'b') + "\")"), "t\"" + std::string(300, 'b') + "\"",
            "a replacement naming a missing group is only refused when something matches (long)");
   selt::eq(run("RREPLACE(\"a\", \"$3\", \"bab\")"), std::string("E_BAD_ARG"), "and refused at the match (short)");
   selt::eq(run("RREPLACE(\"a\", \"$3\", \"" + std::string(300, 'b') + "a\")"), std::string("E_BAD_ARG"), "and refused at the match (long)");
@@ -1511,10 +1511,10 @@ void test_relational_optimizations() {
   auto logical_names = [](const std::string& source) {
     const NodePtr ast = optimize_ast_logical(compile(source).ast());
     std::vector<std::string> out;
-    NodePtr cursor = ast;
-    while (cursor && cursor->t == NT::Call && !cursor->items.empty()) {
-      out.push_back(cursor->s);
-      cursor = cursor->items.front();
+    NodePtr at = ast;
+    while (at && at->t == NT::Call && !at->items.empty()) {
+      out.push_back(at->s);
+      at = at->items.front();
     }
     std::reverse(out.begin(), out.end());
     return out;
@@ -1570,10 +1570,10 @@ void test_relational_optimizations() {
   auto optimized_steps = [](const std::string& source) {
     const NodePtr ast = optimize_ast_in_memory(compile(source).ast());
     std::vector<NodePtr> out;
-    NodePtr cursor = ast;
-    while (cursor && cursor->t == NT::Call && !cursor->items.empty()) {
-      out.push_back(cursor);
-      cursor = cursor->items.front();
+    NodePtr at = ast;
+    while (at && at->t == NT::Call && !at->items.empty()) {
+      out.push_back(at);
+      at = at->items.front();
     }
     std::reverse(out.begin(), out.end());
     return out;
@@ -1595,10 +1595,10 @@ void test_relational_optimizations() {
            " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\" AND _[\"customers\"][\"country\"] $== \"DE\")",
            " .> FILTER(_[\"customers\"][\"country\"] $== \"DE\")",
            " .> FILTER(_[\"orders\"][\"status\"] $== \"ACTIVE\")"}) {
-    const auto steps = optimized_steps(
+    const auto linked = optimized_steps(
         std::string("ORDERS .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"])") + filter);
-    selt::ok(steps.size() == 2 && steps[0]->s == "LINK" && steps[0]->items[1]->t == NT::Var &&
-                 steps[1]->s == "FILTER",
+    selt::ok(linked.size() == 2 && linked[0]->s == "LINK" && linked[0]->items[1]->t == NT::Var &&
+                 linked[1]->s == "FILTER",
              std::string("no FILTER crosses a LINK:") + filter);
   }
   {

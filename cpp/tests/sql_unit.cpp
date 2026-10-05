@@ -480,28 +480,28 @@ int main() {
           "wave-evil", sel::sql::DialectSpec::extending("mariadb").lexical(
                            "numericGuard",
                            "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
-      int refused = 0;
+      int refusals = 0;
       for (int i = 0; i < 3; ++i) {
         try {
           (void)Sql::translate(sel::compile("U + 1 > 0"), "wave-evil", wb);
         } catch (const std::logic_error&) {
-          ++refused;
+          ++refusals;
         } catch (const std::runtime_error&) {
-          ++refused;
+          ++refusals;
         }
       }
-      if (refused != 3) fail("guard refused on every use", std::to_string(refused), "3");
+      if (refusals != 3) fail("guard refused on every use", std::to_string(refusals), "3");
     }
     // Registration refuses a textEscape that leaves a quote in the literal.
     {
-      bool refused = false;
+      bool escape_refused = false;
       try {
         sel::sql::Map::define_dialect(
             "wave-noescape", sel::sql::DialectSpec::extending("sqlite").lexical_escapes("textEscape", {}));
       } catch (const std::exception&) {
-        refused = true;
+        escape_refused = true;
       }
-      if (!refused) fail("empty textEscape refused at registration", "accepted", "refused");
+      if (!escape_refused) fail("empty textEscape refused at registration", "accepted", "refused");
     }
     // A pure-memory plan runs on a copy of the caller's context.
     {
@@ -521,13 +521,13 @@ int main() {
       const Bindings rb({{"ORDERS", orders()}});
       const auto big_context = []() {
         sel::Value context = sel::Value::none();
-        std::vector<sel::Value> rows;
+        std::vector<sel::Value> big_rows;
         for (int i = 1; i <= 3; i++) {
           sel::Value r = sel::Value::none();
           r.set("id", sel::Value::num(std::to_string(i)));
-          rows.push_back(std::move(r));
+          big_rows.push_back(std::move(r));
         }
-        context.set("BIG", sel::Value::list(std::move(rows)));
+        context.set("BIG", sel::Value::list(std::move(big_rows)));
         context.set("KEEP", sel::Value::text("k"));
         return context;
       };
@@ -593,7 +593,7 @@ int main() {
       sel::register_function("HOSTF", 1, 1, [](sel::HostArgs& args) { return args.val(0); });
       const Bindings rb({{"ORDERS", Binding::relation(
           "orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}})}});
-      const sel::Value rows = sel::evaluate(
+      const sel::Value six_rows = sel::evaluate(
           "LIST(RECORD('ID', '1'), RECORD('ID', '2'), RECORD('ID', '3'), RECORD('ID', '4'), "
           "RECORD('ID', '5'), RECORD('ID', '6'))");
       const sel::Program program = sel::compile(
@@ -602,7 +602,7 @@ int main() {
       const auto plan = Sql::plan_hybrid(program, "sqlite", rb);
       const auto context = [&] {
         sel::Value c = sel::Value::none();
-        c.set("ORDERS", rows);
+        c.set("ORDERS", six_rows);
         return c;
       };
       const auto prefix_in_memory = [&](const std::string&, const std::vector<sel::Value>&) {
