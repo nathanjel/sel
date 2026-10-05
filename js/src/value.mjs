@@ -525,7 +525,9 @@ export class Value {
         : v._entries !== null
           ? v._entries[0][1]
         : v.storage[0];
-      if (++guard > 1000) fail('E_DEPTH', 'scalar context nested too deeply', pos);
+      // A value the language builds is at most MAX_DEPTH deep, so this fires only
+      // for a host-built chain, at the same depth as clone, eql and dump.
+      if (++guard > MAX_DEPTH) fail('E_DEPTH', 'scalar context nested too deeply', pos);
     }
     return v;
   }

@@ -16,7 +16,7 @@ import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { toCodePoints, fromCodePoints, cpIndex } from '../utf8.mjs';
 import { MAX_DEPTH } from '../errors.mjs';
-import { MAX_REGEX_PATTERN, MAX_REGEX_GROUPS } from '../_limits.mjs';
+import { MAX_REGEX_PATTERN, MAX_REGEX_GROUPS, MAX_REGEX_QUANTIFIER } from '../_limits.mjs';
 import { cpLength, checkText } from '../budget.mjs';
 import { analyse, norm, negate, MAX_CP, Refuse } from './regex_ambiguity.mjs';
 
@@ -289,7 +289,8 @@ function afterQuantifier(p, i, pattern, pos) {
 // engine: PCRE2 and SRELL reject a huge repeat count as a syntax error while
 // ECMAScript and cl-ppcre accept it and never match, and cl-ppcre also accepts
 // the empty {2,1}.
-const MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit; above it PCRE refuses to compile
+// MAX_REGEX_QUANTIFIER (spec/limits.json) is PCRE2's own hard limit; above it
+// PCRE refuses to compile.
 
 // Returns [lo, hi, index just past the closing '}'].
 function validateBraces(p, start, pattern, pos) {
@@ -306,8 +307,8 @@ function validateBraces(p, start, pattern, pos) {
     hi = i > hiStart ? Number(p.slice(hiStart, i).join('')) : Infinity;
   }
   if (p[i] !== '}') bad('malformed quantifier', pattern, start, pos);
-  if (lo > MAX_QUANTIFIER || (hi !== Infinity && hi > MAX_QUANTIFIER)) {
-    bad(`quantifier bound exceeds the maximum of ${MAX_QUANTIFIER}`, pattern, start, pos);
+  if (lo > MAX_REGEX_QUANTIFIER || (hi !== Infinity && hi > MAX_REGEX_QUANTIFIER)) {
+    bad(`quantifier bound exceeds the maximum of ${MAX_REGEX_QUANTIFIER}`, pattern, start, pos);
   }
   if (hi < lo) {
     bad(`quantifier {${lo},${hi}} is empty — the upper bound is below the lower one`,

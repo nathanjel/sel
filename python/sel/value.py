@@ -445,12 +445,13 @@ class Value:
         if type(n) is not int:
             _bad_arg(f'not a whole number: {n!r}')
         # A native integer obeys the digit cap like the same digits in source
-        # (spec §8, §6.4). A bit-length test first,
-        # so an ordinary int never meets the million-digit comparison.
-        if n.bit_length() > _INT_CAP_BITS and abs(n) >= _int_cap():
-            fail('E_RANGE', f'number has more than {D.MAX_INT_DIGITS} integer digits', None)
+        # (spec §8, §6.4), through the decimal core's own guard, behind the same
+        # bit-length gate guard() uses, so an ordinary int costs no extra call.
+        d = D.from_int(n)
+        if n.bit_length() >= _MAX_INT_BITS:
+            D.guard(d, None)
         v = Value(TEXT, None)
-        v._dec_val = D.from_int(n)
+        v._dec_val = d
         return v
 
     @staticmethod
@@ -587,7 +588,9 @@ class Value:
             # Scalar context follows one child, independent of collection width.
             v = v.storage[0] if v.storage is not None else next(iter(v.children.values()))
             guard += 1
-            if guard > 1000:
+            # A value the language builds is at most MAX_DEPTH deep, so this fires
+            # only for a host-built chain, at the same depth as clone, eql and dump.
+            if guard > MAX_DEPTH:
                 fail('E_DEPTH', 'scalar context nested too deeply', pos)
         return v
 
@@ -945,15 +948,6 @@ def quote_dump(s: str) -> str:
     return ''.join(out)
 
 
-# The digit cap as an integer bound, built once on first use: 10**1000000 is
-# cheap to hold and costly to rebuild. MAX_INT_DIGITS digits need at least
-# (digits-1)*log2(10) bits, so anything shorter than that cannot reach it.
-_INT_CAP = None
-_INT_CAP_BITS = int((D.MAX_INT_DIGITS - 1) * 3.3219280948873626) - 1
-
-
-def _int_cap() -> int:
-    global _INT_CAP
-    if _INT_CAP is None:
-        _INT_CAP = 10 ** D.MAX_INT_DIGITS
-    return _INT_CAP
+# Value.int's gate, bound once: decimal's bit length at or above which a magnitude
+# may exceed MAX_INT_DIGITS (derived there from the generated limit).
+_MAX_INT_BITS = D.MAX_INT_BITS

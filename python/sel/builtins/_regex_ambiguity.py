@@ -15,13 +15,19 @@ iterative except for the walk of the tree, whose depth is bounded by the group
 nesting cap (MAX_DEPTH); the caller runs it under the recursion budget.
 """
 
+from .._limits import (
+    REGEX_AMBIGUITY_BUDGET, REGEX_ANALYSIS_EDGES, REGEX_ANALYSIS_PAIR_WORK, REGEX_ANALYSIS_POSITIONS,
+    REGEX_ANALYSIS_RANGES,
+)
+
 MAX_CP = 0x10FFFF
 UNROLL = 8
-P_MAX = 1 << 17            # positions
-E_MAX = 1 << 18            # follow edges
-D_MAX = 1 << 21            # sum over edges of the range count at the target
-Q_MAX = 1 << 20            # pair-graph work
-AMB_MAX = 16
+# The closed-form caps of SPEC 7.8 rule 5 and the budget of rule 4, from spec/limits.json.
+P_MAX = REGEX_ANALYSIS_POSITIONS     # positions
+E_MAX = REGEX_ANALYSIS_EDGES         # follow edges
+D_MAX = REGEX_ANALYSIS_RANGES        # sum over edges of the range count at the target
+Q_MAX = REGEX_ANALYSIS_PAIR_WORK     # pair-graph work
+AMB_MAX = REGEX_AMBIGUITY_BUDGET
 SAT = 1 << 40
 
 

@@ -10,7 +10,7 @@
 
 import { fail } from './errors.mjs';
 import * as D from './decimal.mjs';
-import { MAX_TEXT_LEN, MAX_COLLECTION } from './_limits.mjs';
+import { MAX_TEXT_LEN, MAX_COLLECTION, MAX_ROUND_SCALE, MAX_POWER_EXPONENT } from './_limits.mjs';
 
 // Code points in a JS string. Text is well formed (E_UTF8 rejects a lone
 // surrogate at the boundary), so a pair is exactly one code point.
@@ -26,9 +26,8 @@ export function cpLength(s) {
 // The size arguments of ROUND (a scale) and POWER (an exponent), §6.4: without
 // a cap, a size argument nobody meant to write takes down the host instead of
 // failing as a rule error. Checked by the builtins and by the evaluator's math
-// plan alike, which is why they live here and not with the builtins.
-export const MAX_SCALE = 1000000;
-export const MAX_POWER = 100000;
+// plan alike, which is why they live here and not with the builtins. The caps
+// themselves come from spec/limits.json.
 
 export function checkSizedInt(d, name, argNum, limit, what, pos) {
   if (!D.isInteger(d)) fail('E_NOT_INT', `${name} argument ${argNum} must be a whole number`, pos);
@@ -50,4 +49,4 @@ export function checkCollection(n, pos, what = 'collection') {
   }
 }
 
-export { MAX_TEXT_LEN, MAX_COLLECTION };
+export { MAX_TEXT_LEN, MAX_COLLECTION, MAX_ROUND_SCALE, MAX_POWER_EXPONENT };

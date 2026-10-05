@@ -45,11 +45,28 @@ DIV_SCALE = _limits.DIV_SCALE   # spec/limits.json
 MAX_INT_DIGITS = _limits.MAX_INT_DIGITS
 MAX_FRAC_DIGITS = _limits.MAX_FRAC_DIGITS
 
+# log2(10) bracketed by two fractions over 10**9, and log10(2) by two over
+# 10**5: integer arithmetic only, never a float (docs/contributing.md, traps).
+LOG2_10_LO, LOG2_10_HI, LOG2_10_DEN = 3321928094, 3321928095, 10 ** 9
+LOG10_2_LO, LOG10_2_HI, LOG10_2_DEN = 30102, 30103, 100000
+
+
+def _max_int_bits(max_int_digits: int) -> int:
+    """floor(max_int_digits * log2(10)) + 1, from both bounds of log2(10); they
+    must agree, so a cap whose product sits too close to an integer for nine
+    decimals fails at import rather than gating wrongly."""
+    lo = max_int_digits * LOG2_10_LO // LOG2_10_DEN + 1
+    hi = max_int_digits * LOG2_10_HI // LOG2_10_DEN + 1
+    if lo != hi:
+        raise AssertionError(f'MAX_INT_BITS is not determined for MAX_INT_DIGITS={max_int_digits}')
+    return hi
+
+
 # The bit length at or above which a magnitude *may* have more than
 # MAX_INT_DIGITS digits: floor(MAX_INT_DIGITS * log2(10)) + 1. Below it, it
 # certainly does not. Used as an O(1) gate so the exact count is computed only
-# for numbers that are actually near the cap.
-_MAX_INT_BITS = 3321929
+# for numbers that are actually near the cap. Derived from the generated limit.
+MAX_INT_BITS = _max_int_bits(MAX_INT_DIGITS)
 # Below this many operand bits a product cannot be near the cap; skip the estimate.
 _MUL_PRECHECK_BITS = 1 << 20
 
@@ -151,7 +168,7 @@ _POW10_CACHE_DIGITS = 1048576
 _POW10_WEIGHT = 0
 
 
-def _pow10(k: int) -> int:
+def pow10(k: int) -> int:
     global _POW10_WEIGHT
     if 0 <= k <= _POW10_LIMIT:
         return _POW10_SMALL[k]
@@ -168,9 +185,9 @@ def _pow10(k: int) -> int:
 
 
 # 10**DIV_SCALE, computed once: div multiplies every dividend by it. Through
-# _pow10 rather than an index into the small table, which would silently assume
+# pow10 rather than an index into the small table, which would silently assume
 # the generated DIV_SCALE stays within _POW10_LIMIT.
-_DIV_FACTOR = _pow10(DIV_SCALE)
+_DIV_FACTOR = pow10(DIV_SCALE)
 
 
 def _num_digits(n: int) -> int:
@@ -183,8 +200,8 @@ def _num_digits(n: int) -> int:
     """
     if n == 0:
         return 1
-    d = (n.bit_length() * 30103) // 100000 + 1
-    while n < _pow10(d - 1):
+    d = (n.bit_length() * LOG10_2_HI) // LOG10_2_DEN + 1
+    while n < pow10(d - 1):
         d -= 1
     return d
 
@@ -201,7 +218,7 @@ def guard(d: Dec, pos: Pos | None) -> Dec:
     if d.scale > MAX_FRAC_DIGITS:
         fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
     # Negative when the value is below 1: those render as a single "0".
-    if (d.digits.bit_length() >= _MAX_INT_BITS
+    if (d.digits.bit_length() >= MAX_INT_BITS
             and _num_digits(d.digits) - d.scale > MAX_INT_DIGITS):
         fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
     return d
@@ -298,7 +315,7 @@ def is_integer(d: Dec) -> bool:
         # a power of ten as large as the scale.
         if ((d.digits & -d.digits).bit_length() - 1) < d.scale:
             return False
-    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: see mod()
+    return divmod(d.digits, pow10(d.scale))[1] == 0      # divmod, not %: see mod()
 
 
 def to_safe_int(d: Dec) -> int:
@@ -312,8 +329,8 @@ def _aligned(a: Dec, b: Dec) -> tuple[int, int, int]:
     if a.scale == b.scale:
         return a.digits, b.digits, a.scale
     if a.scale > b.scale:
-        return a.digits, b.digits * _pow10(a.scale - b.scale), a.scale
-    return a.digits * _pow10(b.scale - a.scale), b.digits, b.scale
+        return a.digits, b.digits * pow10(a.scale - b.scale), a.scale
+    return a.digits * pow10(b.scale - a.scale), b.digits, b.scale
 
 
 def add(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
@@ -350,7 +367,7 @@ def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
         if scale > MAX_FRAC_DIGITS:
             fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
         pb = bits - 1
-        if ((pb - 1) * 30102) // 100000 + 1 - scale > MAX_INT_DIGITS:
+        if ((pb - 1) * LOG10_2_LO) // LOG10_2_DEN + 1 - scale > MAX_INT_DIGITS:
             fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
     return guard(make(a.neg != b.neg, a.digits * b.digits, scale), pos)
 
@@ -369,10 +386,10 @@ def _cmp_by_magnitude(A: int, sa: int, B: int, sb: int) -> int:
     at or above the other's upper bound is a strict inequality.
     """
     bla, blb = A.bit_length(), B.bit_length()
-    lo_a = ((bla - 1) * 30102) // 100000 + 1
-    hi_a = (bla * 30103) // 100000 + 1
-    lo_b = ((blb - 1) * 30102) // 100000 + 1
-    hi_b = (blb * 30103) // 100000 + 1
+    lo_a = ((bla - 1) * LOG10_2_LO) // LOG10_2_DEN + 1
+    hi_a = (bla * LOG10_2_HI) // LOG10_2_DEN + 1
+    lo_b = ((blb - 1) * LOG10_2_LO) // LOG10_2_DEN + 1
+    hi_b = (blb * LOG10_2_HI) // LOG10_2_DEN + 1
     if lo_a - 1 - sa >= hi_b - sb:
         return 1
     if lo_b - 1 - sb >= hi_a - sa:
@@ -415,9 +432,9 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     # The remaining ratio is exact; rounding below is unchanged.
     N, D = a.digits, b.digits
     if b.scale > a.scale:
-        N *= _pow10(b.scale - a.scale)
+        N *= pow10(b.scale - a.scale)
     elif a.scale > b.scale:
-        D *= _pow10(a.scale - b.scale)
+        D *= pow10(a.scale - b.scale)
     q, r = divmod(N * _DIV_FACTOR, D)
     neg = a.neg != b.neg
 
@@ -451,8 +468,8 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirrors round() in the other hosts
     if n >= d.scale:
-        return guard(make(d.neg, d.digits * _pow10(n - d.scale), n), pos)
-    p = _pow10(d.scale - n)
+        return guard(make(d.neg, d.digits * pow10(n - d.scale), n), pos)
+    p = pow10(d.scale - n)
     q, r = divmod(d.digits, p)
     # Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
     return guard(make(d.neg, q + 1 if 2 * r >= p else q, n), pos)
@@ -461,13 +478,13 @@ def round(d: Dec, n: int, pos: Pos | None = None) -> Dec:  # noqa: A001 - mirror
 def trunc(d: Dec) -> Dec:
     if d.scale == 0:
         return d
-    return make(d.neg, d.digits // _pow10(d.scale), 0)
+    return make(d.neg, d.digits // pow10(d.scale), 0)
 
 
 def floor(d: Dec, pos: Pos | None = None) -> Dec:
     if d.scale == 0:
         return d
-    q, r = divmod(d.digits, _pow10(d.scale))
+    q, r = divmod(d.digits, pow10(d.scale))
     # Rounding away from zero carries: 99.5 floored for a negative is -100, a
     # digit wider, and at the integer-digit cap that is one too many.
     return guard(make(d.neg, q + 1 if d.neg and r != 0 else q, 0), pos)
@@ -476,7 +493,7 @@ def floor(d: Dec, pos: Pos | None = None) -> Dec:
 def ceil(d: Dec, pos: Pos | None = None) -> Dec:
     if d.scale == 0:
         return d
-    q, r = divmod(d.digits, _pow10(d.scale))
+    q, r = divmod(d.digits, pow10(d.scale))
     return guard(make(d.neg, q + 1 if not d.neg and r != 0 else q, 0), pos)
 
 

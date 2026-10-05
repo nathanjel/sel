@@ -385,14 +385,14 @@ def _sum(args, ctx):
         digits = -d.digits if d.neg else d.digits
         if ds > scale:
             if total:
-                total *= D._pow10(ds - scale)
+                total *= D.pow10(ds - scale)
             scale = ds
         elif ds < scale:
-            digits *= D._pow10(scale - ds)
+            digits *= D.pow10(scale - ds)
         total += digits
         state[0] = total
         state[1] = scale
-        if total.bit_length() >= D._MAX_INT_BITS:
+        if total.bit_length() >= D.MAX_INT_BITS:
             D.guard(D.make(total < 0, -total if total < 0 else total, scale), body.pos)
         return None
 
@@ -472,8 +472,8 @@ class _DecKey:
         if sa == sb:
             return a, b
         if sa > sb:
-            return a, b * D._pow10(sa - sb)
-        return a * D._pow10(sb - sa), b
+            return a, b * D.pow10(sa - sb)
+        return a * D.pow10(sb - sa), b
 
     def __eq__(self, other):
         a, b = self._cross(other)

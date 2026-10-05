@@ -11,13 +11,12 @@ import builtins
 from typing import Any, NoReturn
 
 from . import decimal as D
-from ._budget import check_collection, check_text
+from ._budget import MAX_POWER_EXPONENT, MAX_ROUND_SCALE, check_collection, check_sized_int, check_text
 from .errors import MAX_DEPTH, Pos, SelError, fail
 from .math_plan import MathPlan, OpCode
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BOOL, NONE, TEXT, Value
-from .builtins.number import MAX_SCALE, MAX_POWER, check_sized_int
 
 
 # Resolve enum attributes once; the hot interpreter loop compares cached opcodes.
@@ -334,11 +333,11 @@ def _interpret_math_plan(plan: MathPlan, ctx: Context) -> Value:
             scratchpad[step.dst] = D.trunc(dec(step.src1))
         elif op == _ROUND:
             x = dec(step.src1); e = dec(step.src2)
-            n = check_sized_int(e, 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.aux_pos)
+            n = check_sized_int(e, 'ROUND', 2, MAX_ROUND_SCALE, 'ROUND scale', step.aux_pos)
             scratchpad[step.dst] = D.round(x, n, step.pos)
         elif op == _POWER:
             x = dec(step.src1); e = dec(step.src2)
-            n = check_sized_int(e, 'POWER', 2, MAX_POWER, 'POWER exponent', step.aux_pos)
+            n = check_sized_int(e, 'POWER', 2, MAX_POWER_EXPONENT, 'POWER exponent', step.aux_pos)
             scratchpad[step.dst] = D.power(x, n, step.pos)
         elif op == _MIN:
             a = dec(step.src1); b = dec(step.src2)
@@ -355,7 +354,7 @@ _PLAN_ENV = {
     'div': D.div, 'mod': D.mod, 'negate': D.negate, 'abs_': D.abs_, 'sign': D.sign,
     'make': D.make, 'ceil': D.ceil, 'floor': D.floor, 'trunc': D.trunc, 'round_': D.round,
     'power': D.power, 'cmp': D.cmp, 'check_sized_int': check_sized_int,
-    'MAX_SCALE': MAX_SCALE, 'MAX_POWER': MAX_POWER, 'abs': abs,
+    'MAX_ROUND_SCALE': MAX_ROUND_SCALE, 'MAX_POWER_EXPONENT': MAX_POWER_EXPONENT, 'abs': abs,
 }
 _PLAN_BINARY = {_ADD: 'add', _SUB: 'sub', _MUL: 'mul', _DIV: 'div', _MOD: 'mod'}
 _PLAN_UNARY = {_NEG: 'negate', _ABS: 'abs_', _CEIL: 'ceil', _FLOOR: 'floor', _TRUNC: 'trunc'}
@@ -412,7 +411,7 @@ def _compile_math_plan(plan: MathPlan) -> Any:
         elif op == _SIGN:
             lines.append(f'{d} = sign({dec(st.src1)}); {d} = make({d} < 0, abs({d}), 0)')
         elif op == _ROUND or op == _POWER:
-            fn, cap, what = ('round_', 'MAX_SCALE', 'ROUND') if op == _ROUND else ('power', 'MAX_POWER', 'POWER')
+            fn, cap, what = ('round_', 'MAX_ROUND_SCALE', 'ROUND') if op == _ROUND else ('power', 'MAX_POWER_EXPONENT', 'POWER')
             label = 'ROUND scale' if op == _ROUND else 'POWER exponent'
             lines.append(f'{d} = {fn}({dec(st.src1)}, check_sized_int({dec(st.src2)}, "{what}", 2, '
                          f'{cap}, "{label}", {k(st.aux_pos)}), {k(st.pos)})')

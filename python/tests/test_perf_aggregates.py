@@ -56,7 +56,7 @@ def test_sum_reports_a_non_number_at_the_body_as_before():
 @pytest.mark.parametrize('cap', [12, 40])
 def test_sum_refuses_the_cap_where_the_chain_of_additions_does(monkeypatch, cap):
     monkeypatch.setattr(D, 'MAX_INT_DIGITS', cap)
-    monkeypatch.setattr(D, '_MAX_INT_BITS', 0)
+    monkeypatch.setattr(D, 'MAX_INT_BITS', 0)
     rnd = random.Random(cap)
     for _ in range(400):
         decs = [D.make(rnd.random() < .3, rnd.randrange(1, 10 ** rnd.randrange(1, cap + 1)),

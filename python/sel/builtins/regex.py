@@ -50,7 +50,7 @@ import re
 
 from .._budget import check_text
 from .._stack import recursion_budget
-from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
+from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_REGEX_QUANTIFIER, MAX_TEXT_LEN
 from ..errors import fail
 from ..registry import REGEX_FLAG_AT, define
 from ..value import Value
@@ -71,7 +71,7 @@ CONTROL_ESCAPES = frozenset(['n', 'r', 't', 'f'])
 SYNTAX_CHARS = frozenset(['^', '$', '\\', '.', '*', '+', '?', '(', ')',
                           '[', ']', '{', '}', '|', '/'])
 
-MAX_QUANTIFIER = 65535   # PCRE2's own hard limit
+# MAX_REGEX_QUANTIFIER (spec/limits.json) is PCRE2's own hard limit.
 
 
 def _bad(message, pattern, at, pos):
@@ -405,8 +405,8 @@ def _validate_braces(p, start, pattern, pos):
         hi = int(p[hi_start:i]) if i > hi_start else None
     if i >= len(p) or p[i] != '}':
         _bad('malformed quantifier', pattern, start, pos)
-    if lo > MAX_QUANTIFIER or (hi is not None and hi > MAX_QUANTIFIER):
-        _bad(f'quantifier bound exceeds the maximum of {MAX_QUANTIFIER}',
+    if lo > MAX_REGEX_QUANTIFIER or (hi is not None and hi > MAX_REGEX_QUANTIFIER):
+        _bad(f'quantifier bound exceeds the maximum of {MAX_REGEX_QUANTIFIER}',
              pattern, start, pos)
     if hi is not None and hi < lo:
         _bad(f'quantifier {{{lo},{hi}}} is empty — the upper bound is below the '

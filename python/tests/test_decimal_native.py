@@ -31,7 +31,7 @@ def test_division_rounding_against_independent_decimal(a, b):
 def test_shared_large_scale_does_not_require_powers(monkeypatch):
     def forbidden(k):
         pytest.fail('equal scales need no power of ten')
-    monkeypatch.setattr(D, '_pow10', forbidden)
+    monkeypatch.setattr(D, 'pow10', forbidden)
     a, b = D.make(False, 7, 1000000), D.make(False, 2, 1000000)
     assert D.format(D.div(a, b)) == '3.5'
     assert D.sub(a, b) == D.make(False, 5, 1000000)
@@ -39,10 +39,10 @@ def test_shared_large_scale_does_not_require_powers(monkeypatch):
 
 def test_division_only_scales_the_difference(monkeypatch):
     calls = []
-    original = D._pow10
+    original = D.pow10
     def power(k):
         calls.append(k)
         return original(k)
-    monkeypatch.setattr(D, '_pow10', power)
+    monkeypatch.setattr(D, 'pow10', power)
     assert D.format(D.div(D.make(False, 7, 10000), D.make(False, 2, 10001))) == '35'
     assert calls == [1]

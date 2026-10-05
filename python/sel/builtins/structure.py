@@ -329,6 +329,11 @@ def _coerce_join_operand(numeric, value, node):
 
 # Flat bounded ownership prevents alias layouts retaining chains of other caches.
 _ALIAS_PLANS = {}
+# Bounds on that cache (a host budget, not a language limit): at most this many
+# plans, each for a shape of at most so many keys and key characters.
+_ALIAS_PLANS_MAX = 256
+_ALIAS_PLAN_MAX_KEYS = 256
+_ALIAS_PLAN_MAX_KEY_CHARS = 16384
 
 
 # `_1` and `_2` name a position, not a relation: an argument with no name is
@@ -350,8 +355,8 @@ def ensure_row_table_alias(row, table_name):
             keys = tuple(list(old_shape.keys) + [table_name] + ([lower] if add_lower else []))
             target_shape = _record_shape(keys)
             cached = (target_shape, add_lower)
-            if len(keys) <= 256 and sum(map(len, keys)) <= 16384:
-                if len(_ALIAS_PLANS) >= 256:
+            if len(keys) <= _ALIAS_PLAN_MAX_KEYS and sum(map(len, keys)) <= _ALIAS_PLAN_MAX_KEY_CHARS:
+                if len(_ALIAS_PLANS) >= _ALIAS_PLANS_MAX:
                     _ALIAS_PLANS.clear()
                 _ALIAS_PLANS[cache_key] = cached
         target_shape, add_lower = cached

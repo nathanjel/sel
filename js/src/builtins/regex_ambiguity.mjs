@@ -11,13 +11,19 @@
 // walk over the automaton is iterative; the only recursion is over the parse
 // tree, which is at most 200 groups deep.
 
+import {
+  REGEX_AMBIGUITY_BUDGET, REGEX_ANALYSIS_POSITIONS, REGEX_ANALYSIS_EDGES, REGEX_ANALYSIS_RANGES,
+  REGEX_ANALYSIS_PAIR_WORK,
+} from '../_limits.mjs';
+
 export const MAX_CP = 0x10ffff;
 const UNROLL = 8;
-const P_MAX = 1 << 17;      // positions
-const E_MAX = 1 << 18;      // follow edges
-const D_MAX = 1 << 21;      // sum over edges of the range count at the target
-const Q_MAX = 1 << 20;      // pair-graph work
-const AMB_MAX = 16;
+// The closed-form caps of SPEC §7.8 rule 5 and the budget of rule 4, from spec/limits.json.
+const P_MAX = REGEX_ANALYSIS_POSITIONS;   // positions
+const E_MAX = REGEX_ANALYSIS_EDGES;       // follow edges
+const D_MAX = REGEX_ANALYSIS_RANGES;      // sum over edges of the range count at the target
+const Q_MAX = REGEX_ANALYSIS_PAIR_WORK;   // pair-graph work
+const AMB_MAX = REGEX_AMBIGUITY_BUDGET;
 const SAT = 2 ** 40;
 
 class Refuse extends Error {}
