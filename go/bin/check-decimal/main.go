@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"math/big"
 	"os"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
@@ -19,27 +19,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	file, err := os.Open(os.Args[1])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to open %s: %v\n", os.Args[1], err)
-		os.Exit(2)
-	}
-	defer file.Close()
-
 	var lines []string
-	scanner := bufio.NewScanner(file)
-	// A record of two 125,000-digit operands and their product is far longer
-	// than bufio's default 64 KB token.
-	scanner.Buffer(make([]byte, 1<<20), 64<<20)
-	for scanner.Scan() {
-		text := scanner.Text()
+	for _, text := range strings.Split(harness.ReadFile(os.Args[1]), "\n") {
 		if len(text) > 0 {
 			lines = append(lines, text)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "error reading file: %v\n", err)
-		os.Exit(2)
 	}
 
 	failFn := func(code string, msg string, pos utf8.Pos) {

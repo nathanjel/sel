@@ -4,55 +4,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 )
-
-func readCorpus(scanner *bufio.Scanner) []string {
-	var records [][]string
-	var cur []string
-	started := false
-
-	// A corpus line is a whole program, and the stress corpus has programs of
-	// megabytes: the scanner's default 64 KB token limit ended the read silently
-	// and every record after it (or all of them) vanished as an E_SYNTAX.
-	scanner.Buffer(make([]byte, 0, 1<<20), 1<<30)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "### ") {
-			if started {
-				records = append(records, cur)
-			}
-			cur = nil
-			started = true
-			continue
-		}
-		if started {
-			cur = append(cur, line)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read corpus: %v\n", err)
-		os.Exit(2)
-	}
-	if started {
-		records = append(records, cur)
-	}
-
-	out := make([]string, len(records))
-	for i, lines := range records {
-		joined := strings.Join(lines, "\n")
-		if strings.HasSuffix(joined, "\n") {
-			joined = joined[:len(joined)-1]
-		}
-		out[i] = joined
-	}
-	return out
-}
 
 func render(v *sel.Value) string {
 	if v.Size() == 0 {
@@ -88,14 +46,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	f, err := os.Open(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read %s: %v\n", path, err)
-		os.Exit(2)
+	corpus := harness.SplitCorpus(harness.ReadFile(path))
+	if len(corpus) == 0 {
+		harness.Fatalf("batch: %s holds no records (a record starts with a line beginning \"### \")", path)
 	}
-	defer f.Close()
-
-	corpus := readCorpus(bufio.NewScanner(f))
 	lines := make([]string, len(corpus))
 
 	for i, src := range corpus {

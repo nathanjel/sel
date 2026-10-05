@@ -12,31 +12,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 	"github.com/nathanjel/sel/go/sel/sql"
 )
-
-func readCorpus(text string) []string {
-	var records [][]string
-	started := false
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "### ") {
-			records = append(records, nil)
-			started = true
-			continue
-		}
-		if started {
-			records[len(records)-1] = append(records[len(records)-1], line)
-		}
-	}
-	out := make([]string, len(records))
-	for i, lines := range records {
-		joined := strings.Join(lines, "\n")
-		joined = strings.TrimSuffix(joined, "\n")
-		out[i] = joined
-	}
-	return out
-}
 
 func escapeNewlines(s string) string {
 	var sb strings.Builder
@@ -110,13 +89,7 @@ func main() {
 		mode = os.Args[3]
 	}
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read %s: %v\n", path, err)
-		os.Exit(1)
-	}
-
-	corpus := readCorpus(string(content))
+	corpus := harness.SplitCorpus(harness.ReadFile(path))
 	bindings := fuzzBindings()
 
 	var out strings.Builder

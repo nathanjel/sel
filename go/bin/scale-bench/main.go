@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 )
 
@@ -92,10 +93,7 @@ func convertJSONValue(val interface{}) *sel.Value {
 }
 
 func loadContext(datasetPath string) *sel.Value {
-	data, err := os.ReadFile(datasetPath)
-	if err != nil {
-		panic(fmt.Sprintf("cannot read dataset: %v", err))
-	}
+	data := []byte(harness.ReadFile(datasetPath))
 	var raw map[string][]map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		panic(fmt.Sprintf("cannot parse dataset: %v", err))
@@ -278,11 +276,7 @@ func main() {
 	datasetPath, _ := filepath.Abs(*datasetFlag)
 	context := loadContext(datasetPath)
 
-	refData, err := os.ReadFile(*refFlag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read reference %s: %v\n", *refFlag, err)
-		os.Exit(1)
-	}
+	refData := []byte(harness.ReadFile(*refFlag))
 	var reference []ScenarioReference
 	if err := json.Unmarshal(refData, &reference); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse reference: %v\n", err)

@@ -593,6 +593,7 @@ func main() {
 		return
 	}
 
+	ran := 0
 	passed := 0
 	mirrored := 0
 	compileRefused := 0
@@ -613,6 +614,7 @@ func main() {
 			}
 		}
 
+		ran++
 		if c.Unrepresentable != nil {
 			passed++
 			compileRefused++
@@ -681,6 +683,11 @@ func main() {
 	fmt.Printf("\n%d passed (%d also checked against a mirrored dialect, %d refused by the type system), %d failed, %d suite errors\n",
 		passed, mirrored, compileRefused, len(failures), suiteErrors)
 
+	if ran == 0 {
+		// A filter that matches nothing is a mistyped name, not a pass.
+		fmt.Fprintf(os.Stderr, "sqlt: no case matched %s\n", strings.Join(filters, " "))
+		os.Exit(1)
+	}
 	if len(failures) > 0 || suiteErrors > 0 {
 		os.Exit(1)
 	}
