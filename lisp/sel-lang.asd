@@ -60,7 +60,8 @@
   :description "SEL -> SQL translation"
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.6.0"
+  ;; No :version of its own: it ships with, and is versioned as, "sel-lang"
+  ;; (the one :version tools/check-version.sh reads).
   :depends-on ("sel-lang")
   :serial t
   :components
