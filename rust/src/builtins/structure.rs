@@ -674,30 +674,33 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     let mut direction = forced_dir.unwrap_or("ASC").to_string();
 
     let mut binder = "_".to_string();
-    let mut body_opt: Option<Node> = None;
+    // The call's nodes, borrowed apart from `args`: the key is read from
+    // them, never cloned per call.
+    let nodes = args.nodes;
+    let mut body_opt: Option<&Node> = None;
 
     if count == 1 {
         // no binder, no body
     } else if count == 2 {
-        body_opt = Some(args.node_at(1).clone());
+        body_opt = Some(&nodes[1]);
     } else if count == 3 {
         if forced_dir.is_some() {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         } else if args.is_symbol_at(1) {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
             direction = "ASC".to_string();
         } else {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         }
     } else {
         binder = args.symbol(1)?;
-        body_opt = Some(args.node_at(2).clone());
+        body_opt = Some(&nodes[2]);
         direction = args.text(3)?.to_ascii_uppercase();
     }
 
@@ -729,7 +732,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
         }
     } else {
         let body = body_opt.unwrap();
-        let needs_k = node_contains_var(&body, "_K");
+        let needs_k = node_contains_var(body, "_K");
         let mut frame = Frame::new();
         frame.insert(binder.clone(), Value::none());
         if needs_k {
@@ -742,7 +745,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
             if needs_k {
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
-            let k_val = args.eval_node(&body)?;
+            let k_val = args.eval_node(body)?;
             indexed.push(SortItem {
                 item: ev.clone().deep_copy(2, args.pos())?,
                 key: k_val,
@@ -921,30 +924,33 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
 
     let sort_count = args.count() - 1;
     let mut binder = "_".to_string();
-    let mut body_opt: Option<Node> = None;
+    // The call's nodes, borrowed apart from `args`: the key is read from
+    // them, never cloned per call.
+    let nodes = args.nodes;
+    let mut body_opt: Option<&Node> = None;
     let mut direction = forced_dir.unwrap_or("ASC").to_string();
 
     if sort_count == 1 {
         binder = String::new();
     } else if sort_count == 2 {
-        body_opt = Some(args.node_at(1).clone());
+        body_opt = Some(&nodes[1]);
     } else if sort_count == 3 {
         if forced_dir.is_some() {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         } else if args.is_symbol_at(1) {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         }
     } else if sort_count == 4 {
         binder = args.symbol(1)?;
-        body_opt = Some(args.node_at(2).clone());
+        body_opt = Some(&nodes[2]);
         direction = args.text(3)?.to_ascii_uppercase();
     }
 
@@ -966,7 +972,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         return Ok(Value::list(Vec::new()));
     }
 
-    let eager = body_opt.as_ref().is_some_and(top_key_may_write);
+    let eager = body_opt.is_some_and(top_key_may_write);
 
     let needs_k = body_opt.as_ref().is_some_and(|b| node_contains_var(b, "_K"));
     let mut frame = Frame::new();
