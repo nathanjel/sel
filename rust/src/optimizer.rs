@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use crate::ast::{Node, NodeType};
-use crate::dec::{
-    dec_add, dec_cmp, dec_div, dec_format, dec_mod, dec_mul, dec_negate, dec_parse, dec_sub, Dec,
-};
+use crate::dec::{dec_cmp, dec_format, dec_negate, dec_parse, Dec};
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::{compile_math_plan, is_math_op};
 use crate::utf8::Pos;
@@ -129,58 +127,25 @@ pub fn opt_fold(node: &Node) -> Node {
                 let dec_l = l.dec.clone().or_else(|| dec_parse(&l.s, node.pos).ok());
                 let dec_r = r.dec.clone().or_else(|| dec_parse(&r.s, node.pos).ok());
                 if let (Some(dl), Some(dr)) = (dec_l, dec_r) {
+                    // The evaluator's own dispatch: a fold answers what a run
+                    // would (an error leaves the node for the run to raise).
                     match node.s.as_str() {
-                        "+" => {
-                            if let Ok(res) = dec_add(&dl, &dr, node.pos) {
+                        op @ ("+" | "-" | "*" | "/" | "%") => {
+                            if let Ok(res) = crate::eval::arith(op, &dl, &dr, node.pos) {
                                 return opt_num(dec_format(&res), res, node.pos);
                             }
                         }
-                        "-" => {
-                            if let Ok(res) = dec_sub(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "*" => {
-                            if let Ok(res) = dec_mul(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "/" => {
-                            if let Ok(res) = dec_div(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "%" => {
-                            if let Ok(res) = dec_mod(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
-                            let c = dec_cmp(&dl, &dr);
-                            let b = match node.s.as_str() {
-                                "==" => c.is_eq(),
-                                "!=" => c.is_ne(),
-                                "<" => c.is_lt(),
-                                "<=" => c.is_le(),
-                                ">" => c.is_gt(),
-                                ">=" => c.is_ge(),
-                                _ => false,
-                            };
-                            return opt_bool(b, node.pos);
+                        op @ ("==" | "!=" | "<" | "<=" | ">" | ">=") => {
+                            return opt_bool(crate::eval::compare_result(op, dec_cmp(&dl, &dr)), node.pos);
                         }
                         _ => {}
                     }
                 }
             }
             if l.t == NodeType::Text && r.t == NodeType::Text {
-                match node.s.as_str() {
-                    "$==" => return opt_bool(l.s == r.s, node.pos),
-                    "$!=" => return opt_bool(l.s != r.s, node.pos),
-                    "$<" => return opt_bool(l.s < r.s, node.pos),
-                    "$<=" => return opt_bool(l.s <= r.s, node.pos),
-                    "$>" => return opt_bool(l.s > r.s, node.pos),
-                    "$>=" => return opt_bool(l.s >= r.s, node.pos),
-                    _ => {}
+                // Byte order: a &str compares by its UTF-8 bytes.
+                if let Some(op @ ("==" | "!=" | "<" | "<=" | ">" | ">=")) = node.s.strip_prefix('$') {
+                    return opt_bool(crate::eval::compare_result(op, l.s.as_bytes().cmp(r.s.as_bytes())), node.pos);
                 }
             }
         }

@@ -2,7 +2,7 @@ use crate::args::Args;
 use crate::ast::{Node, NodeType, SlotCache};
 use crate::builtins::{lookup_spec, BuiltinFn, Spec, SpecFn};
 use crate::context::Context;
-use crate::dec::{dec_add, dec_cmp, dec_div, dec_mod, dec_mul, dec_negate, dec_sub};
+use crate::dec::{dec_add, dec_cmp, dec_div, dec_mod, dec_mul, dec_negate, dec_sub, Dec};
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::eval_math_plan;
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
@@ -333,30 +333,11 @@ fn apply_binary(
     opos: Pos,
 ) -> Result<Value, SelError> {
     match op {
-        "+" => {
+        "+" | "-" | "*" | "/" | "%" => {
+            // Left operand coerced first, then the right (SPEC §6.2).
             let a = l.as_decimal(lp)?;
             let b = r.as_decimal(rp)?;
-            Ok(Value::num_trusted(dec_add(&a, &b, opos)?))
-        }
-        "-" => {
-            let a = l.as_decimal(lp)?;
-            let b = r.as_decimal(rp)?;
-            Ok(Value::num_trusted(dec_sub(&a, &b, opos)?))
-        }
-        "*" => {
-            let a = l.as_decimal(lp)?;
-            let b = r.as_decimal(rp)?;
-            Ok(Value::num_trusted(dec_mul(&a, &b, opos)?))
-        }
-        "/" => {
-            let a = l.as_decimal(lp)?;
-            let b = r.as_decimal(rp)?;
-            Ok(Value::num_trusted(dec_div(&a, &b, opos)?))
-        }
-        "%" => {
-            let a = l.as_decimal(lp)?;
-            let b = r.as_decimal(rp)?;
-            Ok(Value::num_trusted(dec_mod(&a, &b, opos)?))
+            Ok(Value::num_trusted(arith(op, &a, &b, opos)?))
         }
         "&" => concat(l, r, lp, rp, opos),
         // No comparison reaches here: eval_binary hands every one to
@@ -383,7 +364,22 @@ fn apply_binary(
     }
 }
 
-fn compare_result(op: &str, c: std::cmp::Ordering) -> bool {
+/// The arithmetic operators, by token: the evaluator's and the constant
+/// folder's one dispatch. Anything but `+ - * / %` is a caller's bug.
+pub(crate) fn arith(op: &str, a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
+    match op {
+        "+" => dec_add(a, b, pos),
+        "-" => dec_sub(a, b, pos),
+        "*" => dec_mul(a, b, pos),
+        "/" => dec_div(a, b, pos),
+        "%" => dec_mod(a, b, pos),
+        _ => unreachable!("arith on {op}"),
+    }
+}
+
+/// Whether an ordering satisfies a comparison operator (`==` … `>=`; the
+/// byte comparisons pass their operator without the `$`).
+pub(crate) fn compare_result(op: &str, c: std::cmp::Ordering) -> bool {
     match op {
         "==" => c.is_eq(),
         "!=" => c.is_ne(),
