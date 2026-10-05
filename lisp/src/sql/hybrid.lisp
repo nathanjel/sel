@@ -814,6 +814,119 @@ so that a dependency of the same name may share its column."
           (sel::node-r idx) txt)
     idx))
 
+(defun fallthrough-map-record (map-step)
+  "(values binder rec-node explicit) of MAP-STEP when its body is a RECORD with
+text-literal keys, none repeated; NIL otherwise. Splitting a duplicate RECORD
+between SQL and local fields changes last-write order and may suppress
+evaluation of overwritten fields."
+  (let* ((args (sel::node-items map-step))
+         (explicit (and (= (length args) 3)
+                        (sel::node-p (second args))
+                        (eq (sel::node-kind (second args)) :var)
+                        (not (sel::node-grouped (second args)))))
+         (binder (if explicit (sel::node-s (second args)) "_"))
+         (rec-node (cond (explicit (third args))
+                         ((= (length args) 2) (second args))
+                         (t nil))))
+    (unless (and rec-node (sel::node-p rec-node)
+                 (eq (sel::node-kind rec-node) :call)
+                 (equal (sel::node-s rec-node) "RECORD")
+                 (evenp (length (sel::node-items rec-node)))
+                 (loop for (k nil) on (sel::node-items rec-node) by #'cddr
+                       always (and (sel::node-p k) (eq (sel::node-kind k) :text))))
+      (return-from fallthrough-map-record nil))
+    (let ((seen (make-hash-table :test #'equal)))
+      (loop for (k nil) on (sel::node-items rec-node) by #'cddr do
+        (let ((key (sel::node-s k)))
+          (when (gethash key seen) (return-from fallthrough-map-record nil))
+          (setf (gethash key seen) t))))
+    (values binder rec-node explicit)))
+
+(defun fallthrough-downstream-ok-p (downstream projected)
+  "Every step after the MAP goes into the SQL, so each must keep the rows as
+they are, and may read only what SEL's rows have after the MAP: the PROJECTED
+(pushable) keys. The custom keys are not in the SQL; a dependency column is in
+the SQL but not in SEL's row."
+  (dolist (step downstream t)
+    (unless (member (sel::node-s step) +fallthrough-downstream+ :test #'equal)
+      (return nil))
+    ;; items[0] is the step's input -- the pipeline so far -- not its own text;
+    ;; the step binds the row under a name of its own, so any read counts.
+    (dolist (arg (rest (sel::node-items step)))
+      (dolist (field (collect-field-references arg nil))
+        (unless (member field projected :test #'string=)
+          (return-from fallthrough-downstream-ok-p nil))))))
+
+(defun fallthrough-dependencies (pushable custom binder projected)
+  "The fields the CUSTOM pairs read that SQL must project beside the PUSHABLE
+ones, in order of first read; :REFUSE when a read cannot be served.
+
+A dependency may share a projected column only when that column IS the field:
+\"customer_id\", _[\"amount\"] projects amount under the name the custom half
+would read customer_id by. Names are compared exactly, as SEL compares them;
+and a dependency that differs from a projected key only by case is not
+projected beside it, because SQL aliases are not case-sensitive everywhere."
+  (let ((own (loop for p in pushable
+                   when (own-field-read-p (first p) (second p) binder)
+                     collect (sel::node-s (first p))))
+        (dependencies '()))
+    ;; "Case" here is ASCII case, as everywhere in SEL -- never the host's.
+    (flet ((same-folded (a b) (string= (sel::ascii-upcase a) (sel::ascii-upcase b))))
+      (dolist (p custom)
+        (dolist (field (collect-field-references (second p) binder))
+          (cond ((member field projected :test #'string=)
+                 (unless (member field own :test #'string=)
+                   (return-from fallthrough-dependencies :refuse)))
+                ((member field projected :test #'same-folded)
+                 (return-from fallthrough-dependencies :refuse))
+                ((not (member field dependencies :test #'string=))
+                 ;; Two dependencies must not differ only by case either.
+                 (when (member field dependencies :test #'same-folded)
+                   (return-from fallthrough-dependencies :refuse))
+                 (push field dependencies))))))
+    (nreverse dependencies)))
+
+(defun fallthrough-map-with (map-step rec-node items explicit root)
+  "A copy of MAP-STEP over ROOT whose RECORD (a copy of REC-NODE) has ITEMS."
+  (let ((rec (sel::copy-node rec-node))
+        (map (sel::copy-node map-step))
+        (args (sel::node-items map-step)))
+    (setf (sel::node-items rec) items)
+    (setf (sel::node-items map)
+          (if explicit
+              (list root (second args) rec)
+              (list root rec)))
+    map))
+
+(defun fallthrough-sql-items (map-step pushable dependencies binder)
+  "The RECORD items the SQL projects: the pushable pairs, then a column per
+dependency."
+  (let ((new-items '()))
+    (dolist (p pushable)
+      (push (first p) new-items)
+      (push (second p) new-items))
+    (dolist (d dependencies)
+      (let ((k (sel::make-node :text (sel::node-pos map-step))))
+        (setf (sel::node-s k) d)
+        (push k new-items)
+        (push (make-field-read binder d (sel::node-pos map-step)) new-items)))
+    (nreverse new-items)))
+
+(defun fallthrough-continuation-items (pairs binder)
+  "The RECORD items the continuation evaluates over the rows that come back: a
+pushable pair is passed through BY KEY -- the SQL already computed it, under
+that name -- and a custom pair is evaluated as written, over the dependency
+columns projected beside it."
+  (let ((cont-items '()))
+    (dolist (p pairs)
+      (push (first p) cont-items)
+      (push (if (third p)
+                (make-field-read binder (sel::node-s (first p))
+                                 (sel::node-pos (second p)))
+                (second p))
+            cont-items))
+    (nreverse cont-items)))
+
 (defun try-plan-fallthrough (source-node steps dialect bindings options input-var defs wrap)
   "Detects an early MAP whose RECORD mixes translatable pairs with custom ones.
 Rewrites the SQL prefix to project the translatable pairs plus the columns the
@@ -824,152 +937,65 @@ may read; WRAP puts a tree behind the assignments it depends on."
     (unless map-idx (return-from try-plan-fallthrough nil))
     (when (bucket-rows-are-keys-p (subseq steps 0 map-idx))
       (return-from try-plan-fallthrough nil))
-    (let* ((map-step (nth map-idx steps))
-           (args (sel::node-items map-step))
-           (explicit (and (= (length args) 3)
-                          (sel::node-p (second args))
-                          (eq (sel::node-kind (second args)) :var)
-                          (not (sel::node-grouped (second args)))))
-           (binder (if explicit (sel::node-s (second args)) "_"))
-           (rec-node (cond (explicit (third args))
-                           ((= (length args) 2) (second args))
-                           (t nil))))
-      (unless (and rec-node (sel::node-p rec-node)
-                   (eq (sel::node-kind rec-node) :call)
-                   (equal (sel::node-s rec-node) "RECORD")
-                   (evenp (length (sel::node-items rec-node)))
-                   (loop for (k nil) on (sel::node-items rec-node) by #'cddr
-                         always (and (sel::node-p k) (eq (sel::node-kind k) :text))))
-        (return-from try-plan-fallthrough nil))
-      ;; Each pair is (key-node value-node pushable-p).
-      ;; Splitting a duplicate RECORD between SQL and local fields changes
-      ;; last-write order and may suppress evaluation of overwritten fields.
-      (let ((seen (make-hash-table :test #'equal)))
-        (loop for (k nil) on (sel::node-items rec-node) by #'cddr do
-          (let ((key (sel::node-s k)))
-            (when (gethash key seen) (return-from try-plan-fallthrough nil))
-            (setf (gethash key seen) t))))
-      (let* ((pairs (loop for (k v) on (sel::node-items rec-node) by #'cddr
-                          collect (list k v (not (contains-unsupported-sql-p v dialect defs)))))
-             (pushable (remove-if-not #'third pairs))
-             (custom (remove-if #'third pairs)))
-        (when (or (null custom) (null pushable))
-          (return-from try-plan-fallthrough nil))
-        ;; The custom half runs over rows the database numbered 1..n: after a
-        ;; FILTER that is only safe if no custom pair reads `_K`.
-        (when (and (some (lambda (p) (reads-key-p (second p))) custom)
-                   (not (key-safe-boundary-p (subseq steps 0 map-idx) (list map-step))))
-          (return-from try-plan-fallthrough nil))
-        ;; The custom half runs over the rows the SQL returns; a read of the row
-        ;; itself cannot be served by any column.
-        (when (some (lambda (p) (reads-whole-row-p (second p) binder)) custom)
-          (return-from try-plan-fallthrough nil))
-        ;; Every step after the MAP goes into the SQL, so each must keep the rows
-        ;; as they are, and may read only what SEL's rows have after the MAP: the
-        ;; pushable keys. The custom keys are not in the SQL; a dependency column
-        ;; is in the SQL but not in SEL's row.
-        (let ((downstream (subseq steps (1+ map-idx)))
-              (projected (mapcar (lambda (p) (sel::node-s (first p))) pushable)))
-          (dolist (step downstream)
-            (unless (member (sel::node-s step) +fallthrough-downstream+ :test #'equal)
+    (let ((map-step (nth map-idx steps)))
+      (multiple-value-bind (binder rec-node explicit) (fallthrough-map-record map-step)
+        (unless rec-node (return-from try-plan-fallthrough nil))
+        ;; Each pair is (key-node value-node pushable-p).
+        (let* ((pairs (loop for (k v) on (sel::node-items rec-node) by #'cddr
+                            collect (list k v (not (contains-unsupported-sql-p v dialect defs)))))
+               (pushable (remove-if-not #'third pairs))
+               (custom (remove-if #'third pairs))
+               (downstream (subseq steps (1+ map-idx)))
+               (projected (mapcar (lambda (p) (sel::node-s (first p))) pushable)))
+          (when (or (null custom) (null pushable)
+                    ;; The custom half runs over rows the database numbered
+                    ;; 1..n: after a FILTER that is only safe if no custom pair
+                    ;; reads `_K`.
+                    (and (some (lambda (p) (reads-key-p (second p))) custom)
+                         (not (key-safe-boundary-p (subseq steps 0 map-idx) (list map-step))))
+                    ;; The custom half runs over the rows the SQL returns; a
+                    ;; read of the row itself cannot be served by any column.
+                    (some (lambda (p) (reads-whole-row-p (second p) binder)) custom)
+                    (not (fallthrough-downstream-ok-p downstream projected)))
+            (return-from try-plan-fallthrough nil))
+          (let ((dependencies (fallthrough-dependencies pushable custom binder projected))
+                (first-arg (first (sel::node-items map-step))))
+            (when (eq dependencies :refuse)
               (return-from try-plan-fallthrough nil))
-            ;; items[0] is the step's input -- the pipeline so far -- not its
-            ;; own text; the step binds the row under a name of its own, so any
-            ;; read counts.
-            (dolist (arg (rest (sel::node-items step)))
-              (dolist (field (collect-field-references arg nil))
-                (unless (member field projected :test #'string=)
-                  (return-from try-plan-fallthrough nil)))))
-          ;; A dependency may share a projected column only when that column IS
-          ;; the field: "customer_id", _["amount"] projects amount under the name
-          ;; the custom half would read customer_id by. Names are compared
-          ;; exactly, as SEL compares them; and a dependency that differs from a
-          ;; projected key only by case is not projected beside it, because SQL
-          ;; aliases are not case-sensitive everywhere.
-          (let ((own (loop for p in pushable
-                           when (own-field-read-p (first p) (second p) binder)
-                             collect (sel::node-s (first p))))
-                (dependencies '()))
-            ;; "Case" here is ASCII case, as everywhere in SEL -- never the host's.
-            (flet ((same-folded (a b) (string= (sel::ascii-upcase a) (sel::ascii-upcase b))))
-              (dolist (p custom)
-                (dolist (field (collect-field-references (second p) binder))
-                  (cond ((member field projected :test #'string=)
-                         (unless (member field own :test #'string=)
-                           (return-from try-plan-fallthrough nil)))
-                        ((member field projected :test #'same-folded)
-                         (return-from try-plan-fallthrough nil))
-                        ((not (member field dependencies :test #'string=))
-                         ;; Two dependencies must not differ only by case either.
-                         (when (member field dependencies :test #'same-folded)
-                           (return-from try-plan-fallthrough nil))
-                         (push field dependencies))))))
-            (setf dependencies (nreverse dependencies))
-            ;; The rewritten RECORD for SQL: the pushable pairs, then a column
-            ;; per dependency.
-            (let ((new-items '()))
-              (dolist (p pushable)
-                (push (first p) new-items)
-                (push (second p) new-items))
-              (dolist (d dependencies)
-                (let ((k (sel::make-node :text (sel::node-pos map-step))))
-                  (setf (sel::node-s k) d)
-                  (push k new-items)
-                  (push (make-field-read binder d (sel::node-pos map-step)) new-items)))
-              (let* ((rewritten-rec (sel::copy-node rec-node))
-                     (rewritten-map (sel::copy-node map-step)))
-                (setf (sel::node-items rewritten-rec) (nreverse new-items))
-                (setf (sel::node-items rewritten-map)
-                      (if explicit
-                          (list (first args) (second args) rewritten-rec)
-                          (list (first args) rewritten-rec)))
-                ;; A step that cuts rows (TAKE, DROP, a sort, TOP_BY) never crosses a
-                ;; local half that can raise: run() evaluates the MAP on every row
-                ;; before the cut, and a LIMIT in the statement would hide the row
-                ;; that raises. So when any custom pair can raise the downstream
-                ;; steps stay in the continuation, over the records the MAP builds.
-                (let* ((keep-downstream (some (lambda (p) (can-raise-p (second p))) custom))
-                       (rewritten-steps (append (subseq steps 0 map-idx)
-                                                (list rewritten-map)
-                                                (if keep-downstream '() downstream)))
-                       (rewritten-ast (funcall wrap (sel::build-pipeline-ast source-node rewritten-steps)))
-                       (rewritten-prog (sel::%make-program "" rewritten-ast))
-                       (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
-                  (unless sql-frag (return-from try-plan-fallthrough nil))
-                  ;; The continuation re-applies the projection to the rows that
-                  ;; come back: a pushable pair is passed through BY KEY -- the SQL
-                  ;; already computed it, under that name -- and a custom pair is
-                  ;; evaluated as written, over the dependency columns projected
-                  ;; beside it.
-                  (let ((cont-items '()))
-                    (dolist (p pairs)
-                      (push (first p) cont-items)
-                      (push (if (third p)
-                                (make-field-read binder (sel::node-s (first p))
-                                                 (sel::node-pos (second p)))
-                                (second p))
-                            cont-items))
-                    (let* ((cont-rec (sel::copy-node rec-node))
-                           (cont-root (binding-read-var input-var (sel::node-pos map-step)))
-                           (cont-map (sel::copy-node map-step)))
-                      (setf (sel::node-items cont-rec) (nreverse cont-items))
-                      (setf (sel::node-items cont-map)
-                            (if explicit
-                                (list cont-root (second args) cont-rec)
-                                (list cont-root cont-rec)))
-                      ;; The caller fills dialect and source-tables.
-                      (let ((cont-ast (funcall wrap
-                                               (if keep-downstream
-                                                   (sel::build-pipeline-ast cont-map downstream)
-                                                   cont-map))))
-                        (make-hybrid-plan
-                         :sql-statement sql-frag
-                         :sql-prefix-ast rewritten-ast
-                         :continuation-ast cont-ast
-                         :continuation-program (sel::%make-program "" cont-ast)
-                         :continuation-source-var input-var
-                         :pure-sql-p nil
-                         :pure-memory-p nil)))))))))))))
+            ;; A step that cuts rows (TAKE, DROP, a sort, TOP_BY) never crosses a
+            ;; local half that can raise: run() evaluates the MAP on every row
+            ;; before the cut, and a LIMIT in the statement would hide the row
+            ;; that raises. So when any custom pair can raise the downstream
+            ;; steps stay in the continuation, over the records the MAP builds.
+            (let* ((rewritten-map (fallthrough-map-with
+                                   map-step rec-node
+                                   (fallthrough-sql-items map-step pushable dependencies binder)
+                                   explicit first-arg))
+                   (keep-downstream (some (lambda (p) (can-raise-p (second p))) custom))
+                   (rewritten-steps (append (subseq steps 0 map-idx)
+                                            (list rewritten-map)
+                                            (if keep-downstream '() downstream)))
+                   (rewritten-ast (funcall wrap (sel::build-pipeline-ast source-node rewritten-steps)))
+                   (rewritten-prog (sel::%make-program "" rewritten-ast))
+                   (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
+              (unless sql-frag (return-from try-plan-fallthrough nil))
+              (let* ((cont-map (fallthrough-map-with
+                                map-step rec-node
+                                (fallthrough-continuation-items pairs binder)
+                                explicit (binding-read-var input-var (sel::node-pos map-step))))
+                     ;; The caller fills dialect and source-tables.
+                     (cont-ast (funcall wrap
+                                        (if keep-downstream
+                                            (sel::build-pipeline-ast cont-map downstream)
+                                            cont-map))))
+                (make-hybrid-plan
+                 :sql-statement sql-frag
+                 :sql-prefix-ast rewritten-ast
+                 :continuation-ast cont-ast
+                 :continuation-program (sel::%make-program "" cont-ast)
+                 :continuation-source-var input-var
+                 :pure-sql-p nil
+                 :pure-memory-p nil)))))))))
 
 ;;; The caller's context is never written to. Deep-copying all of it on every
 ;;; call cost about 127 ms for a trivial plan over a 300,000-element list, so the

@@ -1681,6 +1681,57 @@ run of the program that built it, not a value set with the caller's string."
     (is (string= "4" (cli "LEN(\"a\\r\\nb\")")))
     (is (starts-with-p "E_SYNTAX at line 2 column 1:" (cli "A = 1 # c\\r+ 2\\r\\nA")))))
 
+#+(and linux x86-64 sb-thread)
+(test cli-sigterm-ends-the-process-whichever-thread-takes-it
+  ;; SBCL's own SIGTERM handler calls EXIT in whichever thread the kernel hands
+  ;; the signal to. In the finalizer thread that EXIT takes the exit lock and the
+  ;; thread ends holding it, so the main thread's EXIT at the end of the program
+  ;; waits for it forever: a `timeout` (which signals the whole process group,
+  ;; twice when the CLI is its direct child) left the CLI parked in a futex. The
+  ;; kernel picks the finalizer thread whenever the main thread has signals
+  ;; deferred (during a GC, say); here the signal is aimed at it, so the test is
+  ;; deterministic. lisp/bin/boot.lisp gives SIGTERM its default action back.
+  (let* ((root (merge-pathnames "../" (asdf:system-source-directory :sel-lang)))
+         (slow (concatenate 'string
+                 "COUNT(MAP(SPLIT(REPEAT(\"a,\", 199999) & \"a\", \",\"), "
+                 "COUNT(MAP(SPLIT(\"1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20\", \",\"), _ & _))))"))
+         (p (sb-ext:run-program (namestring (merge-pathnames "lisp/bin/sel" root))
+                                (list "-e" slow)
+                                :directory root :wait nil :input nil :output nil :error nil))
+         (pid (sb-ext:process-pid p)))
+    (flet ((finalizer-tid ()
+             (dolist (dir (directory (format nil "/proc/~d/task/*/" pid)))
+               (let ((comm (ignore-errors
+                            (with-open-file (in (merge-pathnames "comm" dir))
+                              (read-line in nil "")))))
+                 (when (equal comm "finalizer")
+                   (return (parse-integer (car (last (pathname-directory dir))))))))))
+      (unwind-protect
+           (let ((tid (loop repeat 600
+                            for tid = (finalizer-tid)
+                            when tid return tid
+                            while (sb-ext:process-alive-p p)
+                            do (sleep 0.1))))
+             (if (null tid)
+                 (skip "no finalizer thread appeared in the CLI process")
+                 (progn
+                   (sleep 0.5)          ; past startup, into the program
+                   ;; tgkill(2): a SIGTERM for that one thread
+                   (sb-alien:alien-funcall
+                    (sb-alien:extern-alien "syscall"
+                                           (function sb-alien:long sb-alien:long
+                                                     sb-alien:long sb-alien:long sb-alien:long))
+                    234 pid tid 15)
+                   (loop repeat 600 while (sb-ext:process-alive-p p) do (sleep 0.1))
+                   (is (not (sb-ext:process-alive-p p))
+                       "the CLI is still running 60 s after SIGTERM reached its finalizer thread")
+                   (is (eq :signaled (sb-ext:process-status p))
+                       "the CLI ended by ~a ~a, not by the signal"
+                       (sb-ext:process-status p) (sb-ext:process-exit-code p)))))
+        (when (sb-ext:process-alive-p p)
+          (sb-ext:process-kill p 9)
+          (sb-ext:process-wait p))))))
+
 ;;; --- host API, regex, decimal and SQL-layer edges --------------------------
 
 (defun scalar-of (source) (sel::value-scalar (sel:evaluate source)))
@@ -1696,6 +1747,18 @@ run of the program that built it, not a value set with the caller's string."
                  (sel::dec-format (sel::dec-parse "1000000000000000000000000000000"))))
     (is (string= "0.0000000001" (scalar-of "1 / 10000000000")))
     (is (string= "256" (sel::value-scalar (sel::make-int 256))))))
+
+(test dec-parse-reads-any-string-as-its-characters
+  ;; One short path: a base or adjustable string parses as the simple string
+  ;; with the same characters does.
+  (dolist (text '("-1234567" "12.5" "0" "-0" "000123" "1234567890123456789" "1x" "1." ".5" ""
+                  "123456789012345678901234567890.25"))
+    (flet ((parsed (s) (let ((d (sel::dec-parse s))) (and d (sel::dec-format d)))))
+      (let ((expected (parsed (coerce text '(simple-array character (*))))))
+        (is (equal expected (parsed (coerce text 'simple-base-string))) "base string ~s" text)
+        (is (equal expected (parsed (make-array (length text) :element-type 'character
+                                                              :initial-contents text :adjustable t)))
+            "adjustable string ~s" text)))))
 
 (test make-int-cap-guard-uses-integers-only
   ;; The bit-length prefilter must agree with the digit cap exactly at

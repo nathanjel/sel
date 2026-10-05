@@ -7,6 +7,17 @@
 
 (require :asdf)
 
+;;; SIGTERM ends the process at once, as it does every other host's CLI. SBCL's
+;;; own handler runs EXIT -- unwinding, then joining every thread -- in whichever
+;;; thread the kernel hands the signal to. When that is the finalizer thread
+;;; (the kernel's choice while the main thread has signals deferred, e.g. during
+;;; a GC), its EXIT takes the exit lock and the thread ends holding it, and the
+;;; main thread's EXIT then waits for that lock forever; a second SIGTERM (a
+;;; `timeout` signals its child and then its whole process group) deadlocks the
+;;; two EXITs against each other. Either way `timeout` could not stop a runner.
+;;; Nothing here has cleanup that a terminated run could still use.
+(sb-sys:enable-interrupt sb-unix:sigterm :default)
+
 (let ((setup (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
   (if (probe-file setup)
       (load setup)

@@ -85,7 +85,12 @@ while IFS='|' read -r name expr; do
       *) lim="ulimit -v $ULIMIT_KB;" ;;
     esac
     start=$(date +%s)
-    out="$( (eval "$lim"; timeout "$ceiling" bash -c '. tools/impls.sh; impl_cli "$0" "$1"' "$impl" "$f") 2>&1 </dev/null | head -c 400 | head -1 )"
+    # SIGKILL, not timeout's default SIGTERM: timeout signals its child (the
+    # bash below) and then its own process group, and the host's process under
+    # bash may survive a SIGTERM (an SBCL could deadlock in its exit protocol)
+    # while still holding the pipe, so $( ) would wait for it with no ceiling.
+    # KILL reaches every process in the group and cannot be caught.
+    out="$( (eval "$lim"; timeout -s KILL "$ceiling" bash -c '. tools/impls.sh; impl_cli "$0" "$1"' "$impl" "$f") 2>&1 </dev/null | head -c 400 | head -1 )"
     rc=${PIPESTATUS[0]}
     took=$(( $(date +%s) - start ))
     case "$out" in

@@ -340,6 +340,16 @@ reference to a lexical entry, resolved against the dialect when it is filled."
                               (t (push (list :lexical slot) out)))))))))))
     (nreverse out)))
 
+(defun push-sql-text (s parts)
+  "PARTS, a part list being built in reverse, with the SQL text S after it:
+joined onto a text at its head, so adjacent texts stay one part. An empty S
+adds nothing."
+  (cond ((zerop (length s)) parts)
+        ((and parts (stringp (car parts)))
+         (setf (car parts) (concatenate 'string (car parts) s))
+         parts)
+        (t (cons s parts))))
+
 (defun fill-segments (dialect segments args &optional pos expanding)
   "Fill a template with already-rendered arguments, producing a part list.
 
@@ -358,11 +368,7 @@ dialect registering (:textCast \"X({textCast:0})\") recursed until the host
 died. The cycle is refused rather than a depth capped, because the cycle is the
 actual mistake and a depth cap would need a number nobody can justify."
   (let ((parts '()))
-    (labels ((push-str (s)
-               (when (plusp (length s))
-                 (if (and parts (stringp (car parts)))
-                     (setf (car parts) (concatenate 'string (car parts) s))
-                     (push s parts))))
+    (labels ((push-str (s) (setf parts (push-sql-text s parts)))
              (splice (f)
                (dolist (p (fragment-parts f))
                  (if (stringp p) (push-str p) (push p parts))))   ; absolute already

@@ -9,6 +9,7 @@
 ;;;; makes and removes it), so the run neither reads nor disturbs the normal cache.
 
 (require :asdf)
+(sb-sys:enable-interrupt sb-unix:sigterm :default)   ; see boot.lisp
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 
 (let ((root (truename (merge-pathnames "../" (directory-namestring *load-truename*))))
