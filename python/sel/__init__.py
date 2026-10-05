@@ -49,6 +49,15 @@ class Program:
         # so) -- and a caller who builds a Program from an AST of their own is
         # held to the same rule. Reassigning `ast` is fine and drops the cache
         # below; writing into its nodes is not.
+        #
+        # Two memo fields are the exception, and neither changes what the tree
+        # means: an index node's `_cached_slot` (the evaluator's record-slot
+        # hint, used only while the record's shape is the one it was taken from,
+        # so a hint left by another run is checked, never trusted) and a node's
+        # `_not_constant` (SQL stage 1's verdict, one-way and never stale).
+        # Each is one whole-attribute store of a value any writer would compute
+        # alike, so runs of one Program on several threads can race on them
+        # only to write the same answer or a hint the reader re-checks.
         self.ast = ast
         # The physical tree run() evaluates: `ast` after the in-memory
         # optimiser, built on the first run and kept, because the rewrite and
