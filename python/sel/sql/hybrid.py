@@ -278,7 +278,7 @@ def _rows_are_not_the_value(steps: list[Node]) -> bool:
 
 
 SQL_SPECIAL_CALLS = frozenset({
-    'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
+    'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'MIN', 'MAX', 'RECORD', 'LIST',
 })
 
 
