@@ -345,6 +345,12 @@ the children are V's alist. Read only: the vector is V's own storage."
          (cdr cell))))))
 
 (defun value-keys (v)
+  "V's keys in order, as a fresh list of fresh strings the caller may keep or
+change. (%VALUE-KEYS is the library's zero-copy reading, whose strings are
+shared with V's shape and with every list.)"
+  (mapcar #'copy-seq (%value-keys v)))
+
+(defun %value-keys (v)
   (cond
     ((value-shape v)
      (record-shape-keys (value-shape v)))
@@ -368,6 +374,13 @@ the children are V's alist. Read only: the vector is V's own storage."
      (mapcar #'cdr (value-children v)))))
 
 (defun value-entries (v)
+  "V's children as a fresh alist of (key . child): the conses and key strings
+are the caller's; each child is V's own value, as VALUE-GET returns it."
+  (mapcar (lambda (cell) (cons (copy-seq (car cell)) (cdr cell)))
+          (%value-entries v)))
+
+(defun %value-entries (v)
+  "The zero-copy VALUE-ENTRIES: V's own alist, which the library must not change."
   (ensure-shaped-children v)
   (ensure-list-children v)
   (value-children-internal v))
@@ -810,7 +823,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                           (let ((storage (value-storage v))
                                 (n (length (value-storage v))))
                             (loop for i from 1 to n
-                                  collect (cons (format-index-string i) (to-native-at (svref storage (1- i)) (1+ depth))))))
+                                  collect (cons (copy-seq (format-index-string i)) (to-native-at (svref storage (1- i)) (1+ depth))))))
                          (t
                           (loop for (k . child) in (value-children v)
                                 collect (cons (copy-seq k) (to-native-at child (1+ depth))))))))

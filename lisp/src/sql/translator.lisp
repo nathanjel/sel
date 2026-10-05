@@ -1775,7 +1775,7 @@ than restating it."
      (let ((cl (make-clist pos)))
        (setf (clist-entries cl)
              (mapcar (lambda (cell) (cons (car cell) (value-node nil (cdr cell) spec pos)))
-                     (sel:value-entries v)))
+                     (sel::%value-entries v)))
        cl))
     ((sel:value-bool-p v) (lit-node :bool "" (sel:as-bool v pos) pos))
     ((sel:value-bin-p v)
@@ -1796,7 +1796,7 @@ bind it as a column, or convert it before translating" pos))
         (if (sel:value-none-p v) '() (list (cons "1" (binder-node (value-node tr v spec pos)))))
         (mapcar (lambda (cell)
                   (cons (car cell) (binder-node (value-node tr (cdr cell) spec pos))))
-                (sel:value-entries v)))))
+                (sel::%value-entries v)))))
 
 (defun classify (tr src)
   "THE SHAPE CLASSIFIER. Branch order is exactly the other hosts'."

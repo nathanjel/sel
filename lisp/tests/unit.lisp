@@ -2312,6 +2312,23 @@ the statement sent (or NIL)."
     (is (not (find #\~ msg)))
     (is (not (find #\Newline msg)))))
 
+(test exported-accessors-hand-out-copies
+  ;; What VALUE-KEYS, VALUE-ENTRIES and TO-NATIVE return is the caller's: sorting
+  ;; it, or writing into a key string, changes neither the value, nor the shared
+  ;; record shape, nor the list keys of values built later.
+  (let ((r (sel:evaluate "RECORD(\"b\", 1, \"a\", 2)")))
+    (sort (sel:value-keys r) #'string<)
+    (setf (char (first (sel:value-keys r)) 0) #\z)
+    (is (string= "-{\"b\"=t\"1\", \"a\"=t\"2\"}" (sel:value-dump r)))
+    (is (string= "-{\"b\"=t\"1\", \"a\"=t\"2\"}" (sel:value-dump (sel:evaluate "RECORD(\"b\", 1, \"a\", 2)"))))
+    (let ((entries (sel:value-entries r)))
+      (setf (car (first entries)) "q")
+      (is (equal '("b" "a") (sel:value-keys r)))))
+  (let ((native (sel:to-native (sel:evaluate "LIST(7)"))))
+    (setf (char (car (first native)) 0) #\9)
+    (is (string= "-{\"1\"=t\"7\"}" (sel:value-dump (sel:evaluate "LIST(7)"))))
+    (is (equal '("1") (sel:value-keys (sel:evaluate "LIST(8)"))))))
+
 ;;; --- process-global caches under threads (spec §8.1) ---------------------------
 ;;;
 ;;; The record-shape table, the decimal caches, the regex cache, LINK's alias-plan

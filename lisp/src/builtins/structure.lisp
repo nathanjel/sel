@@ -5,7 +5,7 @@
 ;;; empty — that is what FILTER returns when nothing matched, and ALL over it
 ;;; must be TRUE rather than a scalar-context failure.
 (defun aggregate-elements (v)
-  (cond ((plusp (value-size v)) (value-entries v))
+  (cond ((plusp (value-size v)) (%value-entries v))
         ((eq (value-kind v) :none) '())
         (t (list (cons "1" v)))))
 
@@ -15,7 +15,7 @@
 (define-builtin "INDEXES" 1 1
   (lambda (a ctx)
     (declare (ignore ctx))
-    (make-list-value (mapcar #'%text (value-keys (args-val a 0))))))
+    (make-list-value (mapcar #'%text (%value-keys (args-val a 0))))))
 
 (define-builtin "HAS" 2 2
   (lambda (a ctx)
@@ -397,7 +397,7 @@ field NULL; with no right elements, just the name keys; with no name either,
 NULL. VALUE-SET on a key that exists keeps its place."
   (let ((null-rec (make-none)))
     (when sample-row
-      (dolist (k (value-keys sample-row))
+      (dolist (k (%value-keys sample-row))
         (value-set null-rec k (make-none))))
     (when (and (null sample-row) tbl-name (not (positional-binder-p tbl-name)))
       (let ((low (string-downcase tbl-name)))
@@ -509,7 +509,7 @@ scalar that is NULL is not promoted."
 
 (defun join-entries (v)
   (if (and v (plusp (value-size v)) (not (value-is-list v)))
-      (loop for k in (value-keys v) collect (cons k (value-get v k)))
+      (loop for k in (%value-keys v) collect (cons k (value-get v k)))
       '()))
 
 (defun make-joined-row (r1 r2 b1 b2 null-r2)
@@ -738,7 +738,7 @@ holds for every flat row of its shape."
                             twin
                             (setf (gethash row twins)
                                   (and (plusp (value-size row)) (not (value-is-list row))
-                                       (let* ((keys (value-keys row))
+                                       (let* ((keys (%value-keys row))
                                               (storage (make-array (length keys))))
                                          (loop for k in keys for i from 0
                                                do (setf (svref storage i) (value-get row k)))
@@ -972,14 +972,14 @@ once), plus the names the row is bound under in the joined row."
             (unless (gethash shape shapes)
               (setf (gethash shape shapes) t)
               (dolist (k (record-shape-keys shape)) (setf (gethash (ascii-upcase k) keys) t)))
-            (dolist (k (value-keys row)) (setf (gethash (ascii-upcase k) keys) t)))))
+            (dolist (k (%value-keys row)) (setf (gethash (ascii-upcase k) keys) t)))))
     keys))
 
 (defun make-join-side-of (value keys nullable &optional bound)
   (let ((first-keys (make-hash-table :test #'equal))
         (first (first-collection-item value)))
     (when first
-      (dolist (k (value-keys first)) (setf (gethash (ascii-upcase k) first-keys) t)))
+      (dolist (k (%value-keys first)) (setf (gethash (ascii-upcase k) first-keys) t)))
     (make-join-side :value value :keys keys :first first-keys :nullable nullable
                     :names (loop for b in bound
                                  unless (member b '("_1" "_2" "_") :test #'string=)

@@ -966,7 +966,7 @@ CONTINUATION-EFFECTS' answer as a list, when the caller has it."
             (sel::value-is-list context))
         (sel:value-copy context)
         (let ((root (sel:make-none)))
-          (dolist (k (sel:value-keys context) root)
+          (dolist (k (sel::%value-keys context) root)
             (let ((child (sel:value-get context k)))
               (sel:value-set root k (if (member k roots :test #'string=)
                                         (sel::value-copy-at child 2 nil)

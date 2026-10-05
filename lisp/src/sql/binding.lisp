@@ -60,7 +60,7 @@ line that wrote it (or none at all)."
 (defun check-numeric (where v)
   "Every scalar reachable from a NUM-typed value binding."
   (when (plusp (sel:value-size v))
-    (dolist (cell (sel:value-entries v))
+    (dolist (cell (sel::%value-entries v))
       (check-numeric (format nil "~a[~s]" where (car cell)) (cdr cell)))
     (return-from check-numeric))
   (when (sel:value-none-p v) (return-from check-numeric))
