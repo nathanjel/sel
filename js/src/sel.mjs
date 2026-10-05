@@ -197,12 +197,10 @@ function collectBranches(node, name, bound, done, reads, depth) {
       walkIn(args[2 * k + 1], arm);
       outcomes.push(arm);
     }
-    if (args.length % 2 === 1) {
-      walkIn(args[args.length - 1], cur);
-      outcomes.push(cur);
-    } else {
-      outcomes.push(cur);
-    }
+    // COND's count is odd (the manifest's arity rule, at compile time): the
+    // last argument is the default.
+    walkIn(args[args.length - 1], cur);
+    outcomes.push(cur);
   }
   // Definite afterwards: assigned in every outcome.
   if (outcomes.length > 0) {

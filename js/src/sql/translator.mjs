@@ -14,7 +14,7 @@ import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
 import { asciiUpper } from '../lexer.mjs';
-import { bindingForm, hostArity } from '../registry.mjs';
+import { bindingForm, hostArity, lookup } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
 import * as map from './map.mjs';
@@ -119,6 +119,18 @@ function litNode(t, v, pos) {
   return { t, v, pos };
 }
 
+// The parser held every call to its arity (E_ARITY at compile time, from the
+// manifest), so the pipeline arms below decode only the counts a form takes. A
+// step with any other count was built by hand, outside parse(): a bug in its
+// builder, and an Error rather than a refusal that tryTranslate would swallow.
+function assertParsedArity(step) {
+  const spec = lookup(step.name);
+  const n = step.args.length;
+  if (!spec || n < spec.min || n > spec.max || (spec.arityError && spec.arityError(n) !== null)) {
+    throw new Error(`malformed parse tree: ${step.name} with ${n} arguments`);
+  }
+}
+
 export class Translator {
   constructor(dialect, bindings, options = null) {
     this.dialect = dialect;
@@ -141,7 +153,6 @@ export class Translator {
     // Nodes dispatched so far, against MAX_SQL_NODES (E_SQL_SIZE).
     this.nodeCount = 0;
     this.statementPlan = null;
-    this.inWhere = false;
     this.subqueryCounter = 0;
   }
 
@@ -2608,6 +2619,7 @@ export class Translator {
     for (const step of steps) {
       const name = step.name;
       const args = step.args;
+      assertParsedArity(step);
 
       // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
       // projection; anything else spends the members. See RelationalPlan.
@@ -2641,14 +2653,12 @@ export class Translator {
           if (args.length === 2) {
             binder = '_';
             pred = args[1];
-          } else if (args.length === 3) {
+          } else { // (source, binder, pred)
             if (!constants.isBinderName(args[1])) {
               refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos);
             }
             binder = args[1].name;
             pred = args[2];
-          } else {
-            refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos);
           }
           if (plan.groupBy !== null) {
             plan.having.push({ binder, node: pred, pos: step.pos, overGroups });
@@ -2686,15 +2696,13 @@ export class Translator {
             binder = '_';
             keyNode = args[1];
             aggNode = args[2];
-          } else if (args.length === 4) {
+          } else { // (source, binder, key, projection)
             if (!constants.isBinderName(args[1])) {
               refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos);
             }
             binder = args[1].name;
             keyNode = args[2];
             aggNode = args[3];
-          } else {
-            refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos);
           }
 
           // A bare bucket's key is an index key (spec §7.4): one text or
@@ -2797,14 +2805,12 @@ export class Translator {
           if (args.length === 2) {
             binder = '_';
             expr = args[1];
-          } else if (args.length === 3) {
+          } else { // (source, binder, projection)
             if (!constants.isBinderName(args[1])) {
               refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos);
             }
             binder = args[1].name;
             expr = args[2];
-          } else {
-            refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos);
           }
           // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's
           // body is evaluated once per group, so it is the bucket's projection.
@@ -2846,18 +2852,12 @@ export class Translator {
           break;
 
         case 'TAKE': {
-          if (args.length !== 2) {
-            refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos);
-          }
           const lim = this.evalIntParam(args[1], 'TAKE');
           plan.limit = plan.limit === null || lim < plan.limit ? lim : plan.limit;
           break;
         }
 
         case 'DROP': {
-          if (args.length !== 2) {
-            refuse('E_ARITY', 'DROP takes 2 arguments', step.pos);
-          }
           const off = this.evalIntParam(args[1], 'DROP');
           // Consume the bounded slice. The offsets of consecutive DROPs add, and
           // the sum is clamped like a count: past int64 it is the same OFFSET.
@@ -2934,9 +2934,6 @@ export class Translator {
               + 'left list\'s order', step.pos);
           }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
-          if (args.length !== 3 && args.length !== 5) {
-            refuse('E_ARITY', `${name} takes 3 or 5 arguments`, step.pos);
-          }
           const rightNode = args[1];
           if (rightNode.t !== 'var' || !this.bindings.has(rightNode.name)) {
             refuse('E_SQL_SHAPE', `${name} requires a bound relation as its right side`, rightNode.pos);
@@ -3085,7 +3082,7 @@ export class Translator {
           pos: step.pos,
         });
         return;
-      } else if (count === 3) {
+      } else { // (source, binder, key)
         if (!constants.isBinderName(args[1])) {
           refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos);
         }
@@ -3096,8 +3093,6 @@ export class Translator {
           pos: step.pos,
         });
         return;
-      } else {
-        refuse('E_ARITY', `${name} takes 1 to 3 arguments`, step.pos);
       }
     }
 
@@ -3123,7 +3118,7 @@ export class Translator {
         // compute, and SQL cannot -- the four-argument form's refusal.
         refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos);
       }
-    } else if (count === 4) {
+    } else { // (source, binder, key, direction)
       if (!constants.isBinderName(args[1])) {
         refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos);
       }
@@ -3133,8 +3128,6 @@ export class Translator {
         refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos);
       }
       dir = asciiUpper(args[3].v);
-    } else {
-      refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos);
     }
 
     if (dir !== 'ASC' && dir !== 'DESC') {
@@ -3281,15 +3274,10 @@ export class Translator {
       if (plan.correlate) {
         condParts.push([`(${plan.correlate})`]);
       }
-      this.inWhere = true;
-      try {
-        for (const filter of plan.filters) {
-          const cFrag = this.withRow(src, filter.binder,
-            () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
-          condParts.push(cFrag.parts);
-        }
-      } finally {
-        this.inWhere = false;
+      for (const filter of plan.filters) {
+        const cFrag = this.withRow(src, filter.binder,
+          () => this.requireBool(this.node(filter.node), filter.pos, 'FILTER'));
+        condParts.push(cFrag.parts);
       }
 
       if (condParts.length > 0) {

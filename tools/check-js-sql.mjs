@@ -327,6 +327,18 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
+// The parser holds every call to its arity, so the statement planner decodes
+// only the counts a form takes; a hand-built tree with another count is a bug
+// in its builder, an Error, which tryTranslateStatement does not swallow.
+{
+  const program = compile('ORDERS .> TAKE(1)');
+  const ast = { ...program.ast, args: [...program.ast.args, program.ast.args[1]] };
+  const bad = outcome(() => Sql.tryTranslateStatement(new (program.constructor)('', ast), 'sqlite', R));
+  check('a hand-built TAKE of three arguments is an Error, not a refusal',
+    bad.error instanceof Error && !(bad.error instanceof SqlError) && /malformed parse tree/.test(bad.error.message),
+    String(bad.error ?? bad.value));
+}
+
 // The two exactnesses a Fragment carries are different questions.
 // exactCollation: this TEXT already compares bytes, so no COLLATE wrap -- set
 // by an `exact` binding or by a builder; isExact(): no caveat was recorded.

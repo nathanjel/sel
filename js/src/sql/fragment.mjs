@@ -172,10 +172,8 @@ export class Fragment {
         // it is a creation number, and a reordering template emits creation
         // numbers out of order.
         out.push(emit.placeholder(this.dialect, nth));
-      } else if (mode === 'debug') {
+      } else { // debug: the mode was checked above
         out.push(`~${nth}~`);
-      } else {
-        throw new Error(`unknown render mode ${mode}; use inline, params or debug`);
       }
     }
     return out.join('');

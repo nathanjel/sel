@@ -451,11 +451,11 @@ function doSort(args, ctx, forcedDir) {
   if (entries.length === 0) return Value.list([]);
 
   if (count === 1) {
-    indexed = entries.map(([, item], idx) => ({ item, info: keyInfo(item), idx }));
+    indexed = entries.map(([, item]) => ({ item, info: keyInfo(item) }));
   } else {
     const needsK = nodeContainsVar(body, '_K');
     const eager = mayWrite(body);
-    indexed = entries.map(([k, item], idx) => {
+    indexed = entries.map(([k, item]) => {
       const frame = new Map([[binder, item]]);
       if (needsK) frame.set('_K', Value.text(k));
       ctx.pushFrame(frame);
@@ -467,7 +467,7 @@ function doSort(args, ctx, forcedDir) {
       }
       // Collected once its key is computed (spec §3.4): a later key that writes
       // into this element must not reach the result.
-      return { item: eager ? item.cloneAt(2, args.pos) : item, info: keyInfo(evalKey), idx, owned: eager };
+      return { item: eager ? item.cloneAt(2, args.pos) : item, info: keyInfo(evalKey), owned: eager };
     });
   }
 
@@ -514,12 +514,10 @@ function doTop(args, ctx, forcedDir) {
       body = args.node(1);
       dir = asciiUpper(args.text(2));
     }
-  } else if (sortCount === 4) {
+  } else { // 4 (the manifest's arity bounds the count at compile time)
     binder = args.symbol(1);
     body = args.node(2);
     dir = asciiUpper(args.text(3));
-  } else {
-    fail('E_ARITY', `${args.name} has an invalid sort form`, args.pos);
   }
   if (dir !== 'ASC' && dir !== 'DESC') {
     const directionIndex = sortCount === 4 ? 3 : 2;
@@ -533,10 +531,8 @@ function doTop(args, ctx, forcedDir) {
     if (dir === 'DESC') c = -c;
     return c !== 0 ? c : a.idx - b.idx;
   };
-  const worse = (a, b) => {
-    const c = compare(a, b);
-    return c > 0 || (c === 0 && a.idx > b.idx);
-  };
+  // compare() breaks ties by input position, so no two entries compare equal.
+  const worse = (a, b) => compare(a, b) > 0;
   const heap = [];
   const siftUp = (index) => {
     while (index > 0) {

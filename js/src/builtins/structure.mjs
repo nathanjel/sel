@@ -841,10 +841,7 @@ function doLink(args, ctx, leftJoin) {
   // sources cannot pick it up by accident; it is handed down on purpose below.
   const prefilter = ctx.joinPrefilter;
   ctx.joinPrefilter = null;
-  const count = args.count();
-  if (count !== 3 && count !== 5) {
-    fail('E_ARITY', `${args.name} takes 3 or 5 arguments, got ${count}`, args.pos);
-  }
+  const count = args.count();             // 3 or 5: the manifest's arity rule, at compile time
   // With conjuncts to pre-apply and a left source that is itself a join, the
   // right source is evaluated first -- unobservable when both sources are
   // pure -- so that the conjuncts still askable of the rows below can travel

@@ -86,30 +86,23 @@ for (const src of corpus) {
     lines.push(attempt(() => Sql.translateStatement(program, dialect, bindings).asStatement()));
     continue;
   }
-  try {
-    // `asValue` rather than `asCondition`: the corpus is arbitrary expressions,
-    // most of which are not BOOL, and refusing them all for that would compare
-    // the same refusal a thousand times.
-    //
-    // Three renderings, not one. Inline alone would have missed a whole class:
-    // whether a slot is a literal or a placeholder is a `params`-mode decision,
-    // and the bound values are a third thing again -- a host that emits the same
-    // string while binding different values is exactly what this lane is for.
-    lines.push([
-      attempt(() => render(Sql.translate(program, dialect, bindings))),
-      attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
-      attempt(() => {
-        const plan = Sql.planHybrid(program, dialect, bindings);
-        const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
-        return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
-      }),
-    ].join(' || '));
-  } catch (e) {
-    if (e instanceof SqlError) lines.push(`!${e.code}@${e.line}:${e.col}`);
-    // A SEL error raised DURING translation is still a translator answer -- the
-    // layer evaluates constant subtrees -- and must agree like any other.
-    else if (e instanceof SelError) lines.push(`!SEL ${e.code}@${e.line}:${e.col}`);
-    else lines.push(`!HOST ${e.constructor.name}: ${e.message}`);
-  }
+  // `asValue` rather than `asCondition`: the corpus is arbitrary expressions,
+  // most of which are not BOOL, and refusing them all for that would compare
+  // the same refusal a thousand times.
+  //
+  // Three renderings, not one. Inline alone would have missed a whole class:
+  // whether a slot is a literal or a placeholder is a `params`-mode decision,
+  // and the bound values are a third thing again -- a host that emits the same
+  // string while binding different values is exactly what this lane is for.
+  // Each is its own attempt(), which turns every outcome into a line.
+  lines.push([
+    attempt(() => render(Sql.translate(program, dialect, bindings))),
+    attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
+    attempt(() => {
+      const plan = Sql.planHybrid(program, dialect, bindings);
+      const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+      return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
+    }),
+  ].join(' || '));
 }
 process.stdout.write(lines.map((l) => l.replace(/\n/g, '\\n')).join('\n') + '\n');

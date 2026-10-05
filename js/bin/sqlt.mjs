@@ -386,20 +386,13 @@ function main(argv) {
     const mirror = Object.hasOwn(MIRRORS, c.dialect) ? MIRRORS[c.dialect] : null;
     if (mirror === null || (c.register !== null && c.register !== undefined)) continue;
     sqlmap.reset();
-    // Spread is RIGHT-wins here, where PHP's `+` is left-wins; the assertion
-    // below is the same one php/bin/sqlt carries, because getting this backwards
-    // re-runs every mariadb case as mariadb and the count line still prints a
-    // plausible number.
+    // Spread is RIGHT-wins, so `dialect` is the mirror's. (PHP's `+` is
+    // left-wins, and php/bin/sqlt asserts the result for that reason: getting it
+    // backwards re-runs every mariadb case as mariadb.)
     const mirrorCase = { ...c, dialect: mirror };
     // Pin the one SQL spelling difference: each server's NO PAD collation.
     if (mirrorCase.expect) mirrorCase.expect = mirrorCase.expect.replaceAll(
       ' COLLATE utf8mb4_nopad_bin', ' COLLATE utf8mb4_0900_bin');
-    if (mirrorCase.dialect !== mirror) {
-      process.stdout.write(`SUITE ERROR the mirrored case for ${c.name} is still `
-        + `${mirrorCase.dialect}, so nothing is being mirrored\n`);
-      suiteErrors += 1;
-      continue;
-    }
     try {
       problem = mirrorCase.plan ? runPlanCase(mirrorCase) : runCase(mirrorCase);
     } catch (e) {
