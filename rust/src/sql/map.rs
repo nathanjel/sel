@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, OnceLock, RwLock};
 use regex::Regex;
 
@@ -111,7 +111,7 @@ static ARITY_TEMPLATE_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(0|[
 
 static EXTRA: OnceLock<RwLock<HashMap<String, DialectRecord>>> = OnceLock::new();
 static OVERLAY: OnceLock<RwLock<HashMap<String, HashMap<String, HashMap<String, EntryRecord>>>>> = OnceLock::new();
-static GUARD_CHECKED: OnceLock<RwLock<HashMap<String, bool>>> = OnceLock::new();
+static GUARD_CHECKED: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
 static HOST_ARITIES: OnceLock<RwLock<HashMap<String, HashMap<String, [usize; 2]>>>> = OnceLock::new();
 
 fn extra_store() -> &'static RwLock<HashMap<String, DialectRecord>> {
@@ -122,8 +122,8 @@ fn overlay_store() -> &'static RwLock<HashMap<String, HashMap<String, HashMap<St
     OVERLAY.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn guard_checked_store() -> &'static RwLock<HashMap<String, bool>> {
-    GUARD_CHECKED.get_or_init(|| RwLock::new(HashMap::new()))
+fn guard_checked_store() -> &'static RwLock<HashSet<String>> {
+    GUARD_CHECKED.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
 fn host_arities_store() -> &'static RwLock<HashMap<String, HashMap<String, [usize; 2]>>> {
@@ -433,18 +433,18 @@ pub fn shipped_section_keys(dialect: &str, section: &str) -> Vec<String> {
 
 pub fn targets() -> Vec<String> {
     let (shipped, _) = ensure_init();
-    let mut set = HashMap::new();
+    let mut set = HashSet::new();
     for (d, r) in shipped {
         if r.target {
-            set.insert(d.clone(), true);
+            set.insert(d.clone());
         }
     }
     for (d, r) in extra_store().read().unwrap().iter() {
         if r.target {
-            set.insert(d.clone(), true);
+            set.insert(d.clone());
         }
     }
-    let mut out: Vec<String> = set.into_keys().collect();
+    let mut out: Vec<String> = set.into_iter().collect();
     out.sort();
     out
 }
@@ -475,11 +475,11 @@ pub fn require_target(dialect: &str, pos: Pos) -> Result<(), SqlError> {
 pub fn chain(dialect: &str) -> Vec<String> {
     ensure_init();
     let mut out = Vec::new();
-    let mut seen = HashMap::new();
+    let mut seen = HashSet::new();
     let mut cur = dialect.to_string();
 
-    while !cur.is_empty() && exists(&cur) && !seen.contains_key(&cur) {
-        seen.insert(cur.clone(), true);
+    while !cur.is_empty() && exists(&cur) && !seen.contains(&cur) {
+        seen.insert(cur.clone());
         out.push(cur.clone());
         match with_record(&cur, |r| r.extends.clone()).flatten() {
             Some(ext) => cur = ext,
@@ -823,7 +823,7 @@ fn quoted_runs(tpl: &str) -> Vec<String> {
 pub fn check_numeric_guard(dialect: &str) {
     {
         let gc = guard_checked_store().read().unwrap();
-        if *gc.get(dialect).unwrap_or(&false) {
+        if gc.contains(dialect) {
             return;
         }
     }
@@ -861,14 +861,14 @@ pub fn check_numeric_guard(dialect: &str) {
     }
 
     let got_runs = quoted_runs(&guard);
-    let mut got_set = HashMap::new();
+    let mut got_set = HashSet::new();
     for g in got_runs {
-        got_set.insert(g, true);
+        got_set.insert(g);
     }
 
     let mut missing = Vec::new();
     for w in want {
-        if !got_set.contains_key(&w) {
+        if !got_set.contains(&w) {
             missing.push(format!("'{}'", w));
         }
     }
@@ -879,7 +879,7 @@ pub fn check_numeric_guard(dialect: &str) {
             missing.join(", ")
         );
     }
-    guard_checked_store().write().unwrap().insert(dialect.to_string(), true);
+    guard_checked_store().write().unwrap().insert(dialect.to_string());
 }
 
 fn check_lexical(key: &str, v: &serde_json::Value, where_str: &str) {

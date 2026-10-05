@@ -35,9 +35,31 @@ pub struct HybridPlan {
     pub source_tables: Vec<String>,
 }
 
+/// What a plan is: the three flags `pure_sql`, `pure_memory` and `is_hybrid`
+/// (the fields the documentation names in every host) as one value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanKind {
+    /// The whole pipeline is one SQL statement.
+    PureSql,
+    /// A SQL prefix, then a continuation in memory.
+    Hybrid,
+    /// Nothing goes to the database.
+    PureMemory,
+}
+
 impl HybridPlan {
     pub fn sql_query(&self) -> Option<&Fragment> {
         self.sql_statement.as_ref()
+    }
+
+    pub fn kind(&self) -> PlanKind {
+        if self.pure_sql {
+            PlanKind::PureSql
+        } else if self.pure_memory {
+            PlanKind::PureMemory
+        } else {
+            PlanKind::Hybrid
+        }
     }
 }
 
@@ -537,7 +559,7 @@ struct HelpersContext<'a> {
     leading: &'a [&'a Node],
     defs: &'a HashMap<String, Node>,
     bindings: &'a Bindings,
-    names: &'a HashMap<String, bool>,
+    names: &'a HashSet<String>,
     const_root: &'a Value,
 }
 

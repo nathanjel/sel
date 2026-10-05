@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::sql::binding::{ColumnSpec, RelationSpec};
 use crate::sql::errors::refuse;
@@ -22,7 +22,7 @@ pub struct RowModel {
     pub nested: Vec<(String, RowModel)>,
     pub self_names: Vec<String>,
     pub promoted: Vec<(String, RowField)>,
-    pub dropped: HashMap<String, bool>,
+    pub dropped: HashSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -216,7 +216,7 @@ pub fn build_join_rows(plan: &RelationalPlan) -> Result<JoinRows, crate::sql::er
             nested: Vec::new(),
             self_names: Vec::new(),
             promoted: Vec::new(),
-            dropped: HashMap::new(),
+            dropped: HashSet::new(),
         }
     };
 
@@ -259,7 +259,7 @@ pub fn build_join_rows(plan: &RelationalPlan) -> Result<JoinRows, crate::sql::er
             nested: Vec::new(),
             self_names: Vec::new(),
             promoted: Vec::new(),
-            dropped: HashMap::new(),
+            dropped: HashSet::new(),
         };
 
         if !left_el.side {
@@ -277,28 +277,28 @@ pub fn build_join_rows(plan: &RelationalPlan) -> Result<JoinRows, crate::sql::er
             ordered_set_nested(&mut row.nested, k.clone(), right.clone());
         }
 
-        let mut left_keys = HashMap::new();
+        let mut left_keys = HashSet::new();
         for k in left_el.row_keys() {
-            left_keys.insert(k.to_ascii_uppercase(), true);
+            left_keys.insert(k.to_ascii_uppercase());
         }
-        let mut right_keys = HashMap::new();
+        let mut right_keys = HashSet::new();
         for k in right.row_keys() {
-            right_keys.insert(k.to_ascii_uppercase(), true);
+            right_keys.insert(k.to_ascii_uppercase());
         }
 
         for (k, v) in left_el.scalar_fields() {
-            if right_keys.contains_key(&k) {
-                row.dropped.insert(k, true);
+            if right_keys.contains(&k) {
+                row.dropped.insert(k);
             } else {
                 ordered_set_promoted(&mut row.promoted, k, v);
             }
         }
 
         for (k, mut v) in right.scalar_fields() {
-            if left_keys.contains_key(&k) {
-                row.dropped.insert(k, true);
+            if left_keys.contains(&k) {
+                row.dropped.insert(k);
             } else {
-                if join.join_type == "LEFT" {
+                if join.join_type == crate::sql::relational_plan::JoinType::Left {
                     v.optional = true;
                 }
                 ordered_set_promoted(&mut row.promoted, k, v);

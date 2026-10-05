@@ -26,11 +26,34 @@ pub struct RelationalFilter {
     pub over_groups: bool,
 }
 
+/// An ORDER BY direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    pub fn as_sql(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
+/// LINK is an inner join, LINK_LEFT a left one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JoinType {
+    Inner,
+    Left,
+}
+
 #[derive(Clone, Debug)]
 pub struct RelationalOrder {
     pub binder: String,
     pub node: SNode,
-    pub dir: String,
+    pub dir: SortDirection,
     pub pos: Pos,
     pub over_groups: bool,
 }
@@ -45,7 +68,7 @@ pub struct RelationalGroup {
 
 #[derive(Clone, Debug)]
 pub struct RelationalJoin {
-    pub join_type: String, // "INNER" or "LEFT"
+    pub join_type: JoinType,
     pub source_name: String,
     pub source_relation: Option<Binding>,
     pub source_from_raw: bool,

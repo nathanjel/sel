@@ -80,7 +80,7 @@ pub use serde_json;
 pub use binding::{Binding, Bindings, ColumnOptions, ColumnSpec, FieldEntry, RelationSpec};
 pub use emit::Emit;
 pub use errors::SqlError;
-pub use hybrid::{execute_hybrid, plan_hybrid, HybridPlan, SelectedMember};
+pub use hybrid::{execute_hybrid, plan_hybrid, HybridPlan, PlanKind, SelectedMember};
 pub use map::{
     chain, define, define_builder, define_dialect, exists, reset, targets, version, BuilderFn,
 };

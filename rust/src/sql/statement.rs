@@ -8,8 +8,8 @@ use crate::sql::errors::{refuse, SqlError};
 use crate::sql::map::{chain, entry, EntryKind};
 use crate::sql::node::{SNode, SNodeType};
 use crate::sql::relational_plan::{
-    BucketState, RelationalFilter, RelationalGroup, RelationalJoin, RelationalOrder,
-    RelationalPlan, RelationalProjection,
+    BucketState, JoinType, RelationalFilter, RelationalGroup, RelationalJoin, RelationalOrder,
+    RelationalPlan, RelationalProjection, SortDirection,
 };
 use crate::sql::row_model::{build_join_rows, relation_alias};
 use crate::sql::translator::{Source, SourceFilter, SourceShape, Translator};
@@ -428,9 +428,9 @@ impl Translator {
 
         if name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC" {
             let dir = if name == "SORT_DESC" || name == "TOP_DESC" {
-                "DESC"
+                SortDirection::Desc
             } else {
-                "ASC"
+                SortDirection::Asc
             };
             if count == 1 {
                 if let Some(ref src_rel) = plan.source_relation {
@@ -448,7 +448,7 @@ impl Translator {
                             plan.order_by.push(RelationalOrder {
                                 binder: "_".to_string(),
                                 node: index_snode,
-                                dir: dir.to_string(),
+                                dir,
                                 pos: step.pos,
                                 over_groups: false,
                             });
@@ -468,7 +468,7 @@ impl Translator {
                             plan.order_by.push(RelationalOrder {
                                 binder: "_".to_string(),
                                 node: index_snode,
-                                dir: dir.to_string(),
+                                dir,
                                 pos: step.pos,
                                 over_groups: false,
                             });
@@ -485,7 +485,7 @@ impl Translator {
                 plan.order_by.push(RelationalOrder {
                     binder: "_".to_string(),
                     node: args[1].clone(),
-                    dir: dir.to_string(),
+                    dir,
                     pos: step.pos,
                     over_groups: false,
                 });
@@ -500,7 +500,7 @@ impl Translator {
                 plan.order_by.push(RelationalOrder {
                     binder: args[1].str.clone(),
                     node: args[2].clone(),
-                    dir: dir.to_string(),
+                    dir,
                     pos: step.pos,
                     over_groups: false,
                 });
@@ -524,7 +524,7 @@ impl Translator {
         if count == 2 {
             binder = "_";
             key = &args[1];
-            dir = "ASC";
+            dir = SortDirection::Asc;
         } else if count == 3 {
             // Decided off the call as written: a helper inlined into the third
             // slot is that slot's name, so the second is the binder and the
@@ -533,16 +533,16 @@ impl Translator {
                 binder = "_";
                 key = &args[1];
                 if args[2].str.eq_ignore_ascii_case("ASC") {
-                    dir = "ASC";
+                    dir = SortDirection::Asc;
                 } else if args[2].str.eq_ignore_ascii_case("DESC") {
-                    dir = "DESC";
+                    dir = SortDirection::Desc;
                 } else {
                     return refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].pos);
                 }
             } else if is_binder_name(Some(&args[1])) {
                 binder = &args[1].str;
                 key = &args[2];
-                dir = "ASC";
+                dir = SortDirection::Asc;
             } else {
                 return refuse(
                     "E_BAD_ARG",
@@ -568,9 +568,9 @@ impl Translator {
                 );
             }
             if args[3].str.eq_ignore_ascii_case("ASC") {
-                dir = "ASC";
+                dir = SortDirection::Asc;
             } else if args[3].str.eq_ignore_ascii_case("DESC") {
-                dir = "DESC";
+                dir = SortDirection::Desc;
             } else {
                 return refuse(
                     "E_BAD_ARG",
@@ -585,7 +585,7 @@ impl Translator {
         plan.order_by.push(RelationalOrder {
             binder: binder.to_string(),
             node: key.clone(),
-            dir: dir.to_string(),
+            dir,
             pos: step.pos,
             over_groups: false,
         });
@@ -1069,11 +1069,7 @@ impl Translator {
                         );
                     }
 
-                    let join_type = if name == "LINK_LEFT" {
-                        "LEFT"
-                    } else {
-                        "INNER"
-                    };
+                    let join_type = if name == "LINK_LEFT" { JoinType::Left } else { JoinType::Inner };
                     let rel_spec = right_binding.relation.as_ref().unwrap();
                     let from_raw = rel_spec.from.is_raw;
                     let table = if from_raw {
@@ -1083,7 +1079,7 @@ impl Translator {
                     };
 
                     let mut join = RelationalJoin {
-                        join_type: join_type.to_string(),
+                        join_type,
                         source_name: right_node.str.clone(),
                         source_relation: Some(right_binding.clone()),
                         source_from_raw: from_raw,
@@ -1416,7 +1412,7 @@ impl Translator {
 
         // Joins
         for join in &plan.joins {
-            if join.join_type == "LEFT" {
+            if join.join_type == JoinType::Left {
                 parts.push(Part::Sql(" LEFT JOIN ".to_string()));
             } else {
                 parts.push(Part::Sql(" INNER JOIN ".to_string()));
@@ -1531,7 +1527,7 @@ impl Translator {
                 };
                 let o_frag = self.order_key(raw_frag, pos)?;
                 parts.extend(o_frag.parts);
-                parts.push(Part::Sql(format!(" {}", ord.dir)));
+                parts.push(Part::Sql(format!(" {}", ord.dir.as_sql())));
             }
         }
 

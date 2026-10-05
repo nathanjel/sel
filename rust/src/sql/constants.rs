@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::manifest::lookup_builtin;
 use crate::program::Program;
@@ -8,8 +8,8 @@ use crate::sql::binding::{BindingKind, Bindings};
 use crate::sql::errors::{refuse, SqlError};
 use crate::sql::node::{SNode, SNodeType};
 
-pub fn scope(bindings: Option<&Bindings>) -> (HashMap<String, bool>, Value) {
-    let mut names = HashMap::new();
+pub fn scope(bindings: Option<&Bindings>) -> (HashSet<String>, Value) {
+    let mut names = HashSet::new();
     let root = Value::null();
     if let Some(b_list) = bindings {
         for name in b_list.names() {
@@ -19,7 +19,7 @@ pub fn scope(bindings: Option<&Bindings>) -> (HashMap<String, bool>, Value) {
                 }
                 if let Some(ref v) = b.val {
                     if !v.is_none() && v.size() == 0 {
-                        names.insert(name.clone(), true);
+                        names.insert(name.clone());
                         let _ = root.set(&name, v.clone(), Pos::default());
                     }
                 }
@@ -36,14 +36,14 @@ pub fn is_binder_name(node: Option<&SNode>) -> bool {
 #[derive(Clone, Debug, Default)]
 pub struct NeededFields {
     pub all: bool,
-    pub fields: HashMap<String, bool>,
+    pub fields: HashSet<String>,
 }
 
 impl NeededFields {
     pub fn new() -> Self {
         Self {
             all: false,
-            fields: HashMap::new(),
+            fields: HashSet::new(),
         }
     }
 
@@ -132,10 +132,10 @@ pub fn identity_projection(node: Option<&SNode>, depth: usize) -> bool {
 pub fn identity_inputs(node: Option<&SNode>, depth: usize) -> NeededFields {
     let n = match node {
         Some(n) => n,
-        None => return NeededFields { all: true, fields: HashMap::new() },
+        None => return NeededFields { all: true, fields: HashSet::new() },
     };
     if depth >= 180 {
-        return NeededFields { all: true, fields: HashMap::new() };
+        return NeededFields { all: true, fields: HashSet::new() };
     }
     match n.t {
         SNodeType::Num | SNodeType::Text | SNodeType::Bool | SNodeType::Null => NeededFields::new(),
@@ -143,18 +143,18 @@ pub fn identity_inputs(node: Option<&SNode>, depth: usize) -> NeededFields {
             if n.str == "_K" {
                 NeededFields::new()
             } else {
-                NeededFields { all: true, fields: HashMap::new() }
+                NeededFields { all: true, fields: HashSet::new() }
             }
         }
         SNodeType::Index => {
             let idx = n.idx();
             if idx.is_none_or(|i| i.t != SNodeType::Text) {
-                return NeededFields { all: true, fields: HashMap::new() };
+                return NeededFields { all: true, fields: HashSet::new() };
             }
             if let Some(obj) = n.obj() {
                 if obj.t == SNodeType::Var {
                     let mut nf = NeededFields::new();
-                    nf.fields.insert(idx.unwrap().str.clone(), true);
+                    nf.fields.insert(idx.unwrap().str.clone());
                     return nf;
                 }
             }
@@ -185,30 +185,30 @@ pub fn identity_inputs(node: Option<&SNode>, depth: usize) -> NeededFields {
                 for item in items {
                     let f = identity_inputs(Some(item), depth + 1);
                     if f.all {
-                        return NeededFields { all: true, fields: HashMap::new() };
+                        return NeededFields { all: true, fields: HashSet::new() };
                     }
-                    for k in f.fields.into_keys() {
-                        out.fields.insert(k, true);
+                    for k in f.fields.into_iter() {
+                        out.fields.insert(k);
                     }
                 }
                 return out;
             }
-            NeededFields { all: true, fields: HashMap::new() }
+            NeededFields { all: true, fields: HashSet::new() }
         }
         SNodeType::List => {
             let mut out = NeededFields::new();
             for item in &n.kids {
                 let f = identity_inputs(Some(item), depth + 1);
                 if f.all {
-                    return NeededFields { all: true, fields: HashMap::new() };
+                    return NeededFields { all: true, fields: HashSet::new() };
                 }
-                for k in f.fields.into_keys() {
-                    out.fields.insert(k, true);
+                for k in f.fields.into_iter() {
+                    out.fields.insert(k);
                 }
             }
             out
         }
-        _ => NeededFields { all: true, fields: HashMap::new() },
+        _ => NeededFields { all: true, fields: HashSet::new() },
     }
 }
 
@@ -222,19 +222,19 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
             let body = &n.kids[n.kids.len() - 1];
             let mut values: Vec<&SNode> = vec![body];
             if !needed.all && body.t == SNodeType::Call && body.str == "RECORD" {
-                let mut found = HashMap::new();
+                let mut found = HashSet::new();
                 values.clear();
                 let mut i = 0;
                 while i + 1 < body.kids.len() {
                     let k = &body.kids[i];
-                    if k.t == SNodeType::Text && needed.fields.contains_key(&k.str) {
-                        found.insert(k.str.clone(), true);
+                    if k.t == SNodeType::Text && needed.fields.contains(&k.str) {
+                        found.insert(k.str.clone());
                         values.push(&body.kids[i + 1]);
                     }
                     i += 2;
                 }
-                for k in needed.fields.keys() {
-                    if !found.contains_key(k) {
+                for k in needed.fields.iter() {
+                    if !found.contains(k) {
                         return true;
                     }
                 }
@@ -250,8 +250,8 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
                 if f.all {
                     next_needed.all = true;
                 } else if !next_needed.all {
-                    for k in f.fields.into_keys() {
-                        next_needed.fields.insert(k, true);
+                    for k in f.fields.into_iter() {
+                        next_needed.fields.insert(k);
                     }
                 }
             }
@@ -263,7 +263,7 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
             needed = identity_inputs(n.kids.get(arg_idx), 0);
         }
         if name == "DISTINCT" || name == "DEDUPE" {
-            needed = NeededFields { all: true, fields: HashMap::new() };
+            needed = NeededFields { all: true, fields: HashSet::new() };
         }
         if needed.is_needed()
             && !needed.all
@@ -276,10 +276,10 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
                 right = n.kids[3].str.clone();
             }
             let right_upper = right.to_ascii_uppercase();
-            let mut filtered = HashMap::new();
-            for k in needed.fields.into_keys() {
+            let mut filtered = HashSet::new();
+            for k in needed.fields.into_iter() {
                 if k.to_ascii_uppercase() != right_upper {
-                    filtered.insert(k, true);
+                    filtered.insert(k);
                 }
             }
             needed = NeededFields { all: false, fields: filtered };
@@ -290,14 +290,14 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
     false
 }
 
-pub fn is_constant(n: Option<&SNode>, bound: Option<&HashMap<String, bool>>) -> bool {
+pub fn is_constant(n: Option<&SNode>, bound: Option<&HashSet<String>>) -> bool {
     let node = match n {
         Some(node) => node,
         None => return false,
     };
     match node.t {
         SNodeType::Num | SNodeType::Text | SNodeType::Bool => true,
-        SNodeType::Var => bound.is_some_and(|b| *b.get(&node.str).unwrap_or(&false)),
+        SNodeType::Var => bound.is_some_and(|b| b.contains(&node.str)),
         SNodeType::Un => is_constant(node.l(), bound),
         SNodeType::Bin => is_constant(node.l(), bound) && is_constant(node.r(), bound),
         SNodeType::Index => is_constant(node.obj(), bound) && is_constant(node.idx(), bound),
@@ -315,7 +315,7 @@ pub fn is_constant(n: Option<&SNode>, bound: Option<&HashMap<String, bool>>) -> 
     }
 }
 
-fn constant_call(n: &SNode, bound: Option<&HashMap<String, bool>>) -> bool {
+fn constant_call(n: &SNode, bound: Option<&HashSet<String>>) -> bool {
     let args = &n.kids;
     let binds = n.spec.as_ref().is_some_and(|s| s.binds)
         || lookup_builtin(&n.str).is_some_and(|e| e.binds);
@@ -338,10 +338,10 @@ fn constant_call(n: &SNode, bound: Option<&HashMap<String, bool>>) -> bool {
         if !is_binder_name(args.get(1)) {
             return false;
         }
-        inner.insert(args[1].str.clone(), true);
+        inner.insert(args[1].str.clone());
         2
     } else {
-        inner.insert("_".to_string(), true);
+        inner.insert("_".to_string());
         1
     };
 

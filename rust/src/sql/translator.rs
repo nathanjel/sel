@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::ast::{Node, NodeType};
 use crate::builtins::host_arity;
@@ -75,7 +75,7 @@ pub struct Translator {
     pub(crate) param_kinds: Vec<SqlKind>,
     pub(crate) caveats: Vec<String>,
     pub(crate) frames: Vec<Vec<(String, Binder)>>,
-    pub(crate) const_names: HashMap<String, bool>,
+    pub(crate) const_names: HashSet<String>,
     pub(crate) const_root: Value,
     pub(crate) depth: usize,
     pub(crate) dispatched_nodes: usize,
@@ -96,7 +96,7 @@ impl Translator {
             param_kinds: Vec::new(),
             caveats: Vec::new(),
             frames: Vec::new(),
-            const_names: HashMap::new(),
+            const_names: HashSet::new(),
             const_root: Value::null(),
             depth: 0,
             dispatched_nodes: 0,
@@ -609,7 +609,7 @@ impl Translator {
         let f = match row.row_field_spec(key) {
             Some(f) => f,
             None => {
-                if !row.side && *row.dropped.get(&key.to_ascii_uppercase()).unwrap_or(&false) {
+                if !row.side && row.dropped.contains(&key.to_ascii_uppercase()) {
                     return refuse(
                         "E_SQL_SHAPE",
                         format!("field {:?} is ambiguous across joined relations", key),

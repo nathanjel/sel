@@ -27,9 +27,58 @@ pub struct SlotCache {
     pub slot: usize,
 }
 
+/// A math-plan operation, resolved once when the plan is compiled from the
+/// symbolic names of spec/math-ops.json (the interpreter matches on this,
+/// never on a string).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpCode {
+    LoadVar,
+    LoadConst,
+    LoadLeaf,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Abs,
+    Sign,
+    Ceil,
+    Floor,
+    Trunc,
+    Round,
+    Power,
+    Min,
+    Max,
+}
+
+impl OpCode {
+    /// The code for one of the manifest's operations (`math_ops::OPS`).
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "ADD" => Self::Add,
+            "SUB" => Self::Sub,
+            "MUL" => Self::Mul,
+            "DIV" => Self::Div,
+            "MOD" => Self::Mod,
+            "NEG" => Self::Neg,
+            "ABS" => Self::Abs,
+            "SIGN" => Self::Sign,
+            "CEIL" => Self::Ceil,
+            "FLOOR" => Self::Floor,
+            "TRUNC" => Self::Trunc,
+            "ROUND" => Self::Round,
+            "POWER" => Self::Power,
+            "MIN" => Self::Min,
+            "MAX" => Self::Max,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MathStep {
-    pub op: &'static str,
+    pub op: OpCode,
     pub dst: u16,
     pub src1: u16,
     pub src2: u16,
@@ -38,6 +87,24 @@ pub struct MathStep {
     pub name: String,
     pub const_val: Option<Dec>,
     pub leaf_node: Option<Box<Node>>,
+}
+
+impl MathStep {
+    /// A step with only its operation, destination and position set: the
+    /// emitter fills in what each operation reads.
+    pub(crate) fn new(op: OpCode, dst: u16, pos: Pos) -> Self {
+        Self {
+            op,
+            dst,
+            src1: 0,
+            src2: 0,
+            pos,
+            aux_pos: Pos::default(),
+            name: String::new(),
+            const_val: None,
+            leaf_node: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -17,7 +17,7 @@ pub struct JoinConjunct {
     /// (Go keys its report by the `*Node`). Copies keep it.
     pub id: usize,
     pub node: Node,
-    pub fields: HashMap<String, bool>,
+    pub fields: HashSet<String>,
     pub field_only: bool,
     pub total: Vec<JoinTotalReq>,
     pub has_total: bool,
@@ -34,10 +34,10 @@ pub struct JoinStage {
 #[derive(Clone, Debug)]
 pub struct JoinSideFacts {
     pub val: Value,
-    pub keys: HashMap<String, bool>,
+    pub keys: HashSet<String>,
     pub nullable: bool,
-    pub names: HashMap<String, bool>,
-    pub first: HashMap<String, bool>,
+    pub names: HashSet<String>,
+    pub first: HashSet<String>,
     /// Per-field facts, computed on demand and cached. Shared (through
     /// `Rc`) by every join below that received this side, as Go shares it.
     pub facts: RefCell<HashMap<String, bool>>,
@@ -46,7 +46,7 @@ pub struct JoinSideFacts {
 #[derive(Clone, Debug)]
 pub struct JoinObligation {
     pub key: Node,
-    pub row_names: HashMap<String, bool>,
+    pub row_names: HashSet<String>,
     pub outer: usize,
 }
 
@@ -60,7 +60,7 @@ pub struct JoinPrefilter {
 
 #[derive(Clone, Debug)]
 pub struct JoinReport {
-    pub applied: HashMap<usize, bool>,
+    pub applied: HashSet<usize>,
     pub errored: bool,
     pub dropped: bool,
 }
@@ -68,7 +68,7 @@ pub struct JoinReport {
 impl JoinReport {
     pub fn new() -> Self {
         Self {
-            applied: HashMap::new(),
+            applied: HashSet::new(),
             errored: false,
             dropped: false,
         }
@@ -147,17 +147,17 @@ pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {
 
     let mut out = Vec::new();
     for c in conjuncts {
-        let mut fields = HashMap::new();
+        let mut fields = HashSet::new();
 
         fn reads_only_fields<'a>(
             n: &'a Node,
-            fields: &mut HashMap<String, bool>,
+            fields: &mut HashSet<String>,
             bare_read: &impl Fn(&'a Node) -> bool,
         ) -> bool {
             match n.t {
                 NodeType::Index => {
                     if bare_read(n) {
-                        fields.insert(n.r.as_ref().unwrap().s.to_ascii_uppercase(), true);
+                        fields.insert(n.r.as_ref().unwrap().s.to_ascii_uppercase());
                         return true;
                     }
                     if let Some(ref l) = n.l {
@@ -181,7 +181,7 @@ pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {
         }
 
         let field_only = reads_only_fields(c, &mut fields, &bare_read) && !fields.is_empty();
-        let final_fields = if field_only { fields } else { HashMap::new() };
+        let final_fields = if field_only { fields } else { HashSet::new() };
 
         let mut total = Vec::new();
         let mut has_total = false;
@@ -225,13 +225,13 @@ pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {
     out
 }
 
-pub fn join_read_self(node: &Node, names: &HashMap<String, bool>, binder: &str) -> Node {
+pub fn join_read_self(node: &Node, names: &HashSet<String>, binder: &str) -> Node {
     if node.t == NodeType::Index {
         if let (Some(ref l), Some(ref r)) = (&node.l, &node.r) {
             if l.t == NodeType::Var
                 && l.s == binder
                 && r.t == NodeType::Text
-                && names.contains_key(&r.s.to_ascii_uppercase())
+                && names.contains(&r.s.to_ascii_uppercase())
             {
                 let mut v = Node::new(NodeType::Var, node.pos);
                 v.s = binder.to_string();
@@ -253,10 +253,10 @@ pub fn join_read_self(node: &Node, names: &HashMap<String, bool>, binder: &str) 
     cp
 }
 
-pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
-    let mut keys = HashMap::new();
+pub fn join_row_keys(val: &Value, bound: &[String]) -> HashSet<String> {
+    let mut keys = HashSet::new();
     for b in bound {
-        keys.insert(b.to_ascii_uppercase(), true);
+        keys.insert(b.to_ascii_uppercase());
     }
     // Rows of a dense list mostly share one record shape: read its keys once.
     let mut shapes: HashSet<usize> = HashSet::new();
@@ -267,13 +267,13 @@ pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
         if let Some(ref shape) = inner.shape {
             if shapes.insert(std::sync::Arc::as_ptr(shape) as usize) {
                 for k in shape.keys.iter() {
-                    keys.insert(k.to_ascii_uppercase(), true);
+                    keys.insert(k.to_ascii_uppercase());
                 }
             }
         } else {
             drop(inner);
             for k in item.keys() {
-                keys.insert(k.to_ascii_uppercase(), true);
+                keys.insert(k.to_ascii_uppercase());
             }
         }
         true
@@ -283,22 +283,22 @@ pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
 
 pub fn new_join_side_facts(
     val: Value,
-    keys: HashMap<String, bool>,
+    keys: HashSet<String>,
     nullable: bool,
     bound: &[String],
 ) -> JoinSideFacts {
-    let mut names = HashMap::new();
+    let mut names = HashSet::new();
     for b in bound {
         if b == "_1" || b == "_2" || b == "_" {
             continue;
         }
-        names.insert(b.clone(), true);
-        names.insert(b.to_ascii_lowercase(), true);
+        names.insert(b.clone());
+        names.insert(b.to_ascii_lowercase());
     }
-    let mut first = HashMap::new();
+    let mut first = HashSet::new();
     if let Some(row) = val.first_child() {
         for k in row.keys() {
-            first.insert(k.to_ascii_uppercase(), true);
+            first.insert(k.to_ascii_uppercase());
         }
     }
     JoinSideFacts {
@@ -313,7 +313,7 @@ pub fn new_join_side_facts(
 
 pub fn join_side_total(side: &JoinSideFacts, name: &str, numeric: bool) -> bool {
     let upper = name.to_ascii_uppercase();
-    if !side.first.contains_key(&upper) || side.nullable {
+    if !side.first.contains(&upper) || side.nullable {
         return false;
     }
     let id = if numeric {
@@ -344,7 +344,7 @@ pub fn join_side_present(side: &JoinSideFacts, name: &str) -> bool {
 
 pub fn join_side_any(side: &JoinSideFacts, name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    if !side.first.contains_key(&upper) || side.nullable {
+    if !side.first.contains(&upper) || side.nullable {
         return false;
     }
     let id = format!("A:{}", name);
@@ -387,21 +387,21 @@ pub fn join_keys_safe(
 
         if obj.t == NodeType::Index {
             if let (Some(ref obj_l), Some(ref obj_r)) = (&obj.l, &obj.r) {
-                if obj_l.t == NodeType::Var && ob.row_names.contains_key(&obj_l.s) && obj_r.t == NodeType::Text {
+                if obj_l.t == NodeType::Var && ob.row_names.contains(&obj_l.s) && obj_r.t == NodeType::Text {
                     let member = &obj_r.s;
-                    if left.names.contains_key(member) {
+                    if left.names.contains(member) {
                         if !join_side_present(left, field) {
                             return false;
                         }
                         continue;
                     }
                     let mut side: Option<&JoinSideFacts> = None;
-                    if right.names.contains_key(member) {
+                    if right.names.contains(member) {
                         side = Some(right);
                     }
                     let mut i = 0;
                     while side.is_none() && i < n_below {
-                        if above[i].names.contains_key(member) {
+                        if above[i].names.contains(member) {
                             side = Some(&above[i]);
                         }
                         i += 1;
@@ -423,11 +423,11 @@ pub fn join_keys_safe(
             }
         }
 
-        if obj.t == NodeType::Var && ob.row_names.contains_key(&obj.s) {
+        if obj.t == NodeType::Var && ob.row_names.contains(&obj.s) {
             let upper = field.to_ascii_uppercase();
             let mut owner: Option<&JoinSideFacts> = None;
             let mut owners = 0;
-            let consider = |s: &JoinSideFacts| s.keys.contains_key(&upper);
+            let consider = |s: &JoinSideFacts| s.keys.contains(&upper);
             if consider(left) {
                 owner = Some(left);
                 owners += 1;
@@ -464,17 +464,17 @@ pub fn join_totality(
         let mut owner: Option<&JoinSideFacts> = None;
         let mut owners = 0;
         if let Some(l) = left {
-            if l.keys.contains_key(&key) {
+            if l.keys.contains(&key) {
                 owner = Some(l);
                 owners += 1;
             }
         }
-        if right.keys.contains_key(&key) {
+        if right.keys.contains(&key) {
             owner = Some(right);
             owners += 1;
         }
         for s in above {
-            if s.keys.contains_key(&key) {
+            if s.keys.contains(&key) {
                 owner = Some(s);
                 owners += 1;
             }
@@ -488,9 +488,9 @@ pub fn join_totality(
 
 pub fn join_stage_walk<'a>(
     stages: &'a [JoinStage],
-    owned_here: &impl Fn(&HashMap<String, bool>, &JoinStage) -> bool,
+    owned_here: &impl Fn(&HashSet<String>, &JoinStage) -> bool,
     total_here: &impl Fn(&[JoinTotalReq], &JoinStage) -> bool,
-    right_here: &impl Fn(&HashMap<String, bool>, &JoinStage) -> bool,
+    right_here: &impl Fn(&HashSet<String>, &JoinStage) -> bool,
 ) -> (Vec<JoinApplied<'a>>, Option<StageStop>) {
     let mut applied = Vec::new();
     for (si, stage) in stages.iter().enumerate() {

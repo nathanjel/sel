@@ -1,4 +1,4 @@
-use crate::ast::{MathPlan, MathStep, Node, NodeType};
+use crate::ast::{MathPlan, MathStep, Node, NodeType, OpCode};
 use crate::context::Context;
 use crate::dec::{
     dec_abs, dec_add, dec_ceil, dec_cmp, dec_div, dec_floor, dec_mod, dec_mul, dec_negate,
@@ -117,8 +117,8 @@ fn slots_read_once(steps: &[MathStep], output: u16, size: usize) -> bool {
     };
     for step in steps {
         match step.op {
-            "LOAD_VAR" | "LOAD_CONST" | "LOAD_LEAF" => {}
-            "NEG" | "ABS" | "SIGN" | "CEIL" | "FLOOR" | "TRUNC" => read(step.src1),
+            OpCode::LoadVar | OpCode::LoadConst | OpCode::LoadLeaf => {}
+            OpCode::Neg | OpCode::Abs | OpCode::Sign | OpCode::Ceil | OpCode::Floor | OpCode::Trunc => read(step.src1),
             _ => {
                 read(step.src1);
                 read(step.src2);
@@ -152,17 +152,7 @@ fn emit(
 
     if node.t == NodeType::Var {
         let slot = alloc_slot(slot_count, overflow);
-        steps.push(MathStep {
-            op: "LOAD_VAR",
-            dst: slot,
-            src1: 0,
-            src2: 0,
-            pos: node.pos,
-            aux_pos: Pos::default(),
-            name: node.s.clone(),
-            const_val: None,
-            leaf_node: None,
-        });
+        steps.push(MathStep { name: node.s.clone(), ..MathStep::new(OpCode::LoadVar, slot, node.pos) });
         return Some(EmitResult { slot });
     }
 
@@ -172,17 +162,7 @@ fn emit(
             None => dec_parse(&node.s, node.pos).ok()?,
         };
         let slot = alloc_slot(slot_count, overflow);
-        steps.push(MathStep {
-            op: "LOAD_CONST",
-            dst: slot,
-            src1: 0,
-            src2: 0,
-            pos: node.pos,
-            aux_pos: Pos::default(),
-            name: String::new(),
-            const_val: Some(dec.clone()),
-            leaf_node: None,
-        });
+        steps.push(MathStep { const_val: Some(dec), ..MathStep::new(OpCode::LoadConst, slot, node.pos) });
         return Some(EmitResult { slot });
     }
 
@@ -191,44 +171,26 @@ fn emit(
         let r = node.r.as_ref()?;
         let res_l = emit(l, depth + 1, steps, slot_count, overflow)?;
         let res_r = emit(r, depth + 1, steps, slot_count, overflow)?;
-        let op_name = get_operator_name(&node.s)?;
+        let op = OpCode::from_name(get_operator_name(&node.s)?)?;
 
         let dst = alloc_slot(slot_count, overflow);
-        steps.push(MathStep {
-            op: op_name,
-            dst,
-            src1: res_l.slot,
-            src2: res_r.slot,
-            pos: node.pos,
-            aux_pos: Pos::default(),
-            name: String::new(),
-            const_val: None,
-            leaf_node: None,
-        });
+        steps.push(MathStep { src1: res_l.slot, src2: res_r.slot, ..MathStep::new(op, dst, node.pos) });
         return Some(EmitResult { slot: dst });
     }
 
     if node.t == NodeType::Un && get_prefix_name(&node.s).is_some() {
         let l = node.l.as_ref()?;
         let res_x = emit(l, depth + 1, steps, slot_count, overflow)?;
+        let op = OpCode::from_name(get_prefix_name(&node.s)?)?;
         let dst = alloc_slot(slot_count, overflow);
-        steps.push(MathStep {
-            op: get_prefix_name(&node.s)?,
-            dst,
-            src1: res_x.slot,
-            src2: 0,
-            pos: node.pos,
-            aux_pos: Pos::default(),
-            name: String::new(),
-            const_val: None,
-            leaf_node: None,
-        });
+        steps.push(MathStep { src1: res_x.slot, ..MathStep::new(op, dst, node.pos) });
         return Some(EmitResult { slot: dst });
     }
 
     if node.t == NodeType::Call {
         for &(name, ref b_spec) in BUILTINS {
             if name == node.s {
+                let op = OpCode::from_name(b_spec.op)?;
                 let args = &node.items;
                 match b_spec.arity {
                     crate::math_ops::MathArity::One => {
@@ -237,17 +199,7 @@ fn emit(
                         }
                         let res_arg = emit(&args[0], depth + 1, steps, slot_count, overflow)?;
                         let dst = alloc_slot(slot_count, overflow);
-                        steps.push(MathStep {
-                            op: b_spec.op,
-                            dst,
-                            src1: res_arg.slot,
-                            src2: 0,
-                            pos: node.pos,
-                            aux_pos: Pos::default(),
-                            name: String::new(),
-                            const_val: None,
-                            leaf_node: None,
-                        });
+                        steps.push(MathStep { src1: res_arg.slot, ..MathStep::new(op, dst, node.pos) });
                         return Some(EmitResult { slot: dst });
                     }
                     crate::math_ops::MathArity::Two => {
@@ -267,15 +219,10 @@ fn emit(
                             Pos::default()
                         };
                         steps.push(MathStep {
-                            op: b_spec.op,
-                            dst,
                             src1: res0.slot,
                             src2: res1.slot,
-                            pos: node.pos,
                             aux_pos,
-                            name: String::new(),
-                            const_val: None,
-                            leaf_node: None,
+                            ..MathStep::new(op, dst, node.pos)
                         });
                         return Some(EmitResult { slot: dst });
                     }
@@ -290,17 +237,7 @@ fn emit(
                         let mut curr_slot = res_args[0].slot;
                         for res_next in &res_args[1..] {
                             let dst = alloc_slot(slot_count, overflow);
-                            steps.push(MathStep {
-                                op: b_spec.op,
-                                dst,
-                                src1: curr_slot,
-                                src2: res_next.slot,
-                                pos: node.pos,
-                                aux_pos: Pos::default(),
-                                name: String::new(),
-                                const_val: None,
-                                leaf_node: None,
-                            });
+                            steps.push(MathStep { src1: curr_slot, src2: res_next.slot, ..MathStep::new(op, dst, node.pos) });
                             curr_slot = dst;
                         }
                         return Some(EmitResult { slot: curr_slot });
@@ -321,17 +258,7 @@ fn emit(
     }
 
     let slot = alloc_slot(slot_count, overflow);
-    steps.push(MathStep {
-        op: "LOAD_LEAF",
-        dst: slot,
-        src1: 0,
-        src2: 0,
-        pos: node.pos,
-        aux_pos: Pos::default(),
-        name: String::new(),
-        const_val: None,
-        leaf_node: Some(Box::new(node.clone())),
-    });
+    steps.push(MathStep { leaf_node: Some(Box::new(node.clone())), ..MathStep::new(OpCode::LoadLeaf, slot, node.pos) });
     Some(EmitResult { slot })
 }
 
@@ -358,18 +285,18 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
     for step in &plan.steps {
         let dst = step.dst as usize;
         match step.op {
-            "LOAD_VAR" => {
+            OpCode::LoadVar => {
                 let val = ctx.lookup(&step.name).ok_or_else(|| {
                     SelError::undef_var(format!("undefined variable {}", step.name), step.pos)
                 })?;
                 scratchpad[dst] = MathValue::Reference(val, step.pos);
                 continue;
             }
-            "LOAD_CONST" => {
+            OpCode::LoadConst => {
                 scratchpad[dst] = MathValue::Number(step.const_val.as_ref().unwrap().clone());
                 continue;
             }
-            "LOAD_LEAF" => {
+            OpCode::LoadLeaf => {
                 let leaf = step.leaf_node.as_ref().unwrap();
                 scratchpad[dst] = MathValue::Reference(eval_node(leaf, ctx)?, leaf.pos);
                 continue;
@@ -380,21 +307,21 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
         // this operation, left to right, just as in the unoptimized evaluator.
         let a = scratchpad[step.src1 as usize].take()?;
         let result = match step.op {
-            "NEG" => dec_negate(&a),
-            "ABS" => dec_abs(&a),
-            "SIGN" => Dec::from_i64(dec_sign(&a)),
-            "CEIL" => dec_ceil(&a, step.pos)?,
-            "FLOOR" => dec_floor(&a, step.pos)?,
-            "TRUNC" => dec_trunc(&a),
+            OpCode::Neg => dec_negate(&a),
+            OpCode::Abs => dec_abs(&a),
+            OpCode::Sign => Dec::from_i64(dec_sign(&a)),
+            OpCode::Ceil => dec_ceil(&a, step.pos)?,
+            OpCode::Floor => dec_floor(&a, step.pos)?,
+            OpCode::Trunc => dec_trunc(&a),
             op => {
                 let b = scratchpad[step.src2 as usize].take()?;
                 match op {
-                    "ADD" => dec_add(&a, &b, step.pos)?,
-                    "SUB" => dec_sub(&a, &b, step.pos)?,
-                    "MUL" => dec_mul(&a, &b, step.pos)?,
-                    "DIV" => dec_div(&a, &b, step.pos)?,
-                    "MOD" => dec_mod(&a, &b, step.pos)?,
-                    "ROUND" => {
+                    OpCode::Add => dec_add(&a, &b, step.pos)?,
+                    OpCode::Sub => dec_sub(&a, &b, step.pos)?,
+                    OpCode::Mul => dec_mul(&a, &b, step.pos)?,
+                    OpCode::Div => dec_div(&a, &b, step.pos)?,
+                    OpCode::Mod => dec_mod(&a, &b, step.pos)?,
+                    OpCode::Round => {
                         let scale = check_sized_int(
                             &b,
                             "ROUND",
@@ -405,7 +332,7 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
                         )?;
                         dec_round(&a, scale, step.pos)?
                     }
-                    "POWER" => {
+                    OpCode::Power => {
                         let exp = check_sized_int(
                             &b,
                             "POWER",
@@ -416,25 +343,23 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
                         )?;
                         dec_power(&a, exp, step.pos)?
                     }
-                    "MIN" => {
+                    OpCode::Min => {
                         if dec_cmp(&b, &a).is_lt() {
                             b
                         } else {
                             a
                         }
                     }
-                    "MAX" => {
+                    OpCode::Max => {
                         if dec_cmp(&b, &a).is_gt() {
                             b
                         } else {
                             a
                         }
                     }
-                    _ => {
-                        return Err(SelError::syntax(
-                            format!("unknown math step op {}", op),
-                            step.pos,
-                        ))
+                    OpCode::LoadVar | OpCode::LoadConst | OpCode::LoadLeaf | OpCode::Neg | OpCode::Abs
+                    | OpCode::Sign | OpCode::Ceil | OpCode::Floor | OpCode::Trunc => {
+                        unreachable!("handled above")
                     }
                 }
             }

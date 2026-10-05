@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::shape::{intern_record_shape, RecordShape};
@@ -41,19 +41,19 @@ pub struct JoinPlanKey {
 }
 
 pub struct JoinFlatTest {
-    pub binder_names: HashMap<String, bool>,
+    pub binder_names: HashSet<String>,
     pub last_shape_id: Option<u64>,
     pub slots: Vec<usize>,
 }
 
 impl JoinFlatTest {
     pub fn new(b1: &str, b2: &str) -> Self {
-        let mut bm = HashMap::new();
+        let mut bm = HashSet::new();
         for k in binder_keys(b1, "_1") {
-            bm.insert(k, true);
+            bm.insert(k);
         }
         for k in binder_keys(b2, "_2") {
-            bm.insert(k, true);
+            bm.insert(k);
         }
         Self {
             binder_names: bm,
@@ -72,7 +72,7 @@ impl JoinFlatTest {
             self.last_shape_id = Some(shape.id);
             self.slots.clear();
             for (i, k) in shape.keys.iter().enumerate() {
-                if !self.binder_names.contains_key(k) {
+                if !self.binder_names.contains(k) {
                     self.slots.push(i);
                 }
             }
@@ -172,13 +172,13 @@ pub fn make_joined_row(
     } else {
         Vec::new()
     };
-    let mut right_names = HashMap::new();
+    let mut right_names = HashSet::new();
     for e in &right_entries {
-        right_names.insert(e.key.to_ascii_uppercase(), true);
+        right_names.insert(e.key.to_ascii_uppercase());
     }
 
     for e in &left_entries {
-        if join_category(&e.val) != JOIN_NESTED && !right_names.contains_key(&e.key.to_ascii_uppercase())
+        if join_category(&e.val) != JOIN_NESTED && !right_names.contains(&e.key.to_ascii_uppercase())
             && !slot.contains_key(&e.key) {
                 slot.insert(e.key.clone(), entries.len());
                 entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
@@ -186,12 +186,12 @@ pub fn make_joined_row(
     }
 
     if right.is_some() {
-        let mut left_names = HashMap::new();
+        let mut left_names = HashSet::new();
         for e in &left_entries {
-            left_names.insert(e.key.to_ascii_uppercase(), true);
+            left_names.insert(e.key.to_ascii_uppercase());
         }
         for e in &right_entries {
-            if join_category(&e.val) == JOIN_SCALAR && !left_names.contains_key(&e.key.to_ascii_uppercase())
+            if join_category(&e.val) == JOIN_SCALAR && !left_names.contains(&e.key.to_ascii_uppercase())
                 && !slot.contains_key(&e.key) {
                     slot.insert(e.key.clone(), entries.len());
                     entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
@@ -370,13 +370,13 @@ pub fn compile_join_plan(
     }
 
     let r_keys = &rside_shape.keys;
-    let mut right_names = HashMap::new();
+    let mut right_names = HashSet::new();
     for k in r_keys.iter() {
-        right_names.insert(k.to_ascii_uppercase(), true);
+        right_names.insert(k.to_ascii_uppercase());
     }
 
     for (i, k) in l_keys.iter().enumerate() {
-        if !is_left_nested(&l_storage[i]) && !right_names.contains_key(&k.to_ascii_uppercase())
+        if !is_left_nested(&l_storage[i]) && !right_names.contains(&k.to_ascii_uppercase())
             && !slot_map.contains_key(k) {
                 slot_map.insert(k.clone(), keys.len());
                 keys.push(k.clone());
@@ -388,15 +388,15 @@ pub fn compile_join_plan(
     }
 
     if matched {
-        let mut left_names = HashMap::new();
+        let mut left_names = HashSet::new();
         for k in l_keys.iter() {
-            left_names.insert(k.to_ascii_uppercase(), true);
+            left_names.insert(k.to_ascii_uppercase());
         }
         let r_storage = rside_inner.storage.as_ref().unwrap();
         for (j, k) in r_keys.iter().enumerate() {
             let item_inner = r_storage[j].0.borrow();
             if (item_inner.kind != Kind::None || item_inner.is_list)
-                && !left_names.contains_key(&k.to_ascii_uppercase())
+                && !left_names.contains(&k.to_ascii_uppercase())
                 && !slot_map.contains_key(k) {
                     slot_map.insert(k.clone(), keys.len());
                     keys.push(k.clone());
@@ -428,22 +428,22 @@ pub fn compile_join_plan(
 
     let mut rkept = Vec::new();
     if matched {
-        let mut left_names = HashMap::new();
+        let mut left_names = HashSet::new();
         for k in l_keys.iter() {
-            left_names.insert(k.to_ascii_uppercase(), true);
+            left_names.insert(k.to_ascii_uppercase());
         }
-        let mut binder_names = HashMap::new();
+        let mut binder_names = HashSet::new();
         for k in binder_keys(b1, "_1") {
-            binder_names.insert(k, true);
+            binder_names.insert(k);
         }
         for k in binder_keys(b2, "_2") {
-            binder_names.insert(k, true);
+            binder_names.insert(k);
         }
         let r_storage = rside_inner.storage.as_ref().unwrap();
         for (j, k) in r_keys.iter().enumerate() {
             let item_inner = r_storage[j].0.borrow();
-            if !left_names.contains_key(&k.to_ascii_uppercase())
-                && !binder_names.contains_key(k)
+            if !left_names.contains(&k.to_ascii_uppercase())
+                && !binder_names.contains(k)
                 && (item_inner.kind == Kind::None && !item_inner.is_list)
             {
                 rkept.push(j);

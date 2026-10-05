@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Node, NodeType};
 use crate::limits::{MAX_DEPTH, MAX_SQL_NODES};
@@ -12,7 +12,7 @@ use crate::sql::node::{SNode, SNodeType};
 
 pub fn normalise(
     ast: &Node,
-    const_names: Option<&HashMap<String, bool>>,
+    const_names: Option<&HashSet<String>>,
     root: Option<&Value>,
 ) -> Result<SNode, SqlError> {
     // Alpha-rename explicit binders before helper substitution. Names that were
@@ -26,7 +26,7 @@ pub fn normalise(
             }
         }
     }
-    if let Some(names) = const_names { captures.extend(names.keys().cloned()); }
+    if let Some(names) = const_names { captures.extend(names.iter().cloned()); }
     let hygienic;
     let ast = if captures.is_empty() { ast } else {
         hygienic = rename_binders(ast, &captures, &HashMap::new(), &mut 0);
@@ -179,7 +179,7 @@ fn record_stmt(
     s: &Node,
     defs: &mut HashMap<String, SNode>,
     sizes: &mut HashMap<String, Meas>,
-    const_names: Option<&HashMap<String, bool>>,
+    const_names: Option<&HashSet<String>>,
     root: Option<&Value>,
     depth: usize,
 ) -> Result<(), SqlError> {

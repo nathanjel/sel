@@ -374,7 +374,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     if over_join {
         if let Some(ref r) = report {
             if !r.errored {
-                let rest: Vec<&JoinConjunct> = own.iter().filter(|c| !r.applied.contains_key(&c.id)).collect();
+                let rest: Vec<&JoinConjunct> = own.iter().filter(|c| !r.applied.contains(&c.id)).collect();
                 if rest.len() < own.len() {
                     if rest.is_empty() {
                         all_applied = true;
@@ -1482,9 +1482,9 @@ struct JoinEqui<'a> {
     swapped: bool,
 }
 
-fn expr_depends_only_on(node: &Node, allowed: &HashMap<String, bool>) -> bool {
+fn expr_depends_only_on(node: &Node, allowed: &HashSet<String>) -> bool {
     match node.t {
-        NodeType::Var => allowed.contains_key(&node.s.to_ascii_uppercase()),
+        NodeType::Var => allowed.contains(&node.s.to_ascii_uppercase()),
         NodeType::Index => {
             node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
                 && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
@@ -1511,14 +1511,14 @@ fn extract_join_equi<'a>(node: &'a Node, b1: &str, b2: &str) -> Option<JoinEqui<
     if b1.eq_ignore_ascii_case(b2) {
         return None;
     }
-    let mut left_names = HashMap::new();
-    left_names.insert(b1.to_ascii_uppercase(), true);
-    left_names.insert("_1".to_string(), true);
-    left_names.insert("_".to_string(), true);
+    let mut left_names = HashSet::new();
+    left_names.insert(b1.to_ascii_uppercase());
+    left_names.insert("_1".to_string());
+    left_names.insert("_".to_string());
 
-    let mut right_names = HashMap::new();
-    right_names.insert(b2.to_ascii_uppercase(), true);
-    right_names.insert("_2".to_string(), true);
+    let mut right_names = HashSet::new();
+    right_names.insert(b2.to_ascii_uppercase());
+    right_names.insert("_2".to_string());
 
     let l = node.l.as_ref()?;
     let r = node.r.as_ref()?;
@@ -1594,24 +1594,32 @@ fn join_set_row(ctx: &mut Context, names: &[String], row: &Value) {
     }
 }
 
-/// A pre-applied conjunct list on the row bound in the innermost frame:
-/// 0 keep, 1 drop, 2 keep because a conjunct raised (the FILTER decides).
-fn join_verdict(args: &mut Args, conjuncts: &[Node], errored: &mut bool) -> u8 {
+/// What a pre-applied conjunct list says of the row bound in the innermost
+/// frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    Keep,
+    Drop,
+    /// A conjunct raised: the row is kept, and the FILTER decides.
+    KeepOnError,
+}
+
+fn join_verdict(args: &mut Args, conjuncts: &[Node], errored: &mut bool) -> Verdict {
     for conjunct in conjuncts {
         match crate::eval::eval_bool(conjunct, args.ctx) {
             Err(_) => {
                 *errored = true;
-                return 2;
+                return Verdict::KeepOnError;
             }
-            Ok(false) => return 1,
+            Ok(false) => return Verdict::Drop,
             Ok(true) => {}
         }
     }
-    0
+    Verdict::Keep
 }
 
-fn fields_all(fields: &HashMap<String, bool>, mut pred: impl FnMut(&str) -> bool) -> bool {
-    fields.keys().all(|f| pred(f))
+fn fields_all(fields: &HashSet<String>, mut pred: impl FnMut(&str) -> bool) -> bool {
+    fields.iter().all(|f| pred(f))
 }
 
 // A join's state between the phases of `do_link`. The phases that evaluate
@@ -1712,7 +1720,7 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
     let mut above_keys: Vec<HashSet<String>> = vec![HashSet::new()];
     for side in &above {
         let mut next = above_keys.last().unwrap().clone();
-        next.extend(side.keys.keys().cloned());
+        next.extend(side.keys.iter().cloned());
         above_keys.push(next);
     }
     let equi_opt = extract_join_equi(predicate_node, &b1, &b2);
@@ -1754,14 +1762,14 @@ fn link_hand_down(args: &mut Args, st: &mut LinkState, right_first: Value) {
     ));
     let stop = {
         let st: &LinkState = st;
-        let owned_by_left = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+        let owned_by_left = |fields: &HashSet<String>, stage: &JoinStage| {
             let upper = st.above_keys_of(stage);
-            fields_all(fields, |f| !rs.keys.contains_key(f) && !upper.contains(f))
+            fields_all(fields, |f| !rs.keys.contains(f) && !upper.contains(f))
         };
         let total_below = |reqs: &[JoinTotalReq], stage: &JoinStage| {
             join_totality(reqs, None, &rs, st.above_of(stage))
         };
-        let nothing_right = |_: &HashMap<String, bool>, _: &JoinStage| false;
+        let nothing_right = |_: &HashSet<String>, _: &JoinStage| false;
         join_stage_walk(&st.stages, &owned_by_left, &total_below, &nothing_right).1
     };
     let mut handed = join_truncate_stages(&st.stages, stop.as_ref());
@@ -1772,11 +1780,11 @@ fn link_hand_down(args: &mut Args, st: &mut LinkState, right_first: Value) {
         let mut sides = Vec::with_capacity(st.above.len() + 1);
         sides.push(rs.clone());
         sides.extend(st.above.iter().cloned());
-        let mut row_names = HashMap::new();
-        row_names.insert(st.b1.clone(), true);
-        row_names.insert(st.b1.to_ascii_lowercase(), true);
-        row_names.insert("_1".to_string(), true);
-        row_names.insert("_".to_string(), true);
+        let mut row_names = HashSet::new();
+        row_names.insert(st.b1.clone());
+        row_names.insert(st.b1.to_ascii_lowercase());
+        row_names.insert("_1".to_string());
+        row_names.insert("_".to_string());
         // This join computes its left key on every row it receives; a row
         // dropped below never arrives, so the key goes down as an
         // obligation for the join that drops to prove.
@@ -1920,7 +1928,7 @@ fn link_body<'a>(
             let mut left_before_right: Option<usize> = None;
             let mut binders: Vec<String> = Vec::new();
             let mut report = JoinReport {
-                applied: HashMap::new(),
+                applied: HashSet::new(),
                 errored: false,
                 dropped: below.as_ref().is_some_and(|b| b.dropped),
             };
@@ -1931,10 +1939,10 @@ fn link_body<'a>(
             // in every joined row, unless the left binder has the same name,
             // or a join above rebinds it.
             let right_names = |stage_above: usize| {
-                let mut names = HashMap::new();
-                names.insert(upper_b2.clone(), true);
+                let mut names = HashSet::new();
+                names.insert(upper_b2.clone());
                 if stage_above == 0 {
-                    names.insert("_2".to_string(), true);
+                    names.insert("_2".to_string());
                 }
                 names
             };
@@ -1958,31 +1966,31 @@ fn link_body<'a>(
                     &b1_names,
                 );
                 let safe = obligations.is_empty() || join_keys_safe(&obligations, &left_side, &rs, &above);
-                let mut self_names = HashMap::new();
-                self_names.insert(upper_b1.clone(), true);
-                self_names.insert("_1".to_string(), true);
+                let mut self_names = HashSet::new();
+                self_names.insert(upper_b1.clone());
+                self_names.insert("_1".to_string());
                 if safe {
-                    let owned_here = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+                    let owned_here = |fields: &HashSet<String>, stage: &JoinStage| {
                         let upper = above_keys_of(stage);
-                        fields_all(fields, |f| !rs.keys.contains_key(f) && !upper.contains(f))
+                        fields_all(fields, |f| !rs.keys.contains(f) && !upper.contains(f))
                     };
                     let total_here = |reqs: &[JoinTotalReq], stage: &JoinStage| {
                         join_totality(reqs, Some(&left_side), &rs, above_of(stage))
                     };
-                    let right_here = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+                    let right_here = |fields: &HashSet<String>, stage: &JoinStage| {
                         if !right_ok {
                             return false;
                         }
                         let names = right_names(stage.above);
                         let upper = above_keys_of(stage);
-                        fields_all(fields, |f| names.contains_key(f) && !upper.contains(f))
+                        fields_all(fields, |f| names.contains(f) && !upper.contains(f))
                     };
                     let (walk_applied, _) = join_stage_walk(&stages, &owned_here, &total_here, &right_here);
                     for applied in walk_applied {
                         let c = applied.conjunct;
-                        report.applied.insert(c.id, true);
+                        report.applied.insert(c.id);
                         if let Some(ref b) = below {
-                            if !b.errored && b.applied.contains_key(&c.id) {
+                            if !b.errored && b.applied.contains(&c.id) {
                                 continue;
                             }
                         }
@@ -1995,8 +2003,8 @@ fn link_body<'a>(
                         }
                         let reads_self = c
                             .fields
-                            .keys()
-                            .any(|f| self_names.contains_key(f) && !left_side.first.contains_key(f));
+                            .iter()
+                            .any(|f| self_names.contains(f) && !left_side.first.contains(f));
                         if reads_self {
                             prefix.push(join_read_self(&c.node, &self_names, &c.binder));
                         } else {
@@ -2020,7 +2028,7 @@ fn link_body<'a>(
                 for rows in buckets.values_mut() {
                     for (row, rejected) in rows.iter_mut() {
                         join_set_row(args.ctx, &binders, row);
-                        if join_verdict(args, &right_prefix, &mut report.errored) == 1 {
+                        if join_verdict(args, &right_prefix, &mut report.errored) == Verdict::Drop {
                             *rejected = true;
                         }
                     }
@@ -2078,12 +2086,12 @@ fn link_body<'a>(
 
             for l_entry in left_ents {
                 let left = left_alias.apply(l_entry);
-                let mut asked: i8 = -1;
+                let mut asked: Option<Verdict> = None;
                 if let Some(ref ff) = fast_field {
                     if left.has(ff) {
                         join_set_row(args.ctx, &row_slots, &left);
-                        asked = join_verdict(args, &prefix, &mut report.errored) as i8;
-                        if asked == 1 {
+                        asked = Some(join_verdict(args, &prefix, &mut report.errored));
+                        if asked == Some(Verdict::Drop) {
                             // Dropped before its key was computed -- but the
                             // key is this very field, and a rejected one
                             // still raises in the join as written.
@@ -2102,15 +2110,13 @@ fn link_body<'a>(
                 check_join_pair(equi, &lk, l_bad.as_ref(), &facts)?;
                 let r_rows = buckets.get(&lk);
 
-                if asked < 0 {
-                    asked = if prefix.is_empty() {
-                        0
-                    } else {
-                        join_verdict(args, &prefix, &mut report.errored) as i8
-                    };
-                }
+                let asked = match asked {
+                    Some(verdict) => verdict,
+                    None if prefix.is_empty() => Verdict::Keep,
+                    None => join_verdict(args, &prefix, &mut report.errored),
+                };
 
-                if asked == 1 {
+                if asked == Verdict::Drop {
                     dropped = true;
                     if numbered {
                         if let Some(rows) = r_rows {
@@ -2125,7 +2131,7 @@ fn link_body<'a>(
                 if let Some(rows) = r_rows {
                     // A left row kept on an error meets every right row: its
                     // joined rows raise in the FILTER, in order.
-                    let skip = rejecting && asked == 0;
+                    let skip = rejecting && asked == Verdict::Keep;
                     for (right, rejected) in rows {
                         if skip && *rejected {
                             dropped = true;
@@ -2164,7 +2170,7 @@ fn link_body<'a>(
 
     if has_prefilter {
         args.ctx.join_prefilter_report = Some(JoinReport {
-            applied: HashMap::new(),
+            applied: HashSet::new(),
             errored: false,
             dropped: below.as_ref().is_some_and(|b| b.dropped),
         });

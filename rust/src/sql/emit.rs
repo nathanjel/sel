@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::dec::{dec_format, dec_parse};
 use crate::utf8::Pos;
@@ -317,7 +317,7 @@ impl Emit {
         tpl: &str,
         args: &[&Fragment],
         pos: Pos,
-        expanding: Option<&HashMap<String, bool>>,
+        expanding: Option<&HashSet<String>>,
     ) -> Result<Vec<Part>, SqlError> {
         let mut parts = Vec::new();
 
@@ -438,7 +438,7 @@ impl Emit {
                 continue;
             }
 
-            if expanding.is_some_and(|e| *e.get(key).unwrap_or(&false)) {
+            if expanding.is_some_and(|e| e.contains(key)) {
                 return refuse(
                     "E_SQL_UNSUPPORTED",
                     format!(
@@ -477,7 +477,7 @@ impl Emit {
             }
 
             let mut deeper = expanding.cloned().unwrap_or_default();
-            deeper.insert(key.to_string(), true);
+            deeper.insert(key.to_string());
 
             let sub_tpl = fill_slot(val_str, "{0}", &format!("{{{}}}", arg_str));
             let sub_parts = self.fill(&sub_tpl, args, pos, Some(&deeper))?;
@@ -518,7 +518,7 @@ mod tests {
         let many = vec![&first; 1001];
         let parts = emit.fill("{numericCast:*}", &many, pos, None).unwrap();
         assert_eq!(parts.iter().filter(|p| matches!(p, Part::Slot(7))).count(), 1001);
-        let expanding = HashMap::from([("numericCast".into(), true)]);
+        let expanding = HashSet::from(["numericCast".to_string()]);
         assert_eq!(emit.fill("{numericCast:*}", &[&first], pos, Some(&expanding)).unwrap_err().code,
             "E_SQL_UNSUPPORTED");
     }

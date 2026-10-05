@@ -25,7 +25,8 @@
 // the value it receives, in place, and returns it; HOSTF(x) returns x.
 
 use sel_lang::sql::{
-    execute_hybrid, plan_hybrid, Binding, Bindings, FieldEntry, HybridPlan, Mode, Options, SqlKind,
+    execute_hybrid, plan_hybrid, Binding, Bindings, FieldEntry, HybridPlan, Mode, Options, PlanKind,
+    SqlKind,
 };
 use sel_lang::{compile, dec_parse, register_function, Entry, Kind, Pos, SelError, Value};
 use serde_json::{json, Map, Value as Json};
@@ -135,7 +136,11 @@ fn handle(req: &Json, bindings: &mut Bindings) -> Json {
         ),
         "plan" => guarded(|| match plan(req, bindings) {
             Ok(p) => {
-                let kind = if p.pure_sql { "pure_sql" } else if p.pure_memory { "pure_memory" } else { "hybrid" };
+                let kind = match p.kind() {
+                    PlanKind::PureSql => "pure_sql",
+                    PlanKind::PureMemory => "pure_memory",
+                    PlanKind::Hybrid => "hybrid",
+                };
                 let statement = p
                     .sql_statement
                     .as_ref()
