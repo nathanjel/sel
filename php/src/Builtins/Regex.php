@@ -895,7 +895,9 @@ final class Regex
      * when the call runs, so a bad pattern in a branch that never executes is
      * still refused. `$flags` is the flags argument when it is a literal too,
      * else null; a bad flag is not this check's business (it is E_BAD_ARG when
-     * the call runs), so it only decides whether `i` is on.
+     * the call runs), so it only decides whether `i` is on. A non-ASCII
+     * pattern under `i` is still checked, without the fold (spec §7.8: the
+     * `i` refusal is a run-time one and comes last).
      *
      * @param array<string,mixed>|null $patPos
      */
@@ -904,7 +906,10 @@ final class Regex
         $ignoreCase = $flags !== null && in_array('i', Utf8::chars($flags), true);
         if ($ignoreCase) {
             foreach (Utf8::codePoints($pattern) as $cp) {
-                if ($cp > 0x7f) return;     // E_BAD_ARG at run time, as before
+                if ($cp > 0x7f) {
+                    $ignoreCase = false;
+                    break;
+                }
             }
         }
         self::compiled($pattern, $ignoreCase, $patPos);

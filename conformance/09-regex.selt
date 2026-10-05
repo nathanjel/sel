@@ -127,6 +127,46 @@ RMATCH('ą', "Ą", "i")
 --- expect
 error E_BAD_ARG
 ===
+### name: re.flag.i.non-ascii-literal-is-still-validated
+--- note
+A literal pattern is checked when the program is compiled (SPEC 7.8) whatever its flags: under `i` a non-ASCII pattern is validated without the fold, and the `i` refusal (E_BAD_ARG at the flag) comes only when the call runs, after that check. PHP skipped the check and answered 1.
+--- source
+IF(FALSE, RMATCH("é(", "x", "i"), 1)
+--- expect
+error E_REGEX_SYNTAX at 1:18
+===
+### name: re.flag.i.non-ascii-literal-pattern-error-wins-over-flag
+--- note
+A literal pattern is checked when the program is compiled (SPEC 7.8) whatever its flags: under `i` a non-ASCII pattern is validated without the fold, and the `i` refusal (E_BAD_ARG at the flag) comes only when the call runs, after that check. PHP reported E_BAD_ARG at the flag.
+--- source
+RMATCH("é(", "x", "i")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+### name: re.flag.i.non-ascii-valid-literal-in-dead-branch
+--- note
+A literal pattern is checked when the program is compiled (SPEC 7.8) whatever its flags: under `i` a non-ASCII pattern is validated without the fold, and the `i` refusal (E_BAD_ARG at the flag) comes only when the call runs, after that check. A valid one compiles.
+--- source
+IF(FALSE, RMATCH("é", "x", "i"), 1)
+--- expect
+num 1
+===
+### name: re.flag.i.non-ascii-valid-literal-refused-at-flag
+--- note
+A literal pattern is checked when the program is compiled (SPEC 7.8) whatever its flags: under `i` a non-ASCII pattern is validated without the fold, and the `i` refusal (E_BAD_ARG at the flag) comes only when the call runs, after that check.
+--- source
+RMATCH("é", "x", "i")
+--- expect
+error E_BAD_ARG at 1:18
+===
+### name: re.flag.i.non-ascii-computed-pattern-refused-at-flag
+--- note
+A literal pattern is checked when the program is compiled (SPEC 7.8) whatever its flags: under `i` a non-ASCII pattern is validated without the fold, and the `i` refusal (E_BAD_ARG at the flag) comes only when the call runs, after that check. A computed pattern is checked only when the call runs, where the flag is refused first.
+--- source
+P = "é("; RMATCH(P, "x", "i")
+--- expect
+error E_BAD_ARG at 1:26
+===
 ### name: re.flag.m-not-offered
 --- source
 RMATCH('^a$', "a", "m")
