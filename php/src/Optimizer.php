@@ -475,7 +475,7 @@ final class Optimizer
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
                     && $secondName === 'FILTER' && !self::stepReadsKey($second)
                     && self::keysRenumberedBy($steps[$i + 2] ?? null)
-                    && self::cannotRaise(self::sortDetails($first)['key'], self::sortDetails($first)['binder'] ?? '_', $logical)
+                    && self::sortCannotRaise($first, $logical)
                     && ($logical || self::predicateCannotRaise(self::filterDetails($second)['predicate'], self::filterDetails($second)['binder'], false))) {
                     [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                     $next[] = $second;
@@ -506,7 +506,7 @@ final class Optimizer
                     // that reads the whole row or `_K` reads what the MAP changes.
                     $details = self::sortDetails($second);
                     $refs = $details['key'] === null ? [] : self::fieldRefs($details['key'], $details['binder'] ?? '_');
-                    if ($details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
+                    if (!$details['opaque'] && $details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
                         && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')
                         && self::mapCannotRaise($first, $logical)
                         && self::cannotRaise($details['key'], $details['binder'] ?? '_', $logical)) {
@@ -862,35 +862,49 @@ final class Optimizer
     }
 
     /** @return array{binder:?string,key:?array<string,mixed>} */
+    /**
+     * The sort part of a SORT* / TOP* step, decoded as the evaluator decodes it
+     * (Registry::sortForm): the binder's name, the key node (null: the element
+     * itself), the direction node (null: none), and `opaque` when the step
+     * cannot be read at all here -- no form fits, or the binder slot is not a
+     * bare name (the evaluator raises E_EXPECT_SYMBOL) -- so no rewrite may
+     * pass over it.
+     *
+     * @return array{binder:?string,key:?array<string,mixed>,dir:?array<string,mixed>,opaque:bool}
+     */
     private static function sortDetails(array $step): array
     {
         $args = $step['args'];
-        $count = count($args);
-        $name = $step['name'];
+        $form = Registry::sortForm($step['name'], $args);
+        if ($form === null) return ['binder' => null, 'key' => null, 'dir' => null, 'opaque' => true];
         $binder = '_';
-        $key = null;
-        if (in_array($name, ['SORT', 'SORT_DESC'], true)) {
-            if ($count === 1) return ['binder' => null, 'key' => null];
-            $binder = $count === 3 && ($args[1]['t'] ?? null) === 'var' ? $args[1]['name'] : '_';
-            $key = $count === 3 ? $args[2] : $args[1];
-        } elseif (in_array($name, ['TOP', 'TOP_DESC'], true)) {
-            if ($count === 2) return ['binder' => null, 'key' => null];
-            $sortCount = $count - 1;
-            $binder = $sortCount === 3 && ($args[1]['t'] ?? null) === 'var' ? $args[1]['name'] : '_';
-            $key = $sortCount === 3 ? $args[2] : $args[1];
-        } elseif (in_array($name, ['SORT_BY', 'TOP_BY'], true)) {
-            $sortCount = $name === 'TOP_BY' ? $count - 1 : $count;
-            if ($sortCount === 2 || ($sortCount === 3 && ($args[2]['t'] ?? null) === 'text')) {
-                $key = $args[1];
-            } elseif (($args[1]['t'] ?? null) === 'var' && !($args[1]['grouped'] ?? false)) {
-                // The binder form, three slots or four (with a direction): the
-                // other hosts read both, and PHP's missing four-slot branch made
-                // its rewrites differ.
-                $binder = $args[1]['name'];
-                $key = $args[2];
+        if ($form['binder'] !== null) {
+            $slot = $args[$form['binder']];
+            if (($slot['t'] ?? null) !== 'var' || ($slot['grouped'] ?? false)) {
+                return ['binder' => null, 'key' => null, 'dir' => null, 'opaque' => true];
             }
+            $binder = $slot['name'];
         }
-        return ['binder' => $binder, 'key' => $key];
+        return [
+            'binder' => $form['key'] === null ? null : $binder,
+            'key' => $form['key'] === null ? null : $args[$form['key']],
+            'dir' => $form['dir'] === null ? null : $args[$form['dir']],
+            'opaque' => false,
+        ];
+    }
+
+    /**
+     * Whether a SORT* step's own work -- its key per element and its direction
+     * -- cannot raise, so a FILTER may be moved in front of it. A computed
+     * direction is an expression like any other.
+     */
+    private static function sortCannotRaise(array $step, bool $logical): bool
+    {
+        $d = self::sortDetails($step);
+        if ($d['opaque']) return false;
+        $binder = $d['binder'] ?? '_';
+        return ($d['key'] === null || self::cannotRaise($d['key'], $binder, $logical))
+            && ($d['dir'] === null || self::cannotRaise($d['dir'], $binder, $logical));
     }
 
     /** @param array<string,mixed> $node */

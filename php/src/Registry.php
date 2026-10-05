@@ -123,6 +123,35 @@ final class Registry
     }
 
     /**
+     * The sort part of a SORT, SORT_DESC, SORT_BY, TOP, TOP_DESC or TOP_BY call,
+     * read off the manifest's forms (bindingForm) so the evaluator and the
+     * optimizer decode it alike: which argument is the binder (null: `_`), the
+     * key (null: the element itself) and the direction (null: the name's own,
+     * or ASC). For SORT_BY/TOP_BY the forms put a text-literal direction
+     * before a bare name as binder, and take any other third slot as a
+     * computed direction (spec/builtins.json). A TOP call's last argument is
+     * its count, never the direction. Null when no form takes this count,
+     * which the compile-time arity check has already refused.
+     *
+     * @param list<array<string,mixed>> $args
+     * @return array{binder:?int,key:?int,dir:?int}|null
+     */
+    public static function sortForm(string $name, array $args): ?array
+    {
+        $form = self::bindingForm($name, $args);
+        if ($form === null) return null;
+        $last = str_starts_with(Utf8::upper($name), 'TOP') ? count($args) - 1 : count($args);
+        $out = ['binder' => null, 'key' => null, 'dir' => null];
+        foreach ($form['scopes'] as $i => $scope) {
+            if ($i === 0 || $i >= $last) continue;
+            if ($scope === 'binder') $out['binder'] = $i;
+            elseif ($scope === 'inner') $out['key'] = $i;
+            else $out['dir'] = $i;
+        }
+        return $out;
+    }
+
+    /**
      * Called once the shipped modules have registered: a manifest entry with
      * no definition is a host that would silently lack a builtin the others
      * have.

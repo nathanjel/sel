@@ -1704,39 +1704,18 @@ final class Structure
     {
         $value = $a->val(0);
         $limit = $a->nonNegInt($a->count() - 1);
-        $sortCount = $a->count() - 1;
-        $binder = '_';
+        // The form (Registry::sortForm), as SORT decodes it; the last argument
+        // is the count.
+        $form = Core::sortFormOf($a);
+        $binder = null;
         $body = null;
-        $dir = $forcedDir ?? 'ASC';
-        if ($sortCount === 1) {
-            $binder = null;
-        } elseif ($sortCount === 2) {
-            $body = $a->node(1);
-        } elseif ($sortCount === 3) {
-            if ($forcedDir !== null) {
-                $binder = $a->symbol(1);
-                $body = $a->node(2);
-            } elseif ($a->node(2)['t'] === 'text') {
-                $body = $a->node(1);
-                $dir = Utf8::upper($a->text(2));
-            } elseif ($a->isSymbol(1)) {
-                $binder = $a->symbol(1);
-                $body = $a->node(2);
-            } else {
-                $body = $a->node(1);
-                $dir = Utf8::upper($a->text(2));
-            }
-        } elseif ($sortCount === 4) {
-            $binder = $a->symbol(1);
-            $body = $a->node(2);
-            $dir = Utf8::upper($a->text(3));
-        } else {
-            // The manifest refuses any other count when the program is compiled.
-            throw new \LogicException("unreachable: {$a->name} with {$a->count()} arguments");
+        if ($form['key'] !== null) {
+            $binder = $form['binder'] === null ? '_' : $a->symbol($form['binder']);
+            $body = $a->node($form['key']);
         }
+        $dir = $form['dir'] === null ? ($forcedDir ?? 'ASC') : Utf8::upper($a->text($form['dir']));
         if ($dir !== 'ASC' && $dir !== 'DESC') {
-            $directionIndex = $sortCount === 4 ? 3 : 2;
-            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($directionIndex));
+            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($form['dir']));
         }
         // Count and direction are arguments like any other (spec §7.4): both are
         // evaluated and checked before an empty result is returned.

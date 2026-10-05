@@ -266,6 +266,20 @@ final class Core
         return 5;
     }
 
+    /**
+     * The decoded sort form of this SORT* / TOP* call (Registry::sortForm).
+     *
+     * @return array{binder:?int,key:?int,dir:?int}
+     */
+    public static function sortFormOf(Args $a): array
+    {
+        $nodes = [];
+        for ($i = 0, $n = $a->count(); $i < $n; $i++) $nodes[] = $a->node($i);
+        return Registry::sortForm($a->name, $nodes)
+            // The manifest refuses any other count when the program is compiled.
+            ?? throw new \LogicException("unreachable: {$a->name} with {$a->count()} arguments");
+    }
+
     private static function doSort(Args $a, Context $ctx, ?string $forcedDir): Value
     {
         $val = $a->val(0);
@@ -280,37 +294,14 @@ final class Core
                 $indexed[] = ['item' => $item->copyBelow(1, $pos), 'sk' => self::sortKey($item), 'idx' => $idx++];
             });
         } else {
-            if ($count === 2) {
-                $binder = '_';
-                $body = $a->node(1);
-                $dir = $forcedDir ?? 'ASC';
-            } elseif ($count === 3) {
-                if ($forcedDir !== null) {
-                    $binder = $a->symbol(1);
-                    $body = $a->node(2);
-                    $dir = $forcedDir;
-                } elseif ($a->node(2)['t'] === 'text') {
-                    $binder = '_';
-                    $body = $a->node(1);
-                    $dir = Utf8::upper($a->text(2));
-                } elseif ($a->isSymbol(1)) {
-                    $binder = $a->symbol(1);
-                    $body = $a->node(2);
-                    $dir = 'ASC';
-                } else {
-                    $binder = '_';
-                    $body = $a->node(1);
-                    $dir = Utf8::upper($a->text(2));
-                }
-            } else {
-                $binder = $a->symbol(1);
-                $body = $a->node(2);
-                $dir = Utf8::upper($a->text(3));
-            }
-
+            // The form (Registry::sortForm): a text-literal third slot is the
+            // direction even where a bare name stands second.
+            $form = self::sortFormOf($a);
+            $binder = $form['binder'] === null ? '_' : $a->symbol($form['binder']);
+            $body = $a->node($form['key']);
+            $dir = $form['dir'] === null ? ($forcedDir ?? 'ASC') : Utf8::upper($a->text($form['dir']));
             if ($dir !== 'ASC' && $dir !== 'DESC') {
-                $posIdx = $count === 4 ? 3 : 2;
-                fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($posIdx));
+                fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($form['dir']));
             }
             // The direction is an argument like any other (spec §7.4): it is
             // checked above whether or not there is anything to sort.
