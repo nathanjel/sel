@@ -1,7 +1,7 @@
 ;;;; Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
 ;;;; below rather than sixteen functions, so adding an operator is adding a row.
-;;;; python/sel/parser.py is the reference implementation of this shape and its
-;;;; module docstring is the rationale; docs/contributing.md, "Adding an operator",
+;;;; python/sel/parser.py was the pilot of this shape (no host is the reference:
+;;;; spec/ and conformance/ are) and its module docstring is the rationale; docs/contributing.md, "Adding an operator",
 ;;;; step 5, records what every host had to get right, each item of which
 ;;;; produces a valid parse of the WRONG TREE when it is wrong.
 ;;;;
@@ -13,7 +13,7 @@
 
 
 (defstruct (node (:constructor make-node (kind pos)))
-  ;; :num :text :bool :var :index :seq :list :un :bin :assign :call
+  ;; :num :text :bool :null :var :index :seq :list :un :bin :assign :call
   (kind :num :type keyword)
   (pos nil)
   (s "" :type string)      ; num/text literal, var name, or operator
@@ -54,10 +54,12 @@ node was compiled with, so it costs no table lookup."
   (let ((spec (node-spec node)))
     (and spec (spec-shipped spec))))
 
-;;; The operator families, named once for the PARSER. The precedence table below
-;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
-;;; +compare-ops+ whether an operator is a numeric comparison -- so the parser and
-;;; the evaluator cannot disagree about what a comparison is.
+;;; The operator families, named once for the PARSER: the precedence table below
+;;; is BUILT from these rather than repeating them. +compare-ops+ holds both the
+;;; numeric and the `$` text comparisons, all at one binding power. The
+;;; evaluator does not read these lists; it dispatches on the keyword
+;;; BINARY-OP-CODE (eval.lisp) gives each operator, cached per node by
+;;; NODE-OP-CODE.
 (defparameter +assign-ops+ '("=" "+=" "-=" "*=" "/=" "%=" "&="))
 (defparameter +compare-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))

@@ -3,8 +3,8 @@
 
 (in-package #:sel)
 
-;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
-;;; VISIT stops the walk and becomes the result.
+;;; Whether NODE reads the variable VAR-NAME anywhere (used to skip building _K
+;;; when a body never reads it).
 (defun node-contains-var-p (node var-name)
   (when (and node (node-p node))
     (case (node-kind node)

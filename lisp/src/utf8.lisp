@@ -112,8 +112,10 @@ then a STRING-DOWNCASE over the result, cost 0.48 s per MB (LISP-P18)."
   (and (= (length a) (length b))
        (every #'= a b)))
 
-;;; Bytewise, as spec/SPEC.md §5.3 requires. CL's STRING< is code-point order,
-;;; which disagrees with byte order — never use it for the `$` family.
+;;; Bytewise, as spec/SPEC.md §5.3 requires, on the UTF-8 bytes. For valid
+;;; scalar values code-point order is the same order (the JS host's UTF-16
+;;; units are what disagree), but the `$` family is defined on bytes, so it
+;;; compares bytes: never CL's STRING<.
 (defun bytes-compare (a b)
   (let ((n (min (length a) (length b))))
     (loop for i from 0 below n

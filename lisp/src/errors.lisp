@@ -8,8 +8,9 @@
 
 (in-package #:sel)
 
-;;; A source position, 1-based in code points. NIL line means "no position",
-;;; used for failures raised from host code rather than from a node.
+;;; A source position, 1-based in code points. Line 0 (FAIL's default when it is
+;;; given no position) means "no position": a failure raised from host code
+;;; rather than from a node.
 (defstruct (pos (:constructor make-pos (line col offset)))
   (line 0 :type fixnum)
   (col 0 :type fixnum)
