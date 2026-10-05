@@ -45,7 +45,11 @@ cmp -s "$mod/LICENSE" LICENSE || fail "go/LICENSE is missing or not the reposito
 [ "$(sed -n 's/^module //p' "$mod/go.mod")" = "github.com/nathanjel/sel/go" ] || fail "go.mod names another module"
 grep -Eq '^(replace|require)' "$mod/go.mod" && fail "go.mod has a replace or a requirement; the module has neither"
 for pkg in sel sel/sql; do
-  (cd "$mod" && go doc "./$pkg" 2>/dev/null | grep -q "^Package ${pkg##*/} ") || fail "$pkg has no package documentation"
+  # Captured, not piped: grep -q stops reading at its match, and with pipefail
+  # the SIGPIPE go doc then takes (sel/sql's listing, with the generated map's
+  # JSON constants, passes the 64 KB pipe buffer) failed the check at random.
+  pkgdoc="$(cd "$mod" && go doc "./$pkg" 2>/dev/null)"
+  grep -q "^Package ${pkg##*/} " <<<"$pkgdoc" || fail "$pkg has no package documentation"
 done
 
 # The hand-written sources are gofmt-clean. The generated ones (*_gen.go and the
