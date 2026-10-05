@@ -134,7 +134,7 @@ function check_expect(string $expect, ?Value $value, ?SelError $error, string $a
 {
     $space = strpos($expect, ' ');
     $form = $space === false ? $expect : substr($expect, 0, $space);
-    $rest = $space === false ? '' : trim(substr($expect, $space + 1));
+    $rest = $space === false ? '' : trim(substr($expect, $space + 1), WS);
 
     if ($form === 'error') {
         if ($error === null) {

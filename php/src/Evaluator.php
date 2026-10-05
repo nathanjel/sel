@@ -551,7 +551,7 @@ final class Evaluator
                 $target['pos'],
             );
         }
-                // The chain was walked iteratively, which is why nothing has counted it
+        // The chain was walked iteratively, which is why nothing has counted it
         // yet: `A[1][2][3]` is a chain of index nodes, not a nesting of them, so
         // neither the parser's depth nor the evaluator's ever sees it -- and the
         // value it is about to build is one level deeper than the chain is long.
@@ -561,7 +561,7 @@ final class Evaluator
         if (count($chain) + 1 > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $target['pos']);
         }
-$path = [$n['name']];
+        $path = [$n['name']];
         if (!$chain) {
             return $path;
         }
