@@ -1422,57 +1422,59 @@ fn make_null_record(sample: Option<&Value>, table_name: &str) -> Value {
     Value::record_from_entries(entries)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum JoinKeyType {
-    Null,
-    Bad,
-    Int64,
-    Dec,
-    Str,
-}
-
+/// An equi-join bucket key: two keys are equal exactly when the join's
+/// operator calls the operands equal, because a bucket hit is never
+/// re-checked against the predicate.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct JoinKey {
-    k_type: usize, // 0: null, 1: bad, 2: int64, 3: str
-    int_val: i64,
-    str_val: SelStr,
+enum JoinKey {
+    /// A NULL operand, which joins nothing.
+    Null,
+    /// An operand the operator refuses; it raises once the pair is live.
+    Bad,
+    /// `==`: a number that fits an i64 once its fraction zeros are dropped.
+    Int(i64),
+    /// `==`: any other number, by its scale-trimmed text.
+    Dec(SelStr),
+    /// `$==`: text, or BIN whose bytes are UTF-8, by those bytes.
+    Text(SelStr),
+    /// `$==`: BIN whose bytes are not UTF-8 -- equal to no text, and to
+    /// another BIN only byte for byte (never through a lossy decode).
+    Bytes(Rc<[u8]>),
 }
 
 fn canonical_join_key(v: &Value, numeric: bool) -> (JoinKey, Option<Value>) {
     if v.is_null() {
-        return (JoinKey { k_type: 0, int_val: 0, str_val: SelStr::EMPTY }, None);
+        return (JoinKey::Null, None);
     }
     if numeric {
         let d = match v.as_decimal(Pos::default()) {
             Ok(d) => d,
-            Err(_) => {
-                return (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone()));
-            }
+            Err(_) => return (JoinKey::Bad, Some(v.clone())),
         };
         if d.is_integer() {
             if let Some(n) = d.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
+                return (JoinKey::Int(n), None);
             }
         }
         let trimmed = crate::dec::dec_trim_scale(&d);
         if trimmed.is_integer() {
             if let Some(n) = trimmed.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
+                return (JoinKey::Int(n), None);
             }
         }
-        return (JoinKey { k_type: 3, int_val: 0, str_val: SelStr::from(dec_format(&trimmed)) }, None);
+        return (JoinKey::Dec(SelStr::from(dec_format(&trimmed))), None);
     }
 
     // Text keys by their text, shared rather than copied.
     if let Ok(s) = v.as_text_str(Pos::default()) {
-        return (JoinKey { k_type: 3, int_val: 0, str_val: s }, None);
+        return (JoinKey::Text(s), None);
     }
     match v.as_bytes(Pos::default()) {
-        Ok(b) => {
-            let s = SelStr::from(String::from_utf8_lossy(&b).as_ref());
-            (JoinKey { k_type: 3, int_val: 0, str_val: s }, None)
-        }
-        Err(_) => (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone())),
+        Ok(b) => match std::str::from_utf8(&b) {
+            Ok(s) => (JoinKey::Text(SelStr::from(s)), None),
+            Err(_) => (JoinKey::Bytes(Rc::from(b.as_ref())), None),
+        },
+        Err(_) => (JoinKey::Bad, Some(v.clone())),
     }
 }
 
@@ -1555,10 +1557,10 @@ fn check_join_pair(
     l_bad: Option<&Value>,
     facts: &JoinFacts,
 ) -> Result<(), SelError> {
-    if key.k_type == 0 || !facts.live {
+    if *key == JoinKey::Null || !facts.live {
         return Ok(());
     }
-    if key.k_type == 1 {
+    if *key == JoinKey::Bad {
         if equi.swapped && facts.live_bad.is_some() {
             coerce_join_operand(equi.numeric, facts.live_bad.as_ref().unwrap(), equi.right_expr.pos)?;
         }
@@ -1896,8 +1898,8 @@ fn link_body<'a>(
                 }
                 let key_val = args.eval_node(equi.right_expr)?;
                 let (k, bad_val) = canonical_join_key(&key_val, equi.numeric);
-                if k.k_type != 0 {
-                    if k.k_type == 1 {
+                if k != JoinKey::Null {
+                    if k == JoinKey::Bad {
                         if !facts.live {
                             facts.live_bad = bad_val.clone();
                         }
