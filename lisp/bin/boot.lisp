@@ -31,8 +31,9 @@
 
 (defpackage #:sel-cli
   (:use #:common-lisp)
-  (:export #:script-args #:read-text-file #:starts-with #:trim-ws #:split-lines
-           #:join-lines #:main))
+  (:export #:script-args #:read-text-file #:read-file-or-exit #:unreadable-file
+           #:read-corpus #:escape-newlines #:render #:no-cases
+           #:starts-with #:trim-ws #:split-lines #:join-lines #:main))
 
 (in-package #:sel-cli)
 
@@ -56,10 +57,40 @@ on some versions and removes it on others, so handle both."
                            (search "(sel-cli:main)" a)))
                      (rest argv))))))
 
+(define-condition unreadable-file (error)
+  ((path :initarg :path :reader unreadable-file-path))
+  (:report (lambda (c s) (format s "cannot read ~a" (unreadable-file-path c)))))
+
 (defun read-text-file (path)
-  (with-open-file (in path :external-format :utf-8)
-    (let ((s (make-string (file-length in))))
-      (subseq s 0 (read-sequence s in)))))
+  "The text of PATH: its bytes, decoded as UTF-8 with no newline translation of
+any kind (a CR is program text). Signals UNREADABLE-FILE for a file that is
+missing, unreadable, or a directory."
+  (let ((octets
+          (handler-case
+              (progn
+                (when (or (uiop:directory-exists-p path)
+                          (not (probe-file path)))
+                  (error 'unreadable-file :path path))
+                (with-open-file (in path :element-type '(unsigned-byte 8))
+                  (let ((buf (make-array (file-length in) :element-type '(unsigned-byte 8))))
+                    (subseq buf 0 (read-sequence buf in)))))
+            (file-error () (error 'unreadable-file :path path))
+            (stream-error () (error 'unreadable-file :path path)))))
+    (sb-ext:octets-to-string octets :external-format :utf-8)))
+
+(defun read-file-or-exit (path)
+  "READ-TEXT-FILE, or one line \"cannot read PATH\" on stderr and status 1."
+  (handler-case (read-text-file path)
+    (unreadable-file (e)
+      (format *error-output* "~a~%" e)
+      (finish-output *error-output*)
+      (sb-ext:exit :code 1 :abort t))))
+
+(defun no-cases (control &rest args)
+  "A run that executed nothing proves nothing: say so, one line, and exit 1."
+  (format *error-output* "~?~%" control args)
+  (finish-output *error-output*)
+  (sb-ext:exit :code 1 :abort t))
 
 ;;; --- small text helpers shared by the scripts ------------------------------
 
@@ -81,3 +112,46 @@ on some versions and removes it on others, so handle both."
 (defun join-lines (reversed-lines)
   "Joins lines that were accumulated with PUSH, so in reverse order."
   (format nil "~{~a~^~%~}" (reverse reversed-lines)))
+
+;;; --- the corpus format (tools/README.md) --------------------------------------
+
+(defun strip-final-newline (s)
+  (let ((n (length s)))
+    (if (and (plusp n) (char= (char s (1- n)) #\Newline))
+        (subseq s 0 (1- n))
+        s)))
+
+(defun read-corpus (text)
+  "The records of a corpus: a line beginning `### ` starts one, and everything
+after it is source until the next marker. Split on LF and nothing else; a
+record is its joined lines with exactly one trailing LF removed (never a CR,
+never a second LF)."
+  (let ((records '())
+        (current nil)
+        (started nil))
+    (dolist (line (split-lines text))
+      (if (starts-with "### " line)
+          (progn
+            (when started (push (strip-final-newline (join-lines current)) records))
+            (setf current '() started t))
+          (when started (push line current))))
+    (when started (push (strip-final-newline (join-lines current)) records))
+    (nreverse records)))
+
+(defun escape-newlines (s)
+  "One line per program is the protocol: a value holding a newline must not
+desynchronise the comparison."
+  (with-output-to-string (out)
+    (loop for c across s
+          do (if (char= c #\Newline) (write-string "\\n" out) (write-char c out)))))
+
+(defun render (v)
+  "The rendering of bin/sel (and of batch --show): a scalar as itself, BIN as
+bin:HEX, anything with children as its dump."
+  (if (zerop (sel:value-size v))
+      (case (sel:value-kind v)
+        (:text (sel::value-scalar v))
+        (:bool (sel:value-dump v))
+        (:bin (concatenate 'string "bin:" (subseq (sel:value-dump v) 1)))
+        (t (sel:value-dump v)))
+      (sel:value-dump v)))

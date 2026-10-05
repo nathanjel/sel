@@ -400,4 +400,8 @@ agree with ~a: ~a" m (getf c :dialect) p2)) failures))
       (format t "FAIL ~a  (~a)~%     ~a~%" (getf (car f) :name) (getf (car f) :at) (cdr f)))
     (format t "~%~a passed (~a also checked against a mirrored dialect), ~a failed, ~
 ~a suite errors~%" passed mirrored (length failures) suite-errors)
+    ;; A filter that selects nothing proves nothing (`--names` lists the cases).
+    (when (zerop (+ passed (length failures) suite-errors))
+      (format *error-output* "no case ran~@[: none matched ~{~a~^, ~}~]~%" filters)
+      (return-from main 1))
     (if (and (null failures) (zerop suite-errors)) 0 1)))

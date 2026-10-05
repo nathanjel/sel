@@ -2523,6 +2523,18 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
         (is (eql rc want-rc) "~a: exit ~a" line rc)
         (is (string= want-out out) "~a: ~a" line out)))))
 
+(test runners-refuse-a-bad-path-and-an-empty-run
+  ;; A runner given a path it cannot read says so in one line and fails; a run
+  ;; that executed no case fails too, instead of reporting "0 passed".
+  (dolist (case '(("lisp/bin/batch /no/such.selc" "cannot read /no/such.selc")
+                  ("lisp/bin/conformance /no/such.selt" "SUITE cannot read /no/such.selt")
+                  ("lisp/bin/sqlt no-case-is-named-like-this" "no case ran: none matched no-case-is-named-like-this")))
+    (destructuring-bind (line want) case
+      (multiple-value-bind (out rc) (run-cli line)
+        (is (eql rc 1) "~a: exit ~a" line rc)
+        (is (search want out) "~a: ~a" line out)
+        (is (not (search "Unhandled" out)) "~a: ~a" line out)))))
+
 (test cli-help-version-and-repl-on-a-pipe
   (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --help")
     (is (eql rc 0))

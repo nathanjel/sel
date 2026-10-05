@@ -13,15 +13,6 @@
 
 (in-package #:sel-cli)
 
-(defun show (v)
-  (if (zerop (sel:value-size v))
-      (case (sel:value-kind v)
-        (:text (sel::value-scalar v))
-        (:bool (sel:value-dump v))
-        (:bin (concatenate 'string "bin:" (subseq (sel:value-dump v) 1)))
-        (t (sel:value-dump v)))
-      (sel:value-dump v)))
-
 (defun report (e)
   (format *error-output* "~a at line ~d column ~d: ~a~%"
           (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)
@@ -167,7 +158,7 @@ CR, LF) is skipped; anything else, an NBSP-only line included, is evaluated."
         (handler-case
             (let ((text (source-text line)))
               (when (plusp (length (trim-ws text)))
-                (format t "~a~%" (show (sel:run (sel:compile-source text) root)))
+                (format t "~a~%" (render (sel:run (sel:compile-source text) root)))
                 (finish-output)))
           (sel:sel-error (e) (report e)))))))
 
@@ -182,7 +173,7 @@ CR, LF) is skipped; anything else, an NBSP-only line included, is evaluated."
               (let ((program (sel:compile-source (source-text source))))
                 (if want-deps
                     (format t "~{~a~%~}" (sel:dependencies program))
-                    (format t "~a~%" (show (sel:run program)))))
+                    (format t "~a~%" (render (sel:run program)))))
             (sel:sel-error (e) (report e) (finish-output) (sb-ext:exit :code 1)))
           (repl))))
   (finish-output)

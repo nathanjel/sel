@@ -211,4 +211,8 @@
 
     (format t "~%~d passed, ~d failed, ~d suite errors~%"
             pass (length failures) (length suite-errors))
+    ;; A run that executed nothing -- an empty file, a path that names none --
+    ;; proves nothing and is a failure, whatever else it reported.
+    (when (zerop (+ pass (length failures)))
+      (no-cases "no case ran"))
     (sb-ext:exit :code (if (and (null failures) (null suite-errors)) 0 1))))
