@@ -38,7 +38,9 @@ unknown function, a wrong argument count, a non-portable regex literal."
     (fail "E_BAD_ARG" (format nil "the source of a program is text, not ~a" (type-of source))))
   (%make-program source (parse-source source)))
 
-(defun context-root (context)
+(defun coerce-context (context)
+  "The root value RUN evaluates against: CONTEXT itself when it is a VALUE, its
+FROM-NATIVE conversion when it is CL data, an empty NONE when omitted."
   (cond ((null context) (make-none))
         ((value-p context) context)
         (t (from-native context))))
@@ -47,7 +49,7 @@ unknown function, a wrong argument count, a non-portable regex literal."
   "Evaluate PROGRAM against CONTEXT, whose direct children are the variables.
 CONTEXT may be a value, CL data FROM-NATIVE understands, or omitted. The context
 is mutated in place by any assignment the program performs."
-  (let ((root (context-root context)))
+  (let ((root (coerce-context context)))
     (eval-node (program-physical-ast program) (make-context root))))
 
 (defun evaluate (source &optional context)
@@ -56,7 +58,7 @@ optimiser (about 7 us to build the physical tree of a rule that runs in 2 us), s
 this evaluates the tree as written: the optimiser is a pure optimisation, held to
 that by the plain-versus-optimised probe (LISP-P23)."
   (let ((program (compile-source source)))
-    (eval-node (program-ast program) (make-context (context-root context)))))
+    (eval-node (program-ast program) (make-context (coerce-context context)))))
 
 ;;; --- dependencies ----------------------------------------------------------
 

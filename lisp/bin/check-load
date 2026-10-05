@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Compiles the SEL systems from a clean cache with plain ASDF, the way a user's
+# (asdf:load-system "sel-lang") does, and fails on any full compiler WARNING.
+# See check-load.lisp.
+here="$(cd "$(dirname "$0")" && pwd)"
+out="$(mktemp -d)"
+trap 'rm -rf "$out"' EXIT
+SEL_LOAD_OUT="$out" sbcl --dynamic-space-size 4GB --noinform --disable-debugger --non-interactive \
+  --load "$here/check-load.lisp"
