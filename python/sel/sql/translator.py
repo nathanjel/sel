@@ -3274,9 +3274,16 @@ def _require_comparable_kinds(l: Fragment, r: Fragment, op: str, pos: Pos) -> No
     cr = EQL_CLASS.get(r.kind)
     if cl is None or cr is None or cl == cr:
         return
-    other = r.kind if l.kind == 'BOOL' else l.kind
+    if op[0] == '$':
+        # Only BIN against TEXT or NUM gets here: a BOOL operand of the `$`
+        # family is refused before (E_NOT_BIN, as SEL raises it).
+        refuse('E_SQL_SHAPE',
+               f'{op} compares a {l.kind} with a {r.kind}, which SEL does byte for byte, '
+               'reading the text as its UTF-8 bytes. The SQL templates would cast the '
+               'BIN side to characters instead, so the database could answer '
+               'differently', pos)
     refuse('E_SQL_SHAPE',
-           f'{op} compares a BOOL with a {other}, which SEL answers FALSE for every '
+           f'{op} compares a {l.kind} with a {r.kind}, which SEL answers FALSE for every '
            'value because the kinds differ. SQL has no way to say that: both sides '
            'cast to the same characters', pos)
 
