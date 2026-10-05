@@ -133,20 +133,7 @@ func optFold(node *Node) *Node {
 				}
 				if decL != nil && decR != nil {
 					res := tryDec(func() *decimal.Dec {
-						switch node.S {
-						case "+":
-							return decimal.Add(decL, decR, node.Pos, fail)
-						case "-":
-							return decimal.Sub(decL, decR, node.Pos, fail)
-						case "*":
-							return decimal.Mul(decL, decR, node.Pos, fail)
-						case "/":
-							return decimal.Div(decL, decR, node.Pos, fail)
-						case "%":
-							return decimal.Mod(decL, decR, node.Pos, fail)
-						default:
-							return nil
-						}
+						return arith(node.S, decL, decR, node.Pos)
 					})
 					if res != nil {
 						return optNum(decimal.Format(res), res, node.Pos)

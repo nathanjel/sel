@@ -368,6 +368,25 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	}
 }
 
+// arith is the decimal operation of + - * / %, as the compound assignments and
+// the optimiser's constant folding apply it (evalBinary spells the same switch
+// inline, on the evaluator's hot path); nil for any other operator.
+func arith(op string, a, b *decimal.Dec, pos Pos) *decimal.Dec {
+	switch op {
+	case "+":
+		return decimal.Add(a, b, pos, fail)
+	case "-":
+		return decimal.Sub(a, b, pos, fail)
+	case "*":
+		return decimal.Mul(a, b, pos, fail)
+	case "/":
+		return decimal.Div(a, b, pos, fail)
+	case "%":
+		return decimal.Mod(a, b, pos, fail)
+	}
+	return nil
+}
+
 func compareResult(op string, c int, pos Pos) bool {
 	switch op {
 	case "==":
@@ -494,20 +513,7 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		} else {
 			a := current.AsDecimal(tp)
 			b := rhs.AsDecimal(vp)
-			var res *decimal.Dec
-			switch binOp {
-			case "+":
-				res = decimal.Add(a, b, node.Pos, fail)
-			case "-":
-				res = decimal.Sub(a, b, node.Pos, fail)
-			case "*":
-				res = decimal.Mul(a, b, node.Pos, fail)
-			case "/":
-				res = decimal.Div(a, b, node.Pos, fail)
-			case "%":
-				res = decimal.Mod(a, b, node.Pos, fail)
-			}
-			value = NewNum(res)
+			value = NewNum(arith(binOp, a, b, node.Pos))
 		}
 	}
 
