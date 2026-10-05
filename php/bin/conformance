@@ -26,10 +26,10 @@ use Sel\Value;
 
 const SUITE = __DIR__ . '/../../conformance';
 
-/** @return list<array<string,mixed>> */
 // SEL's four whitespace characters. See conformance/README.md.
 const WS = " \t\r\n";
 
+/** @return list<array<string,mixed>> */
 function parse_selt(string $text, string $file): array
 {
     $cases = [];

@@ -1,12 +1,14 @@
 <?php
 // The portable regex subset. See spec/SPEC.md §7.8. Ported from
-// js/src/builtins/regex.mjs — the validator must reject exactly the same
-// patterns in both hosts, or the whole point is lost.
+// js/src/builtins/regex.mjs — the validator must reject exactly the patterns
+// every other host rejects, or the whole point is lost.
 //
-// PHP compiles with `usD`: `u` for code point matching (which leaves \d \w \s
-// ASCII, as ECMAScript's `u` also does), `s` because dotall is permanently on,
-// and `D` so that `$` does not also match before a trailing newline the way PCRE
-// otherwise would.
+// PHP compiles with `usD`: `u` for code point matching, `s` because dotall is
+// permanently on, and `D` so that `$` does not also match before a trailing
+// newline the way PCRE otherwise would. `u` also turns on PCRE2's UCP, under
+// which \d matches Arabic-Indic digits and \w matches `é` -- unlike
+// ECMAScript's `u` -- which is why \d \w \s are rewritten into explicit ASCII
+// classes below (EXPAND_OUTSIDE / EXPAND_INSIDE) rather than passed through.
 
 declare(strict_types=1);
 

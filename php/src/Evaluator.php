@@ -13,13 +13,7 @@ namespace Sel;
  */
 final class Evaluator
 {
-    /**
-     * Public because the SQL translator refuses at the same limit, and reading
-     * it is the point: a translation that succeeds must be a rule the evaluator
-     * would have evaluated. A second copy of 200 would be a second thing to keep
-     * in step, and the two drifting means the database answers where SEL raises.
-     */
-
+    /** A compound assignment's operator, by its spelling. */
     private const COMPOUND = [
         '+=' => '+', '-=' => '-', '*=' => '*', '/=' => '/', '%=' => '%', '&=' => '&',
     ];
@@ -46,9 +40,6 @@ final class Evaluator
     private const DEC_ONE = ['neg' => false, 'digits' => '1', 'scale' => 0];
 
     /**
-     * @param array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>|null,scratchpadSize:int} $plan
-     */
-    /**
      * A scratchpad slot holds either a decimal a step computed or the Value a
      * load produced. The Value is coerced here, when an operation consumes it,
      * and not when it was loaded: SPEC 6.2 evaluates every operand first and
@@ -65,6 +56,9 @@ final class Evaluator
         return $slot instanceof Value ? $slot->asDecimalLazy($pos) : $slot;
     }
 
+    /**
+     * @param array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>|null,scratchpadSize:int} $plan
+     */
     public static function evalMathPlan(array $plan, Context $ctx): Value
     {
         $scratchpad = [];

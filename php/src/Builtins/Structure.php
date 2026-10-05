@@ -691,15 +691,6 @@ final class Structure
     }
 
     /**
-     * project(left, right): makeJoinedRow, through compiled plans. For each
-     * pair of shapes the plans built so far are tried in turn; each checks the
-     * two facts it assumed of the fields it reads -- every left field, and the
-     * right fields whose names the left does not have -- and a pair none fits
-     * gets its own plan from the rule (rowPlan). A left row's matches come one
-     * after another, so the plan whose left checks it passed is tried first
-     * without repeating them.
-     */
-    /**
      * @param array<string,mixed> $plan
      * @return array{build:\Closure, many:\Closure}
      */
@@ -824,6 +815,15 @@ final class Structure
     /** @var array<string,\Closure> */
     private static array $joinFactories = [];
 
+    /**
+     * project(left, right): makeJoinedRow, through compiled plans. For each
+     * pair of shapes the plans built so far are tried in turn; each checks the
+     * two facts it assumed of the fields it reads -- every left field, and the
+     * right fields whose names the left does not have -- and a pair none fits
+     * gets its own plan from the rule (rowPlan). A left row's matches come one
+     * after another, so the plan whose left checks it passed is tried first
+     * without repeating them.
+     */
     private static function makeJoinProjector(string $b1, string $b2, ?Value $nullRight): JoinProjector
     {
         $plans = [];
@@ -1048,7 +1048,6 @@ final class Structure
         return $out;
     }
 
-    /** NODE with every `_["orders"]` -- a read through the left binder's own name (NAMES, upper-cased) -- replaced by `_`. */
     /**
      * Whether $node reads the element bound to $binders only as `r["f"]`
      * with f, upper-cased, not $avoid: then it reads the same on the element
@@ -1072,6 +1071,7 @@ final class Structure
         return true;
     }
 
+    /** NODE with every `_["orders"]` -- a read through the left binder's own name (NAMES, upper-cased) -- replaced by `_`. */
     private static function readSelf(?array $node, array $names, string $binder): ?array
     {
         if ($node === null) return null;
@@ -1743,7 +1743,7 @@ final class Structure
         // evaluated and checked before an empty result is returned.
         if ($limit === 0 || $value->isNull()) return Value::list([]);
 
-        // The one ordering SORT uses too (Core::compareValues); only the
+        // The one ordering SORT uses too (Core::compareKeys); only the
         // bounded selection below is TOP's own.
         $compare = static function (array $left, array $right) use ($dir): int {
             $c = Core::compareKeys($left['sk'], $right['sk']);
@@ -1954,8 +1954,10 @@ final class Structure
 
 final class JoinProjector
 {
-    /** @param \Closure(Value, ?Value): Value $project */
-    /** @param \Closure(Value, list<Value>, list<Value>&): void $manyBatch */
+    /**
+     * @param \Closure(Value, ?Value): Value $project
+     * @param \Closure(Value, list<Value>, list<Value>&): void $manyBatch
+     */
     public function __construct(
         public \Closure $project,
         public \Closure $manyBatch,

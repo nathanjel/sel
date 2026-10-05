@@ -708,20 +708,19 @@ final class Parser
         }
     }
 
-    /** @param array<string,mixed> $spec */
+    /** The calls that take a regex pattern first, and the index of their flags argument. */
+    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
+
     /**
-     * The compile-time arity rule (spec §6.2, SEL-0002) and the call node, in
-     * one place for both call forms; the pipeline form has already placed its
-     * left operand in $args. Every refusal reports the name token.
+     * The compile-time arity rule (spec §6.2) and the call node, in one place
+     * for both call forms; the pipeline form has already placed its left
+     * operand in $args. Every refusal reports the name token.
      *
      * @param array<string,mixed> $nameTok
      * @param array<string,mixed> $spec
      * @param list<array<string,mixed>> $args
      * @return array<string,mixed>
      */
-    /** The calls that take a regex pattern first, and the index of their flags argument. */
-    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
-
     private static function finishCall(array $nameTok, array $spec, array $args): array
     {
         $count = count($args);

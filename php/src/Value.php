@@ -367,10 +367,11 @@ final class Value
      * A fresh value every time. The two BOOL values used to be shared
      * flyweights, and a Value is mutable (`set`, the `scalar` setter, a
      * host's own `$v->children[...]`), so one program's assignment into TRUE
-     * changed TRUE for every other program in the process (PHP-C1). The
-     * allocation is what every other kind pays.
+     * changed TRUE for every other program in the process. The allocation is
+     * what every other kind pays.
+     *
+     * @param mixed $b
      */
-    /** @param mixed $b */
     public static function bool($b): self
     {
         if (!is_bool($b)) {
@@ -434,8 +435,13 @@ final class Value
         return new self(self::TEXT, (string) $n);
     }
 
-    /** Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by list-returning built-ins. */
-    /** @param list<Value> $values @param list<string>|null $keys */
+    /**
+     * Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by
+     * list-returning built-ins.
+     *
+     * @param list<Value> $values
+     * @param list<string>|null $keys
+     */
     public static function list($values, $keys = null): self
     {
         if (!is_array($values) || ($keys !== null && !is_array($keys))) {
@@ -462,12 +468,12 @@ final class Value
         return $v;
     }
 
-    /** @param list<string> $keys @param list<Value> $values */
     /**
      * A record from keys and values side by side. A repeated key keeps its
      * first position and takes its last value, as RECORD does (spec §8).
      *
-     * @param list<string> $keys @param list<Value> $values
+     * @param list<string> $keys
+     * @param list<Value> $values
      */
     public static function shaped(array $keys, array $values): self
     {

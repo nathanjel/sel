@@ -183,9 +183,10 @@ final class Core
     }
 
     /**
-     * The ordering of SORT, SORT_BY, TOP and TOP_BY (spec §7.4): NULL first,
-     * then numbers by value, booleans, text/binary bytewise, then by kind.
-     * Structure::doTop shares it — one routine, so the two cannot drift.
+     * The ordering of SORT, SORT_BY, TOP and TOP_BY (spec §7.3), as one
+     * comparison: compareKeys over two sortKeys, which is what SORT and
+     * Structure::doTop use (they build each key once). Kept for the tests,
+     * which hold the keyed form to it.
      */
     public static function compareValues(Value $a, Value $b): int
     {
@@ -193,7 +194,7 @@ final class Core
     }
 
     /**
-     * The sort key of a value, classified ONCE (PHP-P3): its rank under the
+     * The sort key of a value, classified ONCE: its rank under the
      * total order and what is compared inside that rank. A sort builds one per
      * element and compares the keys, instead of re-classifying both operands on
      * every comparison (n log n classifications, each a scalar-context walk and
@@ -440,13 +441,14 @@ final class Core
         return $result;
     }
 
-    /** @param array<string,mixed>|null $node */
     /**
      * Whether evaluating $node might write into a value: it holds an assignment or
      * calls a host function. A collector copies an element when it collects it
      * (spec §3.4); while nothing below the body can write, deferring the copy to
      * the end is unobservable, so only a body that might write copies at
      * collection. Iterative: a body can be a flat chain as long as the source.
+     *
+     * @param array<string,mixed>|null $node
      */
     public static function mayWrite(?array $node): bool
     {
@@ -467,6 +469,7 @@ final class Core
         return false;
     }
 
+    /** Does the tree read the variable NAME anywhere? @param array<string,mixed>|null $node */
     public static function containsVar(?array $node, string $name): bool
     {
         if ($node === null) return false;

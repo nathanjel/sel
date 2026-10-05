@@ -138,7 +138,6 @@ final class Registry
         }
     }
 
-    /** @return array<string,mixed>|null */
     /** @var array<string, true> names registered through registerFunction(), which alone may be replaced */
     private static array $host = [];
 
@@ -208,6 +207,7 @@ final class Registry
         return [self::$table[$key]['min'], (int) self::$table[$key]['max']];
     }
 
+    /** @return array<string,mixed>|null */
     public static function lookup(string $name): ?array
     {
         return self::$table[Utf8::upper($name)] ?? null;

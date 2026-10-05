@@ -174,8 +174,9 @@ final class Program
     }
 
     /**
-     * Every variable the program can read before it has DEFINITELY assigned it, in
-     * evaluation order (spec/SPEC.md §8), found statically. Only possible because
+     * Every variable the program can read before it has DEFINITELY assigned it
+     * (spec/SPEC.md §8), found statically by a walk in evaluation order and
+     * returned sorted, as every host returns it. Only possible because
      * SEL has no dynamic symbol operator; this is what tells a frontend which
      * inputs should re-trigger which rule.
      *

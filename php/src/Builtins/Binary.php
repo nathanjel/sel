@@ -122,14 +122,12 @@ final class Binary
             }]);
 
         // CRC-32/ISO-HDLC: reflected, polynomial 0xEDB88320, init and final xor
-        // all ones. Written out rather than delegated to crc32() so the algorithm
-        // is visibly the same one the JS host runs.
+        // all ones. PHP's crc32() is this very CRC as a C loop: 1 MB in 0.1 ms
+        // against 80 ms for a PHP table loop. crc32Reference() keeps the
+        // written-out algorithm, the one the JS host runs, for the tests to
+        // compare crc32() with.
         Registry::define(['name' => 'CRC32', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
-                // PHP's crc32() is this very CRC (ISO-HDLC, polynomial 0xEDB88320, init and
-                // final xor all ones) as a C loop: 1 MB in 0.1 ms against 80 ms for the
-                // PHP table loop it replaces (PHP-P19). crc32Reference() keeps the
-                // written-out algorithm for the tests to compare it with.
                 return Value::text(sprintf('%08x', crc32($a->bytes(0))));
             }]);
 
@@ -175,7 +173,6 @@ final class Binary
             }]);
     }
 
-    /** @return array<int,int> */
     /** The table-driven CRC-32/ISO-HDLC, kept as the reference `crc32()` is tested against. */
     public static function crc32Reference(string $b): int
     {
@@ -187,6 +184,7 @@ final class Binary
         return $crc ^ 0xffffffff;
     }
 
+    /** @return array<int,int> */
     private static function crcTable(): array
     {
         if (self::$crcTable !== null) {

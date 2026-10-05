@@ -588,7 +588,6 @@ final class Optimizer
         return true;
     }
 
-    /** @return array{binder:string,predicate:array<string,mixed>,explicit:bool,valid:bool} */
     /**
      * Whether evaluating NODE for one row can raise -- conservatively: a rewrite
      * that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
@@ -666,6 +665,7 @@ final class Optimizer
         return self::cannotRaise($body, $details['binder'], $logical);
     }
 
+    /** @return array{binder:string,predicate:array<string,mixed>,explicit:bool,valid:bool} */
     private static function filterDetails(array $step): array
     {
         $args = $step['args'];
