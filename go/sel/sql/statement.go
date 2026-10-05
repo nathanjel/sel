@@ -931,7 +931,14 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 	// SORT_BY or TOP_BY: which argument is which is the manifest's
 	// (spec/builtins.json), a text literal last being the direction whatever the
 	// slot before it holds.
-	roles, _ := manifest.Sort(utf8.AsciiUpper(name), len(args), sNodeShape(args))
+	// The form is the call's AS WRITTEN (spec §7.3), as the evaluator reads it:
+	// stage 1 has inlined helpers into the arguments, and `D = "DESC";
+	// SORT_BY(r, D)` must stay binder r and key D, not become a direction.
+	var shape manifest.ArgShape = sNodeShape(args)
+	if o := step.Origin; o != nil && o.T == sel.NodeCall && len(o.Items) == len(args) {
+		shape = writtenShape(o.Items)
+	}
+	roles, _ := manifest.Sort(utf8.AsciiUpper(name), len(args), shape)
 	binder := "_"
 	key := args[roles.Key]
 	dir := "ASC"

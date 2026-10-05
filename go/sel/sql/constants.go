@@ -122,6 +122,13 @@ type sNodeShape []*sNode
 func (s sNodeShape) IsName(i int) bool { return isBinderName(s[i]) }
 func (s sNodeShape) IsText(i int) bool { return s[i].T == sNodeText }
 
+// writtenShape is a call's arguments as the program wrote them, for
+// manifest.MatchForm: before stage 1 inlined any helper into them.
+type writtenShape []*sel.Node
+
+func (s writtenShape) IsName(i int) bool { return s[i].T == sel.NodeVar && !s[i].Grouped }
+func (s writtenShape) IsText(i int) bool { return s[i].T == sel.NodeText }
+
 func isBinderName(node *sNode) bool {
 	return node != nil && node.T == sNodeVar && !node.Grouped
 }
