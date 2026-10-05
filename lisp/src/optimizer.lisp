@@ -119,13 +119,7 @@ text is not a number)."
                   (let* ((dl (node-dec l pos))
                          (dr (node-dec r pos))
                          (dres (when (and dl dr)
-                                 (cond
-                                   ((string= op "+") (dec-add dl dr pos))
-                                   ((string= op "-") (dec-sub dl dr pos))
-                                   ((string= op "*") (dec-mul dl dr pos))
-                                   ((string= op "/") (dec-div dl dr pos))
-                                   ((string= op "%") (dec-mod dl dr pos))
-                                   (t nil)))))
+                                 (dec-arith (binary-op-code op) dl dr pos))))
                     (if dres
                         (let ((res (make-node :num pos)))
                           (setf (node-s res) (dec-format dres)

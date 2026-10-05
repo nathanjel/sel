@@ -18,6 +18,19 @@
   (join-prefilter nil)
   (join-prefilter-report nil))
 
+;;; The arithmetic operators on decimals, by BINARY-OP-CODE's keyword: one
+;;; dispatch for EVAL-BINARY, compound assignment and the optimiser's constant
+;;; fold. The math-plan executor keeps an arm per operator instead -- it runs
+;;; once per step of a numeric loop, where a second dispatch is measurable.
+(declaim (inline dec-arith))
+(defun dec-arith (code a b pos)
+  (ecase code
+    (:add (dec-add a b pos))
+    (:sub (dec-sub a b pos))
+    (:mul (dec-mul a b pos))
+    (:div (dec-div a b pos))
+    (:mod (dec-mod a b pos))))
+
 (declaim (inline ctx-lookup ctx-bound-p))
 (defun ctx-lookup (ctx name)
   (declare (optimize (speed 3) (safety 1)))
@@ -461,12 +474,7 @@ evaluator asks it once per node and dispatches with CASE."
            ((:add :sub :mul :div :mod)
             (let* ((a (as-dec l lp))
                    (b (as-dec r rp)))
-              (make-num (ecase code
-                          (:add (dec-add a b (node-pos node)))
-                          (:sub (dec-sub a b (node-pos node)))
-                          (:mul (dec-mul a b (node-pos node)))
-                          (:div (dec-div a b (node-pos node)))
-                          (:mod (dec-mod a b (node-pos node)))))))
+              (make-num (dec-arith code a b (node-pos node)))))
 
            (:concat (sel-concat l r lp rp (node-pos node)))
 
@@ -613,12 +621,10 @@ evaluator asks it once per node and dispatches with CASE."
                        (sel-concat current rhs tp vp (node-pos node))
                        (let* ((a (as-dec current tp))
                               (b (as-dec rhs vp)))
-                         (make-num (case binop
-                                     (#\+ (dec-add a b (node-pos node)))
-                                     (#\- (dec-sub a b (node-pos node)))
-                                     (#\* (dec-mul a b (node-pos node)))
-                                     (#\/ (dec-div a b (node-pos node)))
-                                     (t (dec-mod a b (node-pos node)))))))))))) 
+                         (make-num (dec-arith (case binop
+                                                (#\+ :add) (#\- :sub) (#\* :mul) (#\/ :div)
+                                                (t :mod))
+                                              a b (node-pos node)))))))))) 
     ;; Re-derived after the right-hand side ran, which may have replaced or
     ;; removed any level along the path.
     (value-set (walk-create ctx path upto) key value)
