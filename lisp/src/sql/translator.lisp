@@ -1292,11 +1292,7 @@ string spliced as SQL text or a fragment whose parts are spliced -- preserving
 parameter slots, which are absolute for the whole translation and never
 renumbered."
   (let ((parts '()))
-    (labels ((push-str (s)
-               (when (plusp (length s))
-                 (if (and parts (stringp (car parts)))
-                     (setf (car parts) (concatenate 'string (car parts) s))
-                     (push s parts)))))
+    (labels ((push-str (s) (setf parts (push-sql-text s parts))))
       (let ((i 0) (n (length tpl)))
         (loop while (< i n)
               do (if (char/= (char tpl i) #\{)

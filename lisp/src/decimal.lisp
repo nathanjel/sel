@@ -242,6 +242,10 @@ No trimming, no sign but a leading minus, no exponent, no leading or trailing do
            (let ((scale (max frac 0)))
              (declare (type fixnum scale))
              (dec-make neg acc scale))))))
+    ;; Any other string (a base string, say) as the same characters, so this
+    ;; is the one short path: the arm above stays the first test.
+    (string (and (<= 1 (length text) 19)
+                 (dec-parse-short (coerce text '(simple-array character (*))))))
     (t nil)))
 
 (defun dec-parse (text &optional at)
@@ -254,39 +258,30 @@ ISNUM's probe -- catch it and answer no."
   (let ((fast (dec-parse-short text)))
     (when fast (return-from dec-parse fast)))
   (when (and (stringp text) (dec-number-string-p text))
+    ;; DEC-PARSE-SHORT took every numeral of at most 19 characters.
     (let* ((len (length text))
            (neg (char= (char text 0) #\-))
-           (start (if neg 1 0))
-           (dot (position #\. text :start start)))
-      (if (and (<= len 18) (null dot))
-          (let ((val 0))
-            (loop for i from start below len
-                  do (setf val (+ (* val 10) (- (char-code (char text i)) 48))))
-            (let* ((is-zero (zerop val))
-                   (actual-neg (if is-zero nil neg))
-                   (int-val (if actual-neg (- val) val)))
-              (%make-dec actual-neg val 0 int-val)))
-          (let* ((body (if neg (subseq text 1) text))
-                 (dot (position #\. body))
-                 (int-part (if dot (subseq body 0 dot) body))
-                 (frac-part (if dot (subseq body (1+ dot)) ""))
-                 (frac-len (length frac-part)))
-            (when (> frac-len +max-frac-digits+)
-              (fail-digit-cap :frac at))
-            (let* ((combined (concatenate 'string int-part frac-part))
-                   (first-nz (position-if (lambda (c) (char/= c #\0)) combined))
-                   (int-digits (- (if first-nz (- (length combined) first-nz) 1) frac-len)))
-              (when (> int-digits +max-int-digits+)
-                (fail-digit-cap :int at))
-              (let* ((digits (if first-nz (parse-bignum-string combined first-nz (length combined)) 0))
-                     (d (dec-guard (dec-make neg digits frac-len) at)))
-                ;; A long numeral that is already canonical -- no leading zero in
-                ;; its integer part, and not a negative zero -- is its own text.
-                (when (and (> len 64)
-                           (or (char/= (char int-part 0) #\0) (= (length int-part) 1))
-                           (not (and neg (zerop digits))))
-                  (setf (dec-text d) (copy-seq text)))
-                d)))))))
+           (body (if neg (subseq text 1) text))
+           (dot (position #\. body))
+           (int-part (if dot (subseq body 0 dot) body))
+           (frac-part (if dot (subseq body (1+ dot)) ""))
+           (frac-len (length frac-part)))
+      (when (> frac-len +max-frac-digits+)
+        (fail-digit-cap :frac at))
+      (let* ((combined (concatenate 'string int-part frac-part))
+             (first-nz (position-if (lambda (c) (char/= c #\0)) combined))
+             (int-digits (- (if first-nz (- (length combined) first-nz) 1) frac-len)))
+        (when (> int-digits +max-int-digits+)
+          (fail-digit-cap :int at))
+        (let* ((digits (if first-nz (parse-bignum-string combined first-nz (length combined)) 0))
+               (d (dec-guard (dec-make neg digits frac-len) at)))
+          ;; A long numeral that is already canonical -- no leading zero in
+          ;; its integer part, and not a negative zero -- is its own text.
+          (when (and (> len 64)
+                     (or (char/= (char int-part 0) #\0) (= (length int-part) 1))
+                     (not (and neg (zerop digits))))
+            (setf (dec-text d) (copy-seq text)))
+          d)))))
 
 ;;; The text of a number whose digits fit an unsigned 62-bit integer and whose scale
 ;;; is at most 19: the digits are written straight into the result, right to left,

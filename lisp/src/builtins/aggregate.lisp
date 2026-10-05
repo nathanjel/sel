@@ -534,25 +534,15 @@ sort, and FORCED-DIR is SORT's and SORT_DESC's own direction."
   (key-str "" :type string)
   (rows '() :type list))
 
-(defun eval-key-hash (v)
-  ;; The hash must agree with VALUE-EQL, which compares text by spelling (a number
-  ;; and the text spelt the same are one key, and a decimal cache warmed on one of
-  ;; them by arithmetic changes nothing). So it hashes the spelling, never the
-  ;; cache: hashing the decimal fields put `X` and `"5"` in different buckets once
-  ;; `X * 1` had been evaluated.
-  (let ((k (value-kind v)))
-    (case k
-      (:text (logxor (sxhash k) (sxhash (value-scalar v))))
-      (:bool
-       (if (value-scalar v) 12345 67890))
-      (:none 0)
-      (t (sxhash k)))))
-
-;; A scalar key is hashed by its scalar alone, but a list or record key -- whose
-;; kind is NONE, hashed 0 above -- is walked, and the walk must meet the depth
-;; cap as every other one does (spec §6.4).
+;; The hash must agree with VALUE-EQL, which compares text by spelling (a number
+;; and the text spelt the same are one key, and a decimal cache warmed on one of
+;; them by arithmetic changes nothing). So it hashes the spelling, never the
+;; cache: hashing the decimal fields put `X` and `"5"` in different buckets once
+;; `X * 1` had been evaluated -- VALUE-SCALAR-HASH does. A scalar key is hashed
+;; by its scalar alone, but a list or record key is walked, and the walk must
+;; meet the depth cap as every other one does (spec §6.4).
 (defun bucket-key-hash (v)
-  (if (zerop (value-size v)) (eval-key-hash v) (value-hash v)))
+  (if (zerop (value-size v)) (value-scalar-hash v) (value-hash v)))
 
 (defun bucket-key-text (key pos)
   (let ((v key))

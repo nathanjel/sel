@@ -604,12 +604,10 @@ same keys in the same order, pairwise EQL."
                 always (and (string= ka kb)          ; key order is normative
                             (value-eql-at va vb (1+ depth) pos)))))))
 
-(defun value-hash (v &optional (depth 1))
-  "Computes a fast structural hash for a SEL value."
-  ;; A value nested past the cap cannot be hashed any more than dumped: answering
-  ;; 0 let DEDUPE pass one it could not compare.
-  (when (> depth +max-depth+)
-    (fail "E_DEPTH" "value nested too deeply"))
+;;; The hash of a value's kind and scalar, which VALUE-HASH extends with the
+;;; children and BUCKET's key hash uses alone. Inline: both are per-element.
+(declaim (inline value-scalar-hash))
+(defun value-scalar-hash (v)
   (let ((h (sxhash (value-kind v))))
     (case (value-kind v)
       (:text
@@ -629,6 +627,15 @@ same keys in the same order, pairwise EQL."
              (loop for o across b
                    do (setf x (logand #xFFFFFFFF (* (logxor x (logand o #xFF)) 16777619))))
              (setf h (logand most-positive-fixnum (logxor h x (sxhash (length b))))))))))
+    h))
+
+(defun value-hash (v &optional (depth 1))
+  "Computes a fast structural hash for a SEL value."
+  ;; A value nested past the cap cannot be hashed any more than dumped: answering
+  ;; 0 let DEDUPE pass one it could not compare.
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply"))
+  (let ((h (value-scalar-hash v)))
     (cond
       ((value-shape v)
        (let* ((shape (value-shape v))

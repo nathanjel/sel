@@ -177,6 +177,19 @@
           (eval-dispatch node ctx))
     (decf (context-depth ctx))))
 
+(defmacro math-executor-case (op &body clauses)
+  "CASE over a math step's opcode. Its arms are the load and coerce steps and
+exactly +MATH-EXECUTOR-OPS+ -- the list math-plan.lisp checks spec/math-ops.json
+against -- which is checked here, when this file is compiled, so the two cannot
+drift apart."
+  (let ((arms (mapcar #'car clauses))
+        (expected (append '(:load-var :load-const :load-leaf :coerce) +math-executor-ops+)))
+    (unless (and (subsetp arms expected) (subsetp expected arms)
+                 (= (length arms) (length expected)))
+      (error "the math executor's opcodes ~s are not the load steps and +MATH-EXECUTOR-OPS+ ~s"
+             arms +math-executor-ops+))
+    `(case ,op ,@clauses)))
+
 (defun eval-math-plan (plan ctx)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type math-plan plan) (type context ctx))
@@ -200,7 +213,7 @@
                (declare (type math-step step)
                         (type fixnum dst)
                         (type keyword op))
-               (case op
+               (math-executor-case op
                  (:load-var
                   (let ((v (ctx-lookup ctx (math-step-name step))))
                     (unless v

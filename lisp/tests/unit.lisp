@@ -1748,6 +1748,18 @@ run of the program that built it, not a value set with the caller's string."
     (is (string= "0.0000000001" (scalar-of "1 / 10000000000")))
     (is (string= "256" (sel::value-scalar (sel::make-int 256))))))
 
+(test dec-parse-reads-any-string-as-its-characters
+  ;; One short path: a base or adjustable string parses as the simple string
+  ;; with the same characters does.
+  (dolist (text '("-1234567" "12.5" "0" "-0" "000123" "1234567890123456789" "1x" "1." ".5" ""
+                  "123456789012345678901234567890.25"))
+    (flet ((parsed (s) (let ((d (sel::dec-parse s))) (and d (sel::dec-format d)))))
+      (let ((expected (parsed (coerce text '(simple-array character (*))))))
+        (is (equal expected (parsed (coerce text 'simple-base-string))) "base string ~s" text)
+        (is (equal expected (parsed (make-array (length text) :element-type 'character
+                                                              :initial-contents text :adjustable t)))
+            "adjustable string ~s" text)))))
+
 (test make-int-cap-guard-uses-integers-only
   ;; The bit-length prefilter must agree with the digit cap exactly at
   ;; the boundary, and must not be a float constant.

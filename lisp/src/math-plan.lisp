@@ -10,8 +10,9 @@
 ;;; The vocabulary -- which source nodes compile, to which operation, with how
 ;;; many operands and which error positions -- is spec/math-ops.json's, rendered
 ;;; into math-ops.lisp. The opcode KEYWORDS are this host's own: the executor in
-;;; eval.lisp dispatches on the ones below, and loading refuses to continue if
-;;; the manifest names an operation the executor lacks.
+;;; eval.lisp dispatches on the ones below (its MATH-EXECUTOR-CASE refuses to
+;;; compile unless its arms are exactly these), and loading refuses to continue
+;;; if the manifest names an operation the executor lacks.
 (defparameter +math-executor-ops+
   '(:add :sub :mul :div :mod :neg :abs :sign :ceil :floor :trunc :round :power :min :max))
 
