@@ -43,7 +43,11 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # arguments in _eval_call's own loop instead of through Args.val, one call per
 # argument; rows 4977 -> 4937 when a RECORD with literal keys ran on its own
 # evaluator (structure._eval_record: no Args, no key values, no _record call).
-BUDGETS = {'pixel': 2239, 'rows': 4937}
+# pixel 2239 -> 2179 and rows 4937 -> 4047 when MAP and FILTER ran their
+# loops themselves instead of through walk() with a visit (and FILTER a keep
+# and a kept) call per element, and every aggregate whose body never reads
+# _K took its elements without the key text iter_elements built for each.
+BUDGETS = {'pixel': 2179, 'rows': 4047}
 
 
 def python_calls(label):
