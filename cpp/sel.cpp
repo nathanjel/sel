@@ -5753,18 +5753,20 @@ std::shared_ptr<const AliasPlan> alias_plan_for(
 // bound bare (spec §7.4).
 bool is_positional_binder(const std::string& name) { return name == "_1" || name == "_2"; }
 
+// A shaped row extended with the name as PLAN lays it out.
+Value alias_by_plan(const Value& row, const AliasPlan& plan) {
+  std::vector<Value> storage;
+  storage.reserve(plan.destination->keys.size());
+  const auto& old_storage = row.storage();
+  storage.insert(storage.end(), old_storage.begin(), old_storage.end());
+  storage.push_back(row);
+  if (plan.append_lower) storage.push_back(row);
+  return Internals::shaped(plan.destination, std::move(storage));
+}
+
 Value ensure_row_table_alias(const Value& row, const std::string& table) {
   if (table.empty() || is_positional_binder(table) || row.has(table)) return row;
-  if (const auto old_shape = row.shape()) {
-    const std::shared_ptr<const AliasPlan> plan = alias_plan_for(old_shape, table);
-    std::vector<Value> storage;
-    storage.reserve(plan->destination->keys.size());
-    const auto& old_storage = row.storage();
-    storage.insert(storage.end(), old_storage.begin(), old_storage.end());
-    storage.push_back(row);
-    if (plan->append_lower) storage.push_back(row);
-    return Internals::shaped(plan->destination, std::move(storage));
-  }
+  if (const auto& old_shape = row.shape()) return alias_by_plan(row, *alias_plan_for(old_shape, table));
   Value out = Value::none();
   for (const auto& [key, value] : row.entries()) out.set(key, value);
   out.set(table, row);
@@ -5772,6 +5774,29 @@ Value ensure_row_table_alias(const Value& row, const std::string& table) {
   if (lower != table && !row.has(lower)) out.set(lower, row);
   return out;
 }
+
+// ensure_row_table_alias over the rows of one side of a join: what it decides
+// of a shaped row -- whether the shape has the name, else the alias plan -- is
+// a function of the shape alone, so it is kept for the last shape seen rather
+// than asked again for every row (a lock and two string hashes: a tenth of the
+// instructions of scale scenario 6's join). The shape is held, so a
+// shape freed and another allocated at its address cannot be mistaken for it.
+struct RowAliaser {
+  const std::string& table;
+  std::shared_ptr<const RecordShape> last;
+  std::shared_ptr<const AliasPlan> plan;   // null: the shape has the name
+
+  explicit RowAliaser(const std::string& name) : table(name) {}
+  Value operator()(const Value& row) {
+    const auto& shape = row.shape();
+    if (!shape || table.empty() || is_positional_binder(table)) return ensure_row_table_alias(row, table);
+    if (shape != last) {
+      last = shape;
+      plan = shape->key_map.count(table) ? nullptr : alias_plan_for(shape, table);
+    }
+    return plan ? alias_by_plan(row, *plan) : row;
+  }
+};
 
 // An unmatched LINK_LEFT row's right side (spec §7.4): shaped like the first
 // right element as bound -- SAMPLE, already extended with the name where it
@@ -6809,8 +6834,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     JoinFlatTest flat_test{b1, b2};
     bool right_flat = true;
     {
+      RowAliaser alias_right(b2);
       for_each_snapshot_value(take_snapshot(right_value, false, ctx.write_free), [&](const Value& item) {
-        const Value row = ensure_row_table_alias(item, b2);
+        const Value row = alias_right(item);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
         const Value key_value = a.eval(*equi->right);
@@ -6972,8 +6998,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     add_once("_");
     FrameScope left_scope(ctx, std::move(frame));
     {
+      RowAliaser alias_left(b1);
       for_each_snapshot_value(take_snapshot(left_value, false, ctx.write_free), [&](const Value& item) {
-        const Value row = ensure_row_table_alias(item, b1);
+        const Value row = alias_left(item);
         int asked = -1;
         if (!fast_field.empty() && row.get(fast_field) != nullptr) {
           asked = verdict(prefix, row);
@@ -7044,14 +7071,16 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       // left row, and a predicate that grows it must not give later left rows more rows.
       const Snapshot general_left = take_snapshot(left_value, false, ctx.write_free);
       const Snapshot general_right = take_snapshot(right_value, false, ctx.write_free);
+      RowAliaser alias_left(b1);
+      RowAliaser alias_right(b2);
       for_each_snapshot_value(general_left, [&](const Value& item) {
-        const Value left = ensure_row_table_alias(item, b1);
+        const Value left = alias_left(item);
         set_frame(ctx.frames.back(), b1, left);
         set_frame(ctx.frames.back(), "_1", left);
         set_frame(ctx.frames.back(), "_", left);
         bool matched = false;
         for_each_snapshot_value(general_right, [&](const Value& right_item) {
-          const Value right = ensure_row_table_alias(right_item, b2);
+          const Value right = alias_right(right_item);
           set_frame(ctx.frames.back(), b2, right);
           set_frame(ctx.frames.back(), "_2", right);
           if (a.eval(*predicate).as_bool(predicate->pos)) {
