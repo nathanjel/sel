@@ -280,9 +280,11 @@ step "host registry complete" ./tools/check-registry.sh
 # with a time and memory ceiling, in every host; likewise translator work and
 # depth (docs/internals/sql-translation.md §7.4), and regex resource behaviour
 # (the cases conformance/28-regex-portability.selt cannot hold safely).
-step "output and work budgets" ./tools/check-budgets.sh
-[ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] || step "SQL translator budgets" ./tools/check-sql-budgets.sh
-step "regex resources" sel_slot python3 tools/check-regex-resources.py
+# The three ceiling lanes hold a PHP slot for their whole run (sel_hold in
+# tools/impls.sh), so a PHP probe never waits for a slot inside its ceiling.
+step "output and work budgets" sel_hold php -- ./tools/check-budgets.sh
+[ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] || step "SQL translator budgets" sel_hold php -- ./tools/check-sql-budgets.sh
+step "regex resources" sel_slot sel_hold php -- python3 tools/check-regex-resources.py
 # Every host's error messages follow one set of conventions (the codes and
 # positions are the contract; the wording is held to the same rules). Guarded on
 # the file so a tree that does not have the check yet still runs.

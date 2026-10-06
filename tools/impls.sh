@@ -115,6 +115,9 @@ export SEL_JOBS SEL_PHP_JOBS SEL_SLOT_DIR
 _sel_sem() {
   local prefix="$1" count="$2" fd i rc
   shift 2
+  # Already holding a slot of this kind (sel_hold, below): run at once. The
+  # bound counted it when the slot was taken, and waiting again could deadlock.
+  case " ${SEL_SLOT_HELD:-} " in *" $prefix "*) "$@"; return ;; esac
   for ((i = 0; i < count; i++)); do
     exec {fd}>"$SEL_SLOT_DIR/$prefix.$i"
     if flock -n "$fd"; then
@@ -137,6 +140,26 @@ sel_slot() { _sel_sem job "$SEL_JOBS" "$@"; }
 # sel_php <args...>: `php <args>`, bounded by SEL_PHP_JOBS as well. Every php
 # invocation in this file goes through it.
 sel_php() { _sel_sem php "$SEL_PHP_JOBS" php "$@"; }
+
+# sel_hold <kind>... -- <command...>: take one slot of each kind (job, php) now,
+# then run the command with them marked held (SEL_SLOT_HELD), so the sel_slot and
+# sel_php calls inside it run at once instead of queueing again. For a lane that
+# puts its own time ceiling on each run (the budget and resource lanes): without
+# it, a 0.1-second PHP probe could spend its whole 20-second ceiling waiting for
+# a PHP slot behind a minute-long suite, and fail as "too slow" under load. The
+# wait happens here, before any ceiling starts; the lane's runs are sequential,
+# so one held slot still bounds them.
+sel_hold() {
+  [ "$1" = -- ] && { shift; "$@"; return; }
+  local kind="$1" count; shift
+  case "$kind" in php) count="$SEL_PHP_JOBS" ;; *) count="$SEL_JOBS" ;; esac
+  _sel_sem "$kind" "$count" _sel_held "$kind" "$@"
+}
+_sel_held() {
+  local kind="$1"; shift
+  local SEL_SLOT_HELD="${SEL_SLOT_HELD:-} $kind"; export SEL_SLOT_HELD
+  sel_hold "$@"
+}
 
 # sel_wait <pid...>: wait for each background job, keeping a failure. A bare
 # `wait` discards the statuses; this returns non-zero if any job did.
