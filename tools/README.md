@@ -94,6 +94,7 @@ writes its results into its own ignored `results/` directory or to stdout.
 |---|---|
 | `tools/scale-test/` (`benchmark_all.py`, `run_benchmarks.py`) | the S1–S6 scale scenarios in every host; `run_benchmarks.py --plans-only` IS gated, as "scale plans vs reference" |
 | `tools/commit-benchmark/` | Mandelbrot and application timers per host, for A/B between commits |
+| `tools/commit-benchmark/snapshot.py` | one snapshot of the working tree: S1–S6 and Mandelbrot in every host, one host at a time, 2 warmups + 5 runs; `--compare` against an earlier `summary.json` |
 | `tools/python-runtime/`, `tools/benchmark-python-runtime.py` | Python arithmetic and metadata micro-measurements |
 | `tools/php-runtime/`, `tools/lisp-runtime/` | the PHP scalar-access and Lisp runtime comparisons |
 | `tools/adversarial/` | the SQL-layer adversarial audit's scripts; `regressions.sh` re-asserts its findings |
