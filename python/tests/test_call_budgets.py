@@ -33,7 +33,13 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # copy ran a function-level import on every call), then 5363 -> 5358 when
 # lexer.ascii_upper took str.upper() for an all-ASCII string instead of a
 # generator over its characters (the sort direction "DESC" is folded once).
-BUDGETS = {'pixel': 2252, 'rows': 5358}
+# Both went down by one (2252 -> 2251, 5358 -> 5357) when the count started
+# after the Context is built, as run() builds it before it evaluates, so that
+# the count could see the write_free flag run() sets on it; rows then went
+# 5357 -> 4987 because it is a write-free program (no assignment, no host
+# function): FILTER, MAP and RECORD hold what they collect instead of copying
+# it (SPEC 3.4, Context.write_free).
+BUDGETS = {'pixel': 2251, 'rows': 4987}
 
 
 def python_calls(label):
@@ -43,13 +49,15 @@ def python_calls(label):
     program = compile(PROGRAMS[label])
     for _ in range(40):          # warm: caches built, hot math plans compiled
         program.run(CONTEXTS.get(label, {}))
-    tree, root = program.physical_ast(), Value.from_native(CONTEXTS.get(label, {}))
+    (tree, write_free), root = program._physical_plan(), Value.from_native(CONTEXTS.get(label, {}))
+    ctx = Context(root)
+    ctx.write_free = write_free  # as run() sets it
     seen = Counter()
     collecting = gc.isenabled()
     gc.disable()                 # no collector pass, and no gc.callbacks, inside the count
     sys.setprofile(lambda frame, event, arg: seen.update((event,)))
     try:
-        eval_node(tree, Context(root))
+        eval_node(tree, ctx)
     finally:
         sys.setprofile(None)
         if collecting:

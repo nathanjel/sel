@@ -39,6 +39,13 @@ define('HAS', 2, 2, fn=lambda args, ctx: Value.bool(args.val(0).has(args.text(1)
 # call rather than at 0:0 by whatever walks it later.
 def _list(args, ctx):
     check_collection(args.count(), args.pos)
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        out = [args.val(i) for i in range(args.count())]
+        for v in out:
+            v.check_depth(2, args.pos)
+        return Value._list_owned(out)
     return Value._list_owned([args.val(i).clone(args.pos, 2) for i in range(args.count())])
 
 
@@ -63,6 +70,18 @@ def _record(args, ctx):
     # measurable part of it).
     nodes = args.nodes
     vals = []
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): every field is held as it
+        # is, after the copy's depth check -- which a field with no children
+        # passes one level down.
+        for i in range(1, count, 2):
+            v = args.val(i)
+            if v.storage is not None or v.children:
+                v.check_depth(2, pos)
+            vals.append(v)
+        if shape is not None:
+            return Value._from_shape(shape, vals)
+        return Value._record_owned(keys, vals)
     for i in range(1, count, 2):
         v = args.val(i)
         n = nodes[i]

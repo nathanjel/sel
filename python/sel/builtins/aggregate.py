@@ -132,8 +132,10 @@ _SCALAR_FRESH_CALLS = _FRESH_CALLS - {'LIST', 'RECORD'}
 
 def collected(value, body, args):
     """What an aggregate stores in its result (SPEC 3.4): a copy, one level down,
-    unless the body's node cannot have produced anything shared."""
-    if _is_fresh(body):
+    unless nothing in the program can write (Context.write_free) or the body's
+    node cannot have produced anything shared -- then only the copy's depth
+    check is made."""
+    if args.ctx.write_free or _is_fresh(body):
         value.check_depth(2, args.pos)
         return value
     return value.clone(args.pos, 2)
@@ -320,11 +322,12 @@ def _filter(args, ctx):
     def keep(r, body):
         return r.as_bool(body.pos)
     pos = args.pos
-    if args.adopt:
-        # The step after this one only reads what is kept and copies what it
-        # collects (optimizer.adopts_elements), so a kept element is handed on
-        # as it is. The copy also refuses an element nested past the cap, so
-        # that is still checked, without copying (Value.check_depth).
+    if args.adopt or ctx.write_free:
+        # Nothing in the program can write (Context.write_free), or the step
+        # after this one only reads what is kept and copies what it collects
+        # (optimizer.adopts_elements), so a kept element is handed on as it
+        # is. The copy also refuses an element nested past the cap, so that
+        # is still checked, without copying (Value.check_depth).
         def kept(item):
             item.check_depth(2, pos)
             return item
@@ -570,6 +573,15 @@ def do_sort(args, ctx, forced_dir):
     # rule for DESC (SPEC 7.3: only unequal ranks reverse, ties stay put).
     keys = [sort_key(x['key']) for x in indexed]
     order = sorted(range(len(indexed)), key=keys.__getitem__, reverse=(direction == 'DESC'))
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        out = []
+        for i in order:
+            item = indexed[i]['item']
+            item.check_depth(2, args.pos)
+            out.append(item)
+        return Value._list_owned(out)
     return Value._list_owned([indexed[i]['item'] if indexed[i].get('owned') else indexed[i]['item'].clone(args.pos, 2)
                               for i in order])
 
@@ -651,6 +663,12 @@ def do_top(args, ctx, forced_dir):
         order = sorted(range(len(items)), key=keys.__getitem__, reverse=(direction == 'DESC'))
     else:
         order = select(limit, range(len(items)), key=keys.__getitem__)
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        for i in order:
+            items[i].check_depth(2, args.pos)
+        return Value._list_owned([items[i] for i in order])
     return Value._list_owned([items[i] if eager else items[i].clone(args.pos, 2) for i in order])
 
 
@@ -761,8 +779,17 @@ def do_bucket(args, ctx):
 
     if agg_node is None:
         out = Value.none()
+        hold = ctx.write_free
         for g in groups:
-            out.set(g['key_str'], Value._list_owned(g['rows'] if eager else [row.clone(args.pos, 3) for row in g['rows']]))
+            rows = g['rows']
+            if hold:
+                # Nothing can write (Context.write_free): the rows are held as
+                # they are, after the copy's depth check.
+                for row in rows:
+                    row.check_depth(3, args.pos)
+            elif not eager:
+                rows = [row.clone(args.pos, 3) for row in rows]
+            out.set(g['key_str'], Value._list_owned(rows))
         return out
 
     out = []

@@ -43,7 +43,8 @@ _COERCE = OpCode.COERCE
 
 
 class Context:
-    __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report')
+    __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report',
+                 'write_free')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
@@ -64,6 +65,14 @@ class Context:
         # error -- in which case the join above applies them all again -- and
         # whether any row was dropped.
         self.join_prefilter_report = None
+        # Nothing in the tree being evaluated can write: it holds no assignment
+        # and no call to an application's function (parser.may_write), and
+        # assignment is the one way a program changes a value. Then no copy a
+        # collector or a constructor makes (SPEC 3.4) can be told from what it
+        # copied, so they hold what they collect as it is, after the depth
+        # check the copy would have made (Value.check_depth). Off unless
+        # Program.run proved it for the tree it runs.
+        self.write_free = False
 
     def lookup(self, name: str) -> Value | None:
         frames = self.frames
@@ -542,7 +551,15 @@ def _eval_list(node: Node, ctx: Context) -> Value:
                 children = ()
             # Held one level down, and a value past the cap is refused here, at
             # the node that built it (SPEC 3.4), not at 0:0 by whatever walks it.
-            values.extend(child.clone(node.pos, 2) for child in children)
+            if ctx.write_free:
+                for child in children:
+                    child.check_depth(2, node.pos)
+                    values.append(child)
+            else:
+                values.extend(child.clone(node.pos, 2) for child in children)
+        elif ctx.write_free:
+            v.check_depth(2, node.pos)
+            values.append(v)
         else:
             values.append(v.clone(node.pos, 2))
         check_collection(len(values), node.pos)
