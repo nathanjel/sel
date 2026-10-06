@@ -7691,7 +7691,15 @@ Value do_bucket(Args& a, Context& ctx) {
     if (needs_k_agg) {
       ctx.frames.back()[1].second = std::move(g.key);
     }
-    out.push_back(a.eval(*agg_node));
+    // The projection's value is what this BUCKET collects, so it is copied as a
+    // MAP body's is (§3.4) -- unless it is the group list itself, a container
+    // this BUCKET built of rows it already collected.
+    Value projected = a.eval(*agg_node);
+    if (Internals::identity(projected) == Internals::identity(ctx.frames.back()[0].second)) {
+      out.push_back(std::move(projected));
+    } else {
+      out.push_back(adopt_or_clone(std::move(projected), 0, Pos{}));
+    }
   }
   scope.pop();
   return Value::list(std::move(out));

@@ -157,6 +157,18 @@ X = LIST(RECORD("k",1)); BUCKET(X, _["k"], _)[(X[1]["k"] = 9; 1)][1]["k"]
 num 1
 ===
 
+### name: alias.aggregate-copies.bucket-projection-of-a-variable
+--- note
+What a projected BUCKET collects into its result is the projection's value, one per
+group, so that is copied as a MAP body's value is (§3.4): a projection that names a
+variable hands back a copy, and a write into the variable while the result is still
+pending does not reach it. The C++ host held the projection's value as it was.
+--- source
+D = LIST(5); BUCKET(LIST(1), "a", D)[1][(D[1] = 9; 1)]
+--- expect
+num 5
+===
+
 ### name: alias.aggregate-copies.body-mutates-source-during-iteration
 --- note
 The body assigns into the source while MAP is collecting: the first result is
