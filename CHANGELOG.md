@@ -156,7 +156,30 @@ rosters; `SEL_DEFAULT_IMPLS`, `SEL_EXTRA_IMPLS`, `SEL_SKIP_SANITIZERS`,
 manifest (checked); CLAUDE.md, `docs/contributing.md` and the usage docs cover
 Go and Rust throughout; SPEC §5 numbering fixed.
 
-Performance: measured A B B A against 0.10.0 on a quiet box, every host is
+**Performance work after the review:**
+
+  - PHP: the scale scenarios run faster than in 0.9.2 again; 0.10.0 had made
+    them up to 2.8× slower (S3). A FILTER over a LINK re-tested and, since
+    collectors copy, deep-copied every row the join had already tested (the
+    join's report keyed its conditions by a hash of nodes whose inline caches
+    evaluation rewrites). A program with no assignment and no host function now
+    makes none of the SPEC §3.4 collector and constructor copies (nothing can
+    observe them; the depth check is kept), and MAP or a BUCKET projection keeps
+    a value its body built. Against 0.10.0: S1 −36%, S2 −50%, S3 −69%, S4 −32%,
+    S5 −59%, S6 −15%; Mandelbrot unchanged.
+  - C++: Mandelbrot 32.1 → 19.5 ms (−39%) with exact arithmetic: MULX/ADCX/ADOX
+    rows for big-number products when CPUID reports BMI2+ADX (`SEL_NO_ASM` or a
+    non-x86-64 build uses the portable loop), the Karatsuba crossover tuned for
+    them, no 128-bit division per digit, math-plan loads read in place,
+    `name = temporary` adopts the temporary, the last two large squares
+    remembered per thread, and per-thread position hints for variable reads and
+    writes. 0.9.2's faster C++ Mandelbrot (16.7 ms) came from a multiply that
+    rounded both operands to 18 fractional digits whenever both had more —
+    wrong products, removed in 0.10.0; `dec.mul.repeated-square-past-10e38`,
+    `dec.mul.eight-squarings-keep-every-digit` and `dec.mul.integers-past-int128`
+    now pin the exact results in every host.
+
+Performance (the review itself): measured A B B A against 0.10.0 on a quiet box, every host is
 within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
 largest gains Go S4 −20%, Lisp S1 −16%, JS S3 −9%; the largest change the other
 way Go S2 +2.6%).
