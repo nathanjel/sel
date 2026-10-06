@@ -50,6 +50,16 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// The big-number multiply's inner loop in MULX/ADCX/ADOX when the CPU has them
+// (checked at run time, so the build needs no -m flag); everywhere else, and on
+// an x86-64 without them, the portable loop. SEL_NO_ASM turns it off.
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__)) && !defined(SEL_NO_ASM)
+#define SEL_BN_ADX 1
+#include <cpuid.h>
+#else
+#define SEL_BN_ADX 0
+#endif
+
 namespace sel {
 
 // ASCII case (ascii_up, ascii_upper, ...) is sel_ast.hpp's, shared with the SQL layer.
@@ -535,15 +545,138 @@ Nat sub(Span a, Span b) {
   return out;
 }
 
+#if SEL_BN_ADX
+// Whether the CPU has MULX (BMI2) and ADCX/ADOX (ADX): CPUID leaf 7, EBX bits 8
+// and 19. Read once, at load time; before that it is zero-initialised, and
+// false is the portable loop, so even a product computed from another
+// translation unit's static initialiser is correct.
+const bool HAVE_ADX = [] {
+  unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+  if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) == 0) return false;
+  return (ebx & (1u << 8)) != 0 && (ebx & (1u << 19)) != 0;
+}();
+
+// acc[0..8) += a[0..8) * m + carry; the word carried out. The product's low
+// words and the previous high word go in on the CF chain (ADCX), acc on the
+// OF chain (ADOX): two independent carry chains, which is what makes this
+// about 1.5 times the portable loop's speed. The sum fits: acc + a m + carry
+// < 2^(64*9), so the carry out is one word and both chains end in it.
+inline std::uint64_t addmul_8_adx(std::uint64_t* acc, const std::uint64_t* a, std::uint64_t m,
+                                  std::uint64_t carry) {
+  std::uint64_t l0, h0, l1, h1, z;
+  __asm__(
+      "xorl %k[z], %k[z]\n\t"
+      "mulxq 0(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[c], %[l0]\n\t"
+      "adoxq 0(%[acc]), %[l0]\n\t"
+      "movq %[l0], 0(%[acc])\n\t"
+      "mulxq 8(%[a]), %[l1], %[h1]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 8(%[acc]), %[l1]\n\t"
+      "movq %[l1], 8(%[acc])\n\t"
+      "mulxq 16(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[h1], %[l0]\n\t"
+      "adoxq 16(%[acc]), %[l0]\n\t"
+      "movq %[l0], 16(%[acc])\n\t"
+      "mulxq 24(%[a]), %[l1], %[h1]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 24(%[acc]), %[l1]\n\t"
+      "movq %[l1], 24(%[acc])\n\t"
+      "mulxq 32(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[h1], %[l0]\n\t"
+      "adoxq 32(%[acc]), %[l0]\n\t"
+      "movq %[l0], 32(%[acc])\n\t"
+      "mulxq 40(%[a]), %[l1], %[h1]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 40(%[acc]), %[l1]\n\t"
+      "movq %[l1], 40(%[acc])\n\t"
+      "mulxq 48(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[h1], %[l0]\n\t"
+      "adoxq 48(%[acc]), %[l0]\n\t"
+      "movq %[l0], 48(%[acc])\n\t"
+      "mulxq 56(%[a]), %[l1], %[c]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 56(%[acc]), %[l1]\n\t"
+      "movq %[l1], 56(%[acc])\n\t"
+      "adcxq %[z], %[c]\n\t"
+      "adoxq %[z], %[c]\n\t"
+      : [l0] "=&r"(l0), [h0] "=&r"(h0), [l1] "=&r"(l1), [h1] "=&r"(h1), [z] "=&r"(z), [c] "+&r"(carry),
+        "+m"(*reinterpret_cast<std::uint64_t(*)[8]>(acc))
+      : [a] "r"(a), [acc] "r"(acc), "d"(m), "m"(*reinterpret_cast<const std::uint64_t(*)[8]>(a))
+      : "cc");
+  return carry;
+}
+
+// The same for four words.
+inline std::uint64_t addmul_4_adx(std::uint64_t* acc, const std::uint64_t* a, std::uint64_t m,
+                                  std::uint64_t carry) {
+  std::uint64_t l0, h0, l1, h1, z;
+  __asm__(
+      "xorl %k[z], %k[z]\n\t"
+      "mulxq 0(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[c], %[l0]\n\t"
+      "adoxq 0(%[acc]), %[l0]\n\t"
+      "movq %[l0], 0(%[acc])\n\t"
+      "mulxq 8(%[a]), %[l1], %[h1]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 8(%[acc]), %[l1]\n\t"
+      "movq %[l1], 8(%[acc])\n\t"
+      "mulxq 16(%[a]), %[l0], %[h0]\n\t"
+      "adcxq %[h1], %[l0]\n\t"
+      "adoxq 16(%[acc]), %[l0]\n\t"
+      "movq %[l0], 16(%[acc])\n\t"
+      "mulxq 24(%[a]), %[l1], %[c]\n\t"
+      "adcxq %[h0], %[l1]\n\t"
+      "adoxq 24(%[acc]), %[l1]\n\t"
+      "movq %[l1], 24(%[acc])\n\t"
+      "adcxq %[z], %[c]\n\t"
+      "adoxq %[z], %[c]\n\t"
+      : [l0] "=&r"(l0), [h0] "=&r"(h0), [l1] "=&r"(l1), [h1] "=&r"(h1), [z] "=&r"(z), [c] "+&r"(carry),
+        "+m"(*reinterpret_cast<std::uint64_t(*)[4]>(acc))
+      : [a] "r"(a), [acc] "r"(acc), "d"(m), "m"(*reinterpret_cast<const std::uint64_t(*)[4]>(a))
+      : "cc");
+  return carry;
+}
+#endif
+
 // acc[..a.size()] += a * m; the word carried out.
 inline std::uint64_t addmul_1(Out acc, Span a, std::uint64_t m) {
   std::uint64_t carry = 0;
-  for (std::size_t i = 0; i < a.size(); ++i) {
+  std::size_t i = 0;
+#if SEL_BN_ADX
+  if (HAVE_ADX) {
+    for (; i + 8 <= a.size(); i += 8) carry = addmul_8_adx(&acc[i], &a[i], m, carry);
+    if (i + 4 <= a.size()) {
+      carry = addmul_4_adx(&acc[i], &a[i], m, carry);
+      i += 4;
+    }
+  }
+#endif
+  for (; i < a.size(); ++i) {
     const u128 t = static_cast<u128>(a[i]) * m + acc[i] + carry;
     acc[i] = static_cast<std::uint64_t>(t);
     carry = static_cast<std::uint64_t>(t >> 64);
   }
   return carry;
+}
+
+// Where Karatsuba takes over from the schoolbook rows: the thresholds above
+// (the Rust host's) for the portable rows; with the ADX rows, which are about
+// 1.5 times as fast, the crossover moves up to 64 words for a product and 96
+// for a square (measured in-process, best of 15, from 32 to 266 words: the
+// 133-word square 8% and product 10% faster than at 48 and 32).
+inline std::size_t karatsuba_mul_at() {
+#if SEL_BN_ADX
+  if (HAVE_ADX) return 64;
+#endif
+  return KARATSUBA;
+}
+
+inline std::size_t karatsuba_sqr_at() {
+#if SEL_BN_ADX
+  if (HAVE_ADX) return 96;
+#endif
+  return KARATSUBA_SQR;
 }
 
 // acc[..a.size()] -= a * m; the word borrowed out.
@@ -642,9 +775,20 @@ Nat shr_bits(Span a, unsigned bits) {
 // a << k, trimmed.
 Nat shl(Span a, std::size_t k) {
   if (a.empty()) return {};
-  Nat out(k / 64, 0);
-  const Nat shifted = shl_bits(a, static_cast<unsigned>(k % 64));
-  out.insert(out.end(), shifted.begin(), shifted.end());
+  // One allocation: the zero words, then a shifted in place after them.
+  const std::size_t words = k / 64;
+  const unsigned bits = static_cast<unsigned>(k % 64);
+  Nat out(words + a.size() + 1, 0);
+  if (bits == 0) {
+    std::copy(a.begin(), a.end(), out.begin() + static_cast<std::ptrdiff_t>(words));
+  } else {
+    std::uint64_t carry = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      out[words + i] = a[i] << bits | carry;
+      carry = a[i] >> (64 - bits);
+    }
+    out[words + a.size()] = carry;
+  }
   normalize(out);
   return out;
 }
@@ -759,7 +903,7 @@ void karatsuba(Out out, Span x, Span y, Out scratch);
 void mul_into(Out out, Span a, Span b, Out scratch) {
   if (a.size() < b.size()) std::swap(a, b);
   if (b.empty()) return;
-  if (b.size() < KARATSUBA) {
+  if (b.size() < karatsuba_mul_at()) {
     basecase_mul(out, a, b);
   } else if (a.size() >= 2 * b.size()) {
     // Unbalanced: the long factor in pieces as long as the short one.
@@ -817,7 +961,7 @@ void karatsuba(Out out, Span x, Span y, Out scratch) {
 // out = a^2, out zeroed and 2 a.size() + 1 long: Karatsuba's squaring,
 // a^2 = a0^2 (1 + B^h) + a1^2 (B^h + B^2h) - (a1 - a0)^2 B^h.
 void sqr_into(Out out, Span a, Out scratch) {
-  if (a.size() < KARATSUBA_SQR) {
+  if (a.size() < karatsuba_sqr_at()) {
     basecase_sqr(out, a);
     return;
   }
@@ -845,16 +989,45 @@ void sqr_into(Out out, Span a, Out scratch) {
   sub_in(out.subspan(h), trimmed(p));
 }
 
+// The last two squares of large operands, per thread. Squaring the same value
+// twice in a row is common -- `x * x` in a test and again in the expression it
+// guards, as in an escape-time loop -- and recognising the operand costs one
+// pass over it where the square costs a quadratic one (or Karatsuba's).
+// Bounded: operands of SQR_MEMO_MIN to SQR_MEMO_MAX words only, two of them;
+// below the minimum a square costs about what the lookup and the copy would.
+constexpr std::size_t SQR_MEMO_MIN = 16;
+constexpr std::size_t SQR_MEMO_MAX = std::size_t{1} << 14;
+
+struct SqrMemo {
+  Nat operand;
+  Nat square;
+};
+
+thread_local std::array<SqrMemo, 2> sqr_memo;
+thread_local unsigned sqr_memo_next = 0;
+
 Nat sqr(Span a) {
   a = trimmed(a);
+  const bool memo = a.size() >= SQR_MEMO_MIN && a.size() <= SQR_MEMO_MAX;
+  if (memo) {
+    for (const SqrMemo& m : sqr_memo) {
+      if (m.operand.size() == a.size() && std::equal(a.begin(), a.end(), m.operand.begin())) return m.square;
+    }
+  }
   const std::size_t n = 2 * a.size() + 1;
   Nat out(n, 0);
-  if (a.size() < KARATSUBA_SQR) {
+  if (a.size() < karatsuba_sqr_at()) {
     basecase_sqr(out, a);
   } else {
     with_scratch(scratch_len(n), [&](Out s) { sqr_into(out, a, s); });
   }
   normalize(out);
+  if (memo) {
+    SqrMemo& m = sqr_memo[sqr_memo_next];
+    sqr_memo_next ^= 1;
+    m.operand.assign(a.begin(), a.end());
+    m.square = out;
+  }
   return out;
 }
 
@@ -875,7 +1048,7 @@ Nat mul(Span a, Span b) {
   }
   const std::size_t n = a.size() + b.size() + 1;
   Nat out(n, 0);
-  if (std::min(a.size(), b.size()) < KARATSUBA) {
+  if (std::min(a.size(), b.size()) < karatsuba_mul_at()) {
     if (a.size() >= b.size()) {
       basecase_mul(out, a, b);
     } else {
@@ -1426,10 +1599,17 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
 // words they come from the bit length, with no conversion and no division.
 std::pair<long long, long long> dec_digit_bounds(const Dec& d) {
   if (d.small) {
-    __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
-                                   : static_cast<__uint128_t>(d.mantissa);
-    long long n = 1;
-    while (m >= 10) { m /= 10; ++n; }
+    const __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
+                                         : static_cast<__uint128_t>(d.mantissa);
+    if (m < 10) return {1, 1};
+    // 2^(b-1) <= m < 2^b puts floor(log10 m) at t or t + 1, t = floor((b - 1)
+    // log10 2) -- which (x * 1233) >> 12 is for every x < 128 -- and one
+    // comparison with 10^(t+1) says which. A 128-bit `/ 10` per digit was a
+    // library call each.
+    const std::uint64_t hi = static_cast<std::uint64_t>(m >> 64);
+    const int bits = hi != 0 ? 128 - __builtin_clzll(hi) : 64 - __builtin_clzll(static_cast<std::uint64_t>(m));
+    const int t = ((bits - 1) * 1233) >> 12;
+    const long long n = t + 1 + (m >= static_cast<__uint128_t>(POW10_128[t + 1]) ? 1 : 0);
     return {n, n};
   }
   if (!d.words.empty()) {
@@ -1666,31 +1846,41 @@ const std::vector<std::uint64_t>& dec_words_scaled(const Dec& d, long long k, st
   return keep;
 }
 
-Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
+// a + b, or a - b when `minus`: b's sign is read through the flag, so a
+// subtraction never copies its right operand (all its words) just to negate it.
+Dec dec_add_signed(const Dec& a, const Dec& b, bool minus, Pos pos) {
   if (a.small && b.small) {
     __int128_t sa, sb;
     long long target_scale;
     if (align_small(a, b, sa, sb, target_scale)) {
+      // No small mantissa is -2^127 (dec_from_mantissa), and no other one
+      // reaches it times a power of ten (5 does not divide 2^127), so the
+      // negation is safe -- and it is the value dec_negate would have aligned.
+      if (minus) sb = -sb;
       __int128_t sum;
       if (!__builtin_add_overflow(sa, sb, &sum)) {
         return dec_guard(dec_from_mantissa(sum, target_scale), pos);
       }
     }
   }
+  // A zero b's sign is never read wrongly: either branch below gives a's value.
+  const bool b_neg = b.neg != minus;
   const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
   std::vector<std::uint64_t> keep_a, keep_b;
   const std::vector<std::uint64_t>& wa = dec_words_scaled(a, s - a.scale, keep_a);
   const std::vector<std::uint64_t>& wb = dec_words_scaled(b, s - b.scale, keep_b);
-  if (a.neg == b.neg) {
+  if (a.neg == b_neg) {
     return dec_guard(dec_from_words(a.neg, bn::add(wa, wb), s), pos);
   }
   const int c = bn::cmp(wa, wb);
   if (c == 0) return dec_from_mantissa(0, s);
   return c > 0 ? dec_guard(dec_from_words(a.neg, bn::sub(wa, wb), s), pos)
-               : dec_guard(dec_from_words(b.neg, bn::sub(wb, wa), s), pos);
+               : dec_guard(dec_from_words(b_neg, bn::sub(wb, wa), s), pos);
 }
 
-Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
+Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add_signed(a, b, false, pos); }
+
+Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add_signed(a, b, true, pos); }
 
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
@@ -2105,6 +2295,32 @@ struct Internals {
     return v;
   }
   static const void* identity(const Value& v) { return v.p_; }
+  // A plain record's lookup by position, for Context's name hints: whether `v`
+  // is a record whose children are its keys (no shape, not a list), and the
+  // child at `index` when its key is `key`. Keys in such a record are unique
+  // and keep their positions (Value::set), so a key confirmed there is exactly
+  // the child Value::get would find.
+  static bool plain_record(const Value& v) {
+    const Value::Impl* p = v.p_;
+    return p && p->collection && !p->collection->shape && !p->is_list;
+  }
+  static const Value* child_if_keyed(const Value& v, std::size_t index, const std::string& key) {
+    const std::vector<Value::Entry>& children = v.p_->collection->children;
+    if (index >= children.size()) return nullptr;
+    const std::string& at = children[index].first;
+    if (at.size() != key.size()) return nullptr;
+    for (std::size_t i = 0; i < key.size(); ++i) {
+      if (at[i] != key[i]) return nullptr;
+    }
+    return &children[index].second;
+  }
+  // Value::get on a plain record, reporting the child's position.
+  static const Value* find_child(const Value& v, const std::string& key, std::size_t& index) {
+    const auto it = v.find(key);
+    if (it == v.p_->collection->children.end()) return nullptr;
+    index = static_cast<std::size_t>(it - v.p_->collection->children.begin());
+    return &it->second;
+  }
   static Value shaped_direct(std::shared_ptr<const RecordShape> shape, std::size_t reserve_size) {
     Value v(Value::make_collection_impl());
     v.p_->mutable_coll().shape = std::move(shape);
@@ -4316,6 +4532,25 @@ struct JoinReport {
 // in a header names these two as well. eval_node comes with them because its
 // declaration sits between them and has to be on the same side as its
 // definition.
+// Where a variable was last found in a root record, by the address of the
+// name asked for: the AST's or a plan step's string, which live as long as the
+// program, so one reference reads the same name every time. Only a hint: the
+// key at that position is compared with the name before the child is used
+// (Internals::child_if_keyed), and keys in a plain record are unique, so a
+// stale entry -- another run's root, another program's string at a reused
+// address, a collision -- costs a search and never a wrong value. Per thread,
+// not per run: nothing to set up when a program starts, and 256 entries keep a
+// program's names from evicting one another (64 thrashed on Mandelbrot's 50).
+// Saves the record search -- a scan of the root's index -- on nearly every
+// read and write of a variable.
+namespace {
+struct RootHint {
+  const std::string* name = nullptr;
+  std::size_t index = 0;
+};
+thread_local std::array<RootHint, 256> root_hints{};
+}  // namespace
+
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -4344,7 +4579,36 @@ struct Context {
         if (e.first == name) return &e.second;
       }
     }
-    return root->get(name);
+    return root_find(name);
+  }
+
+  // The root record's own `name` (Value::get), through the hints.
+  const Value* root_find(const std::string& name) const {
+    if (!Internals::plain_record(*root)) return root->get(name);
+    RootHint& hint = root_hints[(reinterpret_cast<std::uintptr_t>(&name) * 0x9E3779B97F4A7C15ULL) >> 56];
+    if (hint.name == &name) {
+      if (const Value* v = Internals::child_if_keyed(*root, hint.index, name)) return v;
+    }
+    std::size_t index = 0;
+    const Value* v = Internals::find_child(*root, name, index);
+    if (v) {
+      hint.name = &name;
+      hint.index = index;
+    }
+    return v;
+  }
+
+  // root->set(name, value) (spec §5.7: a variable that exists keeps its
+  // place), straight into the child a hint finds; a new name, or a root that
+  // is not a plain record, goes through Value::set.
+  void root_store(const std::string& name, const Value& value) {
+    if (Internals::plain_record(*root)) {
+      if (const Value* v = root_find(name)) {
+        *const_cast<Value*>(v) = value;   // root is ours to write: it is non-const
+        return;
+      }
+    }
+    root->set(name, value);
   }
 
   bool is_bound(const std::string& name) const {
@@ -4935,11 +5199,13 @@ Value eval_assign(const Node& node, Context& ctx) {
     }
     Value value;
     if (node.s == "=") {
-      value = eval_node(*node.r, ctx).clone(node.pos);
-      ctx.root->set(var_name, value);
+      // A fresh temporary is adopted, anything shared is cloned (§3.4): the
+      // same rule, and the same E_DEPTH, as the indexed form below.
+      value = adopt_or_clone(eval_node(*node.r, ctx), 0, node.pos);
+      ctx.root_store(var_name, value);
       return value;
     } else {
-      Value* current = ctx.root->get(var_name);
+      const Value* current = ctx.root_find(var_name);
       if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
       const Value target_value = *current;
 
@@ -4948,7 +5214,7 @@ Value eval_assign(const Node& node, Context& ctx) {
       // Re-derived after the right-hand side ran (§5.7): it may have created a
       // variable, and the root's child vector moved, so the pointer taken before
       // it is dangling. The store lands where the name is now, not where it was.
-      ctx.root->set(var_name, value);
+      ctx.root_store(var_name, value);
       return value;
     }
   }
@@ -5092,12 +5358,14 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
   // a subtree, which may run another plan and reallocate them.
   const auto slot = [&](uint32_t i) -> Dec& { return ctx.math_scratchpad[base + i]; };
   // An operand: the coerced number, or the raw load coerced now (spec §6.2).
+  // A raw load is read in place, not copied into its slot: the loaded value
+  // stays held in math_raw until the frame ends, every load is read by exactly
+  // one step (the plan is a tree), and an arithmetic step evaluates nothing
+  // between coercing its operands and using them -- so the reference cannot
+  // move or change under the step. Copying it cost a heap copy of every large
+  // operand's words.
   const auto operand = [&](uint32_t i, bool raw, const Pos& pos) -> const Dec& {
-    if (raw) {
-      std::optional<Value>& r = ctx.math_raw[base + i];
-      slot(i) = as_dec(*r, pos);
-      r.reset();
-    }
+    if (raw) return as_dec_ref(*ctx.math_raw[base + i], pos);
     return slot(i);
   };
 

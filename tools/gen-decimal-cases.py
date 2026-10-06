@@ -125,6 +125,25 @@ for tag, a, b in [
 ]:
     binary('*', tag, a, b, mul_note)
 
+# Products past 10^38, where a 128-bit mantissa no longer holds the value. 0.9.2's C++ core
+# (dec_mul's small-mantissa path) rounded both operands to 18 fractional digits when both had
+# scale over 18, so a repeated square kept about 36 digits where the exact one doubles them each
+# time; its Mandelbrot frame matched only because the picture needs few digits. The suite then had
+# no product of that shape: these pin it, through a variable, as a program squares it.
+past_note = ('Exact products past 10^38 (spec 4): a repeated square doubles its digits each time. '
+             "0.9.2's C++ core rounded both operands to 18 fractional digits when both had scale over 18, "
+             'and gave the fourth power of 0.1234567891 to 36 digits.')
+z_power = '0.1234567891'
+for squarings in range(1, 9):
+    z_power = O.calc('*', z_power, z_power)
+    if squarings == 2:
+        emit('dec.mul.repeated-square-past-10e38', past_note,
+             'Z = 0.1234567891; Z = Z * Z; Z = Z * Z; Z', 'num ' + z_power)
+emit('dec.mul.eight-squarings-keep-every-digit', past_note,
+     'Z = 0.1234567891; ' + 'Z = Z * Z; ' * 8 + 'LEN(Z & "")', f'num {len(z_power)}')
+binary('*', 'integers-past-int128', '12345678901234567890', '98765432109876543210',
+       'Exact multiplication of integers whose product passes 2^127: no host integer width may show through.')
+
 # --- division: the divisor spellings, remainders past 2^126, scale gaps -----------------
 div_note = ('Long division to DIV_SCALE = 10 (spec 4.3): exact at minimal scale when it terminates, else '
             'rounded half away from zero at exactly 10. Found wrong at a remainder past 2^126 (it overflowed '

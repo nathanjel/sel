@@ -300,9 +300,64 @@ void test_karatsuba_and_early_range() {
     bn::normalize(out);
     return out;
   };
+  // The rows themselves (addmul_1, which takes the MULX/ADX kernel on a CPU
+  // that has it) against products written here, word by word in __int128 and
+  // sharing no code with the engine: every length through a few 8-word blocks
+  // and their 4-word and single-word tails, in each shape.
+  auto plain = [](const bn::Nat& a, const bn::Nat& b) {
+    bn::Nat out(a.size() + b.size() + 1, 0);
+    for (size_t i = 0; i < a.size(); ++i) {
+      u128 carry = 0;
+      for (size_t j = 0; j < b.size(); ++j) {
+        const u128 t = static_cast<u128>(a[i]) * b[j] + out[i + j] + carry;
+        out[i + j] = static_cast<std::uint64_t>(t);
+        carry = t >> 64;
+      }
+      for (size_t k = i + b.size(); carry != 0; ++k) {
+        const u128 t = static_cast<u128>(out[k]) + carry;
+        out[k] = static_cast<std::uint64_t>(t);
+        carry = t >> 64;
+      }
+    }
+    bn::normalize(out);
+    return out;
+  };
+  int bad_rows = 0, rows = 0;
+  for (size_t na = 1; na <= 40; ++na) {
+    for (int shape = 0; shape < 3; ++shape) {
+      const bn::Nat a = words(na, shape), b = words(1 + next() % 40, shape);
+      if (a.empty() || b.empty()) continue;
+      rows += 2;
+      if (school(a, b) != plain(a, b)) ++bad_rows;
+      if (bn::sqr(a) != plain(a, a)) ++bad_rows;
+    }
+  }
+  selt::eq(bad_rows, 0, "the schoolbook rows and squares equal an independent product on " + std::to_string(rows) + " pairs");
+
+  // The square memo (the last two large squares, per thread): a repeated
+  // operand gets its square back, a returned square is the caller's own (a
+  // change to it does not reach the memo), and three operands taking turns
+  // through two entries never get one another's square -- operands of one
+  // length that differ in a single word, in the middle or at the top.
+  int bad_memo = 0;
+  for (size_t n : {15, 16, 17, 100, 300}) {
+    const bn::Nat x = words(n, 0);
+    bn::Nat y = x, z = x;
+    y[n / 2] ^= 1;
+    z[n - 1] ^= 2;
+    const bn::Nat px = plain(x, x), py = plain(y, y), pz = plain(z, z);
+    bn::Nat first = bn::sqr(x);
+    if (first != px) ++bad_memo;
+    first.assign(first.size(), 7);
+    if (bn::sqr(x) != px) ++bad_memo;
+    for (int turn = 0; turn < 3; ++turn) {
+      if (bn::sqr(y) != py || bn::sqr(z) != pz || bn::sqr(x) != px || bn::sqr(x) != px) ++bad_memo;
+    }
+  }
+  selt::eq(bad_memo, 0, "a square asked again is the same square, and the caller's own copy");
   int bad_mul = 0, bad_sqr = 0, products = 0;
   for (int it = 0; it < 150; ++it) {
-    const size_t sizes[] = {1, 2, 31, 32, 33, 47, 48, 49, 64, 65, 97, 130, 200, 333};
+    const size_t sizes[] = {1, 2, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 97, 333};
     const size_t na = it < 14 ? sizes[it] : 1 + next() % 340;
     const size_t nb = it < 14 ? sizes[13 - it] : 1 + next() % 340;
     const bn::Nat a = words(na, static_cast<int>(next() % 3)), b = words(nb, static_cast<int>(next() % 3));
@@ -387,7 +442,10 @@ void test_karatsuba_and_early_range() {
   // Powers of ten: 10^k, its all-nines neighbour, and division by it is slicing
   // the digit string (the large k go through Barrett with a cached reciprocal).
   int bad_pow = 0;
-  const std::string big = digit_string(30000);
+  // Its last digit is not 0, or every trailing-zero count below is one more
+  // than k (a draw that ended in 0 made this check fail on a correct engine).
+  std::string big = digit_string(30000);
+  if (big.back() == '0') big.back() = '3';
   const bn::Nat bigx = bn::from_decimal(big);
   for (size_t k : {1, 19, 20, 27, 28, 100, 1000, 4321, 9728, 19456}) {
     const bn::Nat ten = bn::mul_pow10(bn::Nat{1}, k);
@@ -400,6 +458,18 @@ void test_karatsuba_and_early_range() {
     if (bn::trailing_decimal_zeros(scaled, ~std::size_t{0}) != k || bn::trailing_decimal_zeros(scaled, k / 2) != k / 2) ++bad_pow;
   }
   selt::eq(bad_pow, 0, "powers of ten, their nines, division by them and trailing zeros are exact");
+  // a * 10^k against a times 10^k read from its digits: one-word a and one-word
+  // 5^k (k <= 27) take the fused multiply-and-shift, word-aligned k included.
+  int bad_scaled = 0;
+  for (size_t k : {20, 26, 27, 28, 64, 128, 130, 640, 1000, 1024}) {
+    const bn::Nat ten = bn::from_decimal("1" + std::string(k, '0'));
+    for (size_t n : {1, 2, 5, 40}) {
+      const bn::Nat a = words(n, static_cast<int>(next() % 3));
+      if (a.empty()) continue;
+      if (bn::mul_pow10(a, k) != plain(a, ten)) ++bad_scaled;
+    }
+  }
+  selt::eq(bad_scaled, 0, "a value times 10^k equals its product with 10^k read from text");
   // The early refusal: code and position are what dec_guard raises.
   auto code_of = [&](const std::function<void()>& f) {
     try { f(); return std::string("ok"); } catch (const SelError& e) { return e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col); }
