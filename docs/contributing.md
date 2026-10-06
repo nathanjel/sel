@@ -557,6 +557,14 @@ observable, and the hosts split on it. There are no lazy values. If you add a bu
 another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.
 
+Leaving a copy out is allowed exactly where §3.4 allows it, where nothing can
+tell. PHP makes none in a program whose evaluated tree holds no assignment and
+no host-function call (`Context::$writeFree`), and none of a value the body
+built itself (`Core::buildsItsResult`); either way it still makes the copy's
+depth check (`Value::checkDepthBelow`), because `E_DEPTH` is the one thing a copy
+reports that such a program can see. Made everywhere, those copies were a fifth
+to a third of the PHP scale scenarios' time.
+
 C++ is the host where this is easy to get wrong, because `Value` is a handle
 over an intrusive, reference-counted `Impl` and copying it *looks* like a deep
 copy. It is not: use
