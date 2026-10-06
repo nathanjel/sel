@@ -4641,6 +4641,11 @@ struct Context {
         if (e.first == name) return &e.second;
       }
     }
+    return root_find(name);
+  }
+
+  // The root record's own `name` (Value::get), through the hints.
+  const Value* root_find(const std::string& name) const {
     if (!Internals::plain_record(*root)) return root->get(name);
     RootHint& hint = root_hints[(reinterpret_cast<std::uintptr_t>(&name) * 0x9E3779B97F4A7C15ULL) >> 58];
     if (hint.name == &name) {
@@ -4653,6 +4658,19 @@ struct Context {
       hint.index = index;
     }
     return v;
+  }
+
+  // root->set(name, value) (spec §5.7: a variable that exists keeps its
+  // place), straight into the child a hint finds; a new name, or a root that
+  // is not a plain record, goes through Value::set.
+  void root_store(const std::string& name, const Value& value) {
+    if (Internals::plain_record(*root)) {
+      if (const Value* v = root_find(name)) {
+        *const_cast<Value*>(v) = value;   // root is ours to write: it is non-const
+        return;
+      }
+    }
+    root->set(name, value);
   }
 
   bool is_bound(const std::string& name) const {
@@ -5246,10 +5264,10 @@ Value eval_assign(const Node& node, Context& ctx) {
       // A fresh temporary is adopted, anything shared is cloned (§3.4): the
       // same rule, and the same E_DEPTH, as the indexed form below.
       value = adopt_or_clone(eval_node(*node.r, ctx), 0, node.pos);
-      ctx.root->set(var_name, value);
+      ctx.root_store(var_name, value);
       return value;
     } else {
-      Value* current = ctx.root->get(var_name);
+      const Value* current = ctx.root_find(var_name);
       if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
       const Value target_value = *current;
 
@@ -5258,7 +5276,7 @@ Value eval_assign(const Node& node, Context& ctx) {
       // Re-derived after the right-hand side ran (§5.7): it may have created a
       // variable, and the root's child vector moved, so the pointer taken before
       // it is dangling. The store lands where the name is now, not where it was.
-      ctx.root->set(var_name, value);
+      ctx.root_store(var_name, value);
       return value;
     }
   }
