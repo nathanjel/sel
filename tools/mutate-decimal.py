@@ -12,8 +12,10 @@ passes SURVIVED. Hosts (and shards) run side by side; every check and build is a
 leaf under the tools/impls.sh slots.
 """
 
+import fcntl
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -139,18 +141,48 @@ def build_command(host, baseline=False):
     return None
 
 
-# Every command is a leaf under one SEL_JOBS slot (sel_slot), and a PHP one
-# under a SEL_PHP_JOBS slot as well -- impl_decimal and impl_conformance take
-# that one themselves (sel_php), so it is never nested inside a php slot.
+# Every command is a leaf under one of tools/impls.sh's SEL_JOBS slots (`job`),
+# and a PHP host's under one of its SEL_PHP_JOBS slots as well (`php`, taken
+# second, the order every tool takes them in), with SEL_SLOT_HELD naming both so
+# the sel_slot / sel_php calls inside (impl_decimal's three PHP modes) run at
+# once, as under sel_hold. The slots are the same flock files; only the wait
+# differs. sel_slot blocks on ONE slot chosen at random once every slot is
+# busy, so a leaf that drew the slot of a half-hour step (the gate's ASan build
+# holds one for 30 minutes) waited the half hour while the others came free --
+# a C++ baseline here did, in the gate. These are polled instead: every slot,
+# without blocking, until one is free.
+class Slots:
+    def __init__(self):
+        out = subprocess.run(['bash', '-c', '. tools/impls.sh >/dev/null 2>&1 || exit 2; '
+                              'printf "%s\\n%s\\n%s\\n" "$SEL_JOBS" "$SEL_PHP_JOBS" "$SEL_SLOT_DIR"'],
+                             cwd=ROOT, capture_output=True, text=True, check=True).stdout.split('\n')
+        self.count = {'job': int(out[0]), 'php': int(out[1])}
+        self.dir = out[2]
+        os.makedirs(self.dir, exist_ok=True)
+
+    def take(self, kind):
+        n = self.count[kind]
+        first = random.randrange(n)
+        while True:
+            for k in range(n):
+                f = open(os.path.join(self.dir, f'{kind}.{(first + k) % n}'), 'a')
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return f
+                except OSError:
+                    f.close()
+            time.sleep(0.2)
+
+
 def leaf(command):
-    return ['bash', '-c', '. tools/impls.sh || exit 2; sel_slot eval "$0"', command]
+    return ['bash', '-c', '. tools/impls.sh || exit 2; eval "$0"', command]
 
 
 class Shard:
     """One copy of the tree and the mutants it grades, one at a time."""
 
-    def __init__(self, host, index, work, oracles, checks, env):
-        self.host, self.index = host, index
+    def __init__(self, host, index, work, oracles, checks, env, slots):
+        self.host, self.index, self.slots = host, index, slots
         self.tree = os.path.join(work, f'{host}.{index}')
         self.oracles, self.checks, self.env = oracles, checks, env
         self.log = os.path.join(work, f'{host}.{index}.log')
@@ -159,11 +191,20 @@ class Shard:
         return self.host if SHARDS.get(self.host, 1) == 1 else f'{self.host}#{self.index}'
 
     def run(self, command, what):
-        with open(self.log, 'a', encoding='utf-8') as log:
-            log.write(f'\n=== {what}: {command}\n')
-            log.flush()
-            return subprocess.run(leaf(command), cwd=self.tree, env=self.env,
-                                  stdout=log, stderr=subprocess.STDOUT).returncode
+        kinds = ['job', 'php'] if self.host == 'php' else ['job']
+        held = [self.slots.take(kind) for kind in kinds]
+        try:
+            env = dict(self.env, SEL_SLOT_HELD=(self.env.get('SEL_SLOT_HELD', '') + ' ' + ' '.join(kinds)).strip())
+            with open(self.log, 'a', encoding='utf-8') as log:
+                log.write(f'\n=== {what}: {command}\n')
+                log.flush()
+                # close_fds (the default): no child inherits a held slot, so
+                # none can outlive the leaf holding it.
+                return subprocess.run(leaf(command), cwd=self.tree, env=env,
+                                      stdout=log, stderr=subprocess.STDOUT).returncode
+        finally:
+            for f in reversed(held):
+                f.close()
 
     def check_command(self, kind, arg):
         if kind == 'decimal':
@@ -329,12 +370,13 @@ def main(argv):
         env['CARGO_TARGET_DIR'] = os.path.join(work, 'rust-target')
         env.update(CARGO_ENV)
 
+        slots = Slots()
         hosts = [h for h in HOSTS if any(m['host'] == h for m in selected)]
         shards = []
         for h in hosts:
             count = min(SHARDS.get(h, 1), sum(1 for m in selected if m['host'] == h))
             for i in range(count):
-                shards.append(Shard(h, i, work, oracles, checks, env))
+                shards.append(Shard(h, i, work, oracles, checks, env, slots))
         for s in shards:
             copy_tree(s.tree)
         jobs = {s: [] for s in shards}

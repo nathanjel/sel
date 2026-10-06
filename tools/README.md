@@ -359,6 +359,12 @@ until one fails, and the file restored:
 3. `conformance` 02-numbers, 03-operators, 22-canon, 32-numeric-plans, 24-decimal-boundaries, 10-limits, each a check of its own
 4. `unit`: the numeric unit tests -- `tools/check-js-decimal-guard.mjs`, `python/tests/test_decimal_native.py`, C++ `build/unit` (built only when reached), the Lisp decimal and math-plan tests, `go test ./internal/decimal/` and the plan-register tests, `cargo test --lib`; PHP has none
 
+Copies and hosts run side by side. Every build and check is a leaf holding one
+of `tools/impls.sh`'s `job` slots (a PHP one a `php` slot too), the same flock
+files every tool shares; the lane polls them all rather than block on one drawn
+at random, so it never queues behind a half-hour holder (the gate's ASan build)
+while other slots come free.
+
 The output is `caught <name> by <check> (<host>)` or `SURVIVED <name>`, then a
 count per check and per host; exit 1 if anything survives or fails to apply or
 build. `--weak` keeps only the checks 0.9.2 had (the narrow oracle and
