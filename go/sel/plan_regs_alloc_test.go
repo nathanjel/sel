@@ -75,9 +75,10 @@ func exprAllocations(t *testing.T, expr string) float64 {
 
 // Mandelbrot's escape test while z is still small: the bit lengths cannot
 // order the sum against 4.0, so the comparison brings 4.0 to the sum's scale
-// (98 fractional digits), a copy of the sum's size.
+// (98 fractional digits), a copy of the sum's size. The literal 4.0 itself
+// costs nothing: an operator reads the value its node keeps (operand).
 func TestScaledComparisonAllocationBudget(t *testing.T) {
-	if got := exprAllocations(t, "SR * SR + SI * SI > 4.0"); got != 8 {
-		t.Errorf("SR * SR + SI * SI > 4.0: %v allocations, budget 8", got)
+	if got := exprAllocations(t, "SR * SR + SI * SI > 4.0"); got != 7 {
+		t.Errorf("SR * SR + SI * SI > 4.0: %v allocations, budget 7", got)
 	}
 }

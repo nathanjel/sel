@@ -66,3 +66,33 @@ func TestConcurrentSharedProgramFieldCache(t *testing.T) {
 		}
 	})
 }
+
+// A literal operand is one value per node (Node.lit), so goroutines running one
+// program read it together: the number a text literal holds and the text a
+// number literal reads as are derived on first use, through the value's atomic
+// caches, never a plain field.
+func TestConcurrentSharedProgramLiteralOperands(t *testing.T) {
+	p := MustCompile(`COUNT(FILTER(L, "2.50" * _ > "7" AND _ $!= "x" AND 3 $< _ & "")) & ("3" + 4) & (5 & "")`)
+	concurrentWorkers(t, func(worker int) {
+		for i := 0; i < 50; i++ {
+			items := make([]*Value, 8)
+			for j := range items {
+				items[j] = NewInt(int64(j + worker))
+			}
+			v, err := p.Run(NewNone().Set("L", NewList(items)))
+			if err != nil {
+				t.Errorf("literal operands: %v", err)
+				return
+			}
+			kept := 0
+			for j := range items {
+				if n := j + worker; n*5 > 14 && fmt.Sprint(n) > "3" {
+					kept++
+				}
+			}
+			if got, want := v.Scalar(), fmt.Sprintf("%d75", kept); got != want {
+				t.Errorf("literal operands: got %q, want %q", got, want)
+			}
+		}
+	})
+}

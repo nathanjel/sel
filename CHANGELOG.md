@@ -198,6 +198,12 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     7.6 → 5.1 ms (0.9.2: 6.6), S4 −9%, the other scenarios unchanged. A
     projected BUCKET now copies a projection value that names a variable, as
     every other host did (`alias.aggregate-copies.bucket-projection-of-a-variable`).
+  - Go: a comparison with a literal no longer builds the literal (an operator
+    reads the value its node keeps) and a condition no longer builds its BOOL
+    (FILTER, ALL, ANY, IF, COND, AND, OR and NOT read the answer as it is) —
+    two values per row of every FILTER, which S2 paid as fresh pages since the
+    Value grew (the copies were already elided there). Scale S2 7.2 → 3.3 ms
+    (0.9.2: 6.3), S4 −21%, S1 −4%, S3 −5%, S5 −8%, S6 −4%, Mandelbrot −4%.
   - Host APIs (PHP, C++): in such a write-free program `run()`'s result may share
     values with the context, as a bare variable, an index or `TAKE` already did;
     `clone()` a result before changing it through the API if the context must

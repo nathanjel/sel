@@ -47,19 +47,21 @@ func checkSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what st
 }
 
 func evalNode(node *Node, ctx *Context) *Value {
-	ctx.depth++
-	if ctx.depth > maxDepth {
-		ctx.depth--
+	depth := ctx.depth
+	if depth >= maxDepth {
 		ctx.noCopy = nil
 		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
 	}
+	ctx.depth = depth + 1
 
 	// Restore dynamic evaluation state on every exit, including a panic that
-	// a surrounding coalescing operator or join prefilter catches.
+	// a surrounding coalescing operator or join prefilter catches. The depth is
+	// set back to what it was, not stepped down: evalCond steps it without a
+	// defer of its own, and leaves a panic's unwinding to this one.
 	frames := ctx.frames
 	completed := false
 	defer func() {
-		ctx.depth--
+		ctx.depth = depth
 		ctx.frames = frames
 		if !completed {
 			// A join's prefilter state is handed from a LINK to its parent on
@@ -79,6 +81,77 @@ func evalNode(node *Node, ctx *Context) *Value {
 	}
 	completed = true
 	return res
+}
+
+// literalValue is a fresh value of a number or text literal, as dispatch makes
+// one per evaluation; a node keeps one in lit for operand.
+func literalValue(node *Node) *Value {
+	if node.T == NodeNum {
+		return &Value{kind: KindText, strVal: node.S, decVal: node.dec}
+	}
+	return newTextOwned(node.S)
+}
+
+// operand evaluates an operand of a binary operator: evalNode, except that a
+// literal yields the value its node keeps (Node.lit) instead of a fresh one,
+// after the depth check evalNode makes. Every operator past AND, OR, ?? and ???
+// only reads its operands and builds a fresh result, so nothing can tell the
+// two apart; a FILTER over a large list that compared each row with a literal
+// built that literal once per row.
+func operand(node *Node, ctx *Context) *Value {
+	if node.lit == nil {
+		return evalNode(node, ctx)
+	}
+	if ctx.depth >= maxDepth {
+		ctx.noCopy = nil
+		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
+	}
+	return node.lit
+}
+
+// evalCond is evalNode(node, ctx).AsBool(node.Pos), the way a condition is
+// read -- FILTER's, ALL's and ANY's body, IF's and COND's conditions, the
+// operands of AND, OR and NOT -- without building the BOOL that a comparison
+// or a logical operator yields only to be read and dropped. Any other node,
+// and one with a math plan, is evaluated by evalNode. The depth is stepped as
+// evalNode steps it; a panic leaves it to the evalNode around this condition
+// (there always is one: the call or operator that reads the condition), whose
+// deferred restore sets it back.
+func evalCond(node *Node, ctx *Context) bool {
+	if node.mathPlan != nil || !(node.T == NodeBin && isCondOp(node.S) || node.T == NodeUn && node.S == "NOT") {
+		return evalNode(node, ctx).AsBool(node.Pos)
+	}
+	depth := ctx.depth
+	if depth >= maxDepth {
+		ctx.noCopy = nil
+		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
+	}
+	ctx.depth = depth + 1
+	var b bool
+	switch node.S {
+	case "NOT":
+		b = !evalCond(node.L, ctx)
+	case "AND":
+		b = evalCond(node.L, ctx) && evalCond(node.R, ctx)
+	case "OR":
+		b = evalCond(node.L, ctx) || evalCond(node.R, ctx)
+	default:
+		l := operand(node.L, ctx)
+		r := operand(node.R, ctx)
+		b = binaryBool(node, l, r)
+	}
+	ctx.depth = depth
+	return b
+}
+
+// isCondOp reports the binary operators evalCond reads without a BOOL: AND,
+// OR, and those binaryBool computes.
+func isCondOp(op string) bool {
+	switch op {
+	case "AND", "OR", "==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=", "$>", "$>=", "EQL", "IN", "XOR":
+		return true
+	}
+	return false
 }
 
 func dispatch(node *Node, ctx *Context) *Value {
@@ -216,10 +289,10 @@ func evalList(node *Node, ctx *Context) *Value {
 }
 
 func evalUnary(node *Node, ctx *Context) *Value {
-	v := evalNode(node.L, ctx)
 	if node.S == "NOT" {
-		return NewBool(!v.AsBool(node.L.Pos))
+		return NewBool(!evalCond(node.L, ctx))
 	}
+	v := evalNode(node.L, ctx)
 	return NewNum(decimal.Negate(v.AsDecimal(node.L.Pos)))
 }
 
@@ -227,14 +300,14 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	op := node.S
 
 	if op == "AND" || op == "OR" {
-		left := evalNode(node.L, ctx).AsBool(node.L.Pos)
+		left := evalCond(node.L, ctx)
 		if op == "AND" && !left {
 			return NewBool(false)
 		}
 		if op == "OR" && left {
 			return NewBool(true)
 		}
-		return NewBool(evalNode(node.R, ctx).AsBool(node.R.Pos))
+		return NewBool(evalCond(node.R, ctx))
 	}
 
 	if op == "??" || op == "???" {
@@ -275,8 +348,8 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		return l
 	}
 
-	l := evalNode(node.L, ctx)
-	r := evalNode(node.R, ctx)
+	l := operand(node.L, ctx)
+	r := operand(node.R, ctx)
 	lp, rp := node.L.Pos, node.R.Pos
 
 	switch op {
@@ -308,6 +381,20 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	case "&":
 		return concat(l, r, lp, rp, node.Pos)
 
+	case "BAND", "BOR", "BXOR":
+		a := l.AsBytes(lp)
+		b := r.AsBytes(rp)
+		return bitwise(op, a, b, node.Pos)
+	}
+	return NewBool(binaryBool(node, l, r))
+}
+
+// binaryBool is the BOOL of a comparison or of XOR, as a Go bool: evalBinary
+// builds the value, evalCond reads it as it is.
+func binaryBool(node *Node, l, r *Value) bool {
+	op := node.S
+	lp, rp := node.L.Pos, node.R.Pos
+	switch op {
 	case "==", "!=", "<", "<=", ">", ">=":
 		a := l.AsDecimal(lp)
 		b := r.AsDecimal(rp)
@@ -325,50 +412,45 @@ func evalBinary(node *Node, ctx *Context) *Value {
 					c = -c
 				}
 			}
-			return NewBool(compareResult(op, c, node.Pos))
+			return compareResult(op, c, node.Pos)
 		}
-		return NewBool(compareResult(op, decimal.Cmp(a, b), node.Pos))
+		return compareResult(op, decimal.Cmp(a, b), node.Pos)
 
 	case "$==":
 		if l.kind == KindText && r.kind == KindText && l.Size() == 0 && r.Size() == 0 {
-			return NewBool(l.Scalar() == r.Scalar())
+			return l.Scalar() == r.Scalar()
 		}
 		a := l.AsBytes(lp)
 		b := r.AsBytes(rp)
-		return NewBool(bytes.Equal(a, b))
+		return bytes.Equal(a, b)
 
 	case "$!=":
 		if l.kind == KindText && r.kind == KindText && l.Size() == 0 && r.Size() == 0 {
-			return NewBool(l.Scalar() != r.Scalar())
+			return l.Scalar() != r.Scalar()
 		}
 		a := l.AsBytes(lp)
 		b := r.AsBytes(rp)
-		return NewBool(!bytes.Equal(a, b))
+		return !bytes.Equal(a, b)
 
 	case "$<", "$<=", "$>", "$>=":
 		a := l.AsBytes(lp)
 		b := r.AsBytes(rp)
-		return NewBool(compareResult(op[1:], bytes.Compare(a, b), node.Pos))
+		return compareResult(op[1:], bytes.Compare(a, b), node.Pos)
 
 	case "EQL":
-		return NewBool(l.Eql(r, node.Pos))
+		return l.Eql(r, node.Pos)
 
 	case "IN":
-		return NewBool(isIn(l, r))
+		return isIn(l, r)
 
 	case "XOR":
 		a := l.AsBool(lp)
 		b := r.AsBool(rp)
-		return NewBool(a != b)
-
-	case "BAND", "BOR", "BXOR":
-		a := l.AsBytes(lp)
-		b := r.AsBytes(rp)
-		return bitwise(op, a, b, node.Pos)
+		return a != b
 
 	default:
 		fail("E_SYNTAX", fmt.Sprintf("unknown operator %s", op), node.Pos)
-		return nil
+		return false
 	}
 }
 

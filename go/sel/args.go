@@ -96,6 +96,17 @@ func (a *Args) Bool(i int) bool {
 	return a.Val(i).AsBool(a.PosOf(i))
 }
 
+// cond is Bool for a lazy builtin's condition (IF, COND), read through
+// evalCond: a comparison builds no BOOL. The argument is not kept, so it is
+// for an argument read once.
+func (a *Args) cond(i int) bool {
+	a.has(i)
+	if a.vals[i] != nil {
+		return a.vals[i].AsBool(a.nodes[i].Pos)
+	}
+	return evalCond(a.nodes[i], a.ctx)
+}
+
 func (a *Args) dec(i int) *decimal.Dec {
 	return a.Val(i).AsDecimal(a.PosOf(i))
 }

@@ -58,6 +58,7 @@ func optNum(val string, dec *decimal.Dec, pos Pos) *Node {
 	n := NewNode(NodeNum, pos)
 	n.S = val
 	n.dec = dec
+	n.lit = literalValue(n)
 	return n
 }
 
