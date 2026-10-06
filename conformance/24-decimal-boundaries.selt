@@ -810,6 +810,44 @@ A * B
 num 15.00
 ===
 
+### name: dec.mul.repeated-square-past-10e38
+--- note
+Exact products past 10^38 (spec 4): a repeated square doubles its digits each time. 0.9.2's C++ core rounded both operands to 18 fractional digits when both had scale over 18, and gave the fourth power of 0.1234567891 to 36 digits.
+--- source
+Z = 0.1234567891; Z = Z * Z; Z = Z * Z; Z
+--- expect
+num 0.0002323057235509297937802504681155270161
+===
+
+### name: dec.mul.eight-squarings-keep-every-digit
+--- note
+Exact products past 10^38 (spec 4): a repeated square doubles its digits each time. 0.9.2's C++ core rounded both operands to 18 fractional digits when both had scale over 18, and gave the fourth power of 0.1234567891 to 36 digits.
+--- source
+Z = 0.1234567891; Z = Z * Z; Z = Z * Z; Z = Z * Z; Z = Z * Z; Z = Z * Z; Z = Z * Z; Z = Z * Z; Z = Z * Z; LEN(Z & "")
+--- expect
+num 2562
+===
+
+### name: dec.mul.integers-past-int128.literal
+--- note
+Exact multiplication of integers whose product passes 2^127: no host integer width may show through.
+--- source
+(12345678901234567890) * (98765432109876543210)
+--- expect
+num 1219326311370217952237463801111263526900
+===
+
+### name: dec.mul.integers-past-int128.var
+--- note
+Exact multiplication of integers whose product passes 2^127: no host integer width may show through.
+--- setup
+A = 12345678901234567890; B = 98765432109876543210
+--- source
+A * B
+--- expect
+num 1219326311370217952237463801111263526900
+===
+
 ### name: dec.div.by-one-beyond-int128.literal
 --- note
 Long division to DIV_SCALE = 10 (spec 4.3): exact at minimal scale when it terminates, else rounded half away from zero at exactly 10. Found wrong at a remainder past 2^126 (it overflowed a signed __int128) and at a divisor whose digit string is "1".
