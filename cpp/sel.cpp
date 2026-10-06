@@ -5637,15 +5637,32 @@ void for_each_collection_value(const Value& value, Fn&& fn) {
 // use-after-free the moment the body grew it: the storage moved under the
 // reference. Handles are shared, not deep-copied, so mutation *inside* an element
 // is still seen, as the spec says.
+//
+// In a program that cannot write (Context::write_free) nothing can change the
+// collection while it is walked, so the snapshot would be the collection itself:
+// the walk reads the collection in place (`live`). Taking it anyway was a pass
+// over every element to count a handle and another to drop it -- over a join's
+// rows, two trips to memory per row for nothing (scale scenario 6).
+// Internals::exclusively_held counts the snapshot's handle, so it is asked only
+// where a snapshot was taken (keep_element, keep_or_alias: never write-free).
 struct Snapshot {
+  const Value* live = nullptr;
+  std::size_t count = 0;
   std::vector<Value> items;
   std::vector<std::string> keys;   // filled only when asked for
-  std::size_t size() const { return items.size(); }
+  std::size_t size() const { return count; }
+  const Value& item(std::size_t i) const { return live ? collection_item(*live, i) : items[i]; }
+  std::string key(std::size_t i) const { return live ? collection_key(*live, i) : keys[i]; }
 };
 
-Snapshot take_snapshot(const Value& value, bool want_keys) {
+Snapshot take_snapshot(const Value& value, bool want_keys, bool write_free) {
   Snapshot snap;
   const std::size_t count = collection_size(value);
+  snap.count = count;
+  if (write_free) {
+    snap.live = &value;
+    return snap;
+  }
   snap.items.reserve(count);
   for (std::size_t i = 0; i < count; i++) snap.items.push_back(collection_item(value, i));
   if (want_keys) {
@@ -5657,7 +5674,7 @@ Snapshot take_snapshot(const Value& value, bool want_keys) {
 
 template <typename Fn>
 void for_each_snapshot_value(const Snapshot& snap, Fn&& fn) {
-  for (const Value& item : snap.items) fn(item);
+  for (std::size_t i = 0; i < snap.size(); ++i) fn(snap.item(i));
 }
 
 bool is_nested_record(const Value& value) { return value.size() > 0 && !value.is_list(); }
@@ -6792,7 +6809,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     JoinFlatTest flat_test{b1, b2};
     bool right_flat = true;
     {
-      for_each_snapshot_value(take_snapshot(right_value, false), [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(right_value, false, ctx.write_free), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b2);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
@@ -6955,7 +6972,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     add_once("_");
     FrameScope left_scope(ctx, std::move(frame));
     {
-      for_each_snapshot_value(take_snapshot(left_value, false), [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(left_value, false, ctx.write_free), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b1);
         int asked = -1;
         if (!fast_field.empty() && row.get(fast_field) != nullptr) {
@@ -7025,8 +7042,8 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     {
       // Each side is listed ONCE (spec §7.3): the right side is walked again for every
       // left row, and a predicate that grows it must not give later left rows more rows.
-      const Snapshot general_left = take_snapshot(left_value, false);
-      const Snapshot general_right = take_snapshot(right_value, false);
+      const Snapshot general_left = take_snapshot(left_value, false, ctx.write_free);
+      const Snapshot general_right = take_snapshot(right_value, false, ctx.write_free);
       for_each_snapshot_value(general_left, [&](const Value& item) {
         const Value left = ensure_row_table_alias(item, b1);
         set_frame(ctx.frames.back(), b1, left);
@@ -7316,7 +7333,7 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   const Node& body = body_override ? *body_override : a.node(three ? 2 : 1);
   const bool needs_k = node_contains_var(body, "_K");
 
-  const Snapshot snap = take_snapshot(a.val(0), needs_k);
+  const Snapshot snap = take_snapshot(a.val(0), needs_k, ctx.write_free);
   const std::size_t count = snap.size();
   if (count == 0) return std::nullopt;
 
@@ -7329,10 +7346,10 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   std::optional<Value> stopped;
   {
     for (std::size_t i = 0; i < count; ++i) {
-      const Value& item = snap.items[i];
+      const Value& item = snap.item(i);
       ctx.frames.back()[0].second = item;
       if (needs_k) {
-        ctx.frames.back()[1].second = make_text(snap.keys[i]);
+        ctx.frames.back()[1].second = make_text(snap.key(i));
       }
       std::optional<Value> result = visit(a.eval(body), i, item, body);
       if (result.has_value()) {
@@ -7428,9 +7445,9 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   if (form.key < 0) {
     direction = forced_dir.value_or("ASC");
     if (nothing_to_sort) return Value::list({});
-    const Snapshot snap = take_snapshot(val, false);
+    const Snapshot snap = take_snapshot(val, false, ctx.write_free);
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = snap.items[i];
+      const Value& item = snap.item(i);
       Value detached = hold_or_keep(val, i, item, 0, ctx.write_free);
       // The comparator only reads the key. Keep one detached tree and give the
       // output item and comparison key handles to that same immutable snapshot;
@@ -7447,7 +7464,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     if (nothing_to_sort) return Value::list({});
 
     const bool needs_k = node_contains_var(*body, "_K");
-    const Snapshot snap = take_snapshot(val, needs_k);
+    const Snapshot snap = take_snapshot(val, needs_k, ctx.write_free);
     std::vector<std::pair<std::string, Value>> frame;
     frame.reserve(needs_k ? 2 : 1);
     frame.emplace_back(binder, Value::none());
@@ -7456,10 +7473,10 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
 
     {
       for (std::size_t i = 0; i < source_size; i++) {
-        const Value& item = snap.items[i];
+        const Value& item = snap.item(i);
         ctx.frames.back()[0].second = item;
         if (needs_k) {
-          ctx.frames.back()[1].second = make_text(snap.keys[i]);
+          ctx.frames.back()[1].second = make_text(snap.key(i));
         }
         Value eval_key = a.eval(*body);
         indexed.push_back({hold_or_keep(val, i, item, 1, ctx.write_free), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
@@ -7561,17 +7578,17 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   if (sort_all) heap.reserve(source_size);
 
   std::size_t index = 0;
-  const Snapshot snap = take_snapshot(value, needs_k);
+  const Snapshot snap = take_snapshot(value, needs_k, ctx.write_free);
   {
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = snap.items[i];
+      const Value& item = snap.item(i);
       TopEntry candidate;
       candidate.item = item;    // copied below, only if the candidate is admitted
       candidate.idx = index;
       if (body) {
         ctx.frames.back()[0].second = item;
         if (needs_k) {
-          ctx.frames.back()[1].second = make_text(snap.keys[i]);
+          ctx.frames.back()[1].second = make_text(snap.key(i));
         }
         candidate.key = a.eval(*body);
       } else {
@@ -7583,7 +7600,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       // The candidate holds the item and, bodyless, the key; with a body the
       // binder's frame does: two handles either way beside the snapshot's.
       auto detach = [&body, &value, &snap, &ctx](TopEntry& c) {
-        c.item = hold_or_keep(value, c.idx, snap.items[c.idx], 2, ctx.write_free);
+        c.item = hold_or_keep(value, c.idx, snap.item(c.idx), 2, ctx.write_free);
         if (!body) c.key = c.item;
       };
       if (sort_all) {
@@ -7667,13 +7684,13 @@ Value do_bucket(Args& a, Context& ctx) {
   const auto keep = [&](std::size_t i, const Value& item) {
     return alias_rows ? keep_or_alias(val, i, item, 1) : hold_or_keep(val, i, item, 1, ctx.write_free);
   };
-  const Snapshot snap = take_snapshot(val, needs_k_key);
+  const Snapshot snap = take_snapshot(val, needs_k_key, ctx.write_free);
   {
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = snap.items[i];
+      const Value& item = snap.item(i);
       ctx.frames.back()[0].second = item;
       if (needs_k_key) {
-        ctx.frames.back()[1].second = make_text(snap.keys[i]);
+        ctx.frames.back()[1].second = make_text(snap.key(i));
       }
       Value eval_key = a.eval(*key_node);
 
@@ -7882,8 +7899,12 @@ void register_aggregates() {
                                  const Node& body) -> std::optional<Value> {
                   if (!r.as_bool(body.pos)) return std::nullopt;
                   if (sequential && idx != kept.size()) sequential = false;
-                  kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
-                                                     : hold_or_keep(coll, idx, item, 1, ctx.write_free));  // collected: copied (§3.4), unless nothing could tell
+                  // keep_or_alias counts the walk's snapshot, which a write-free
+                  // program does not take; there the two keep the element alike
+                  // (the depth check made or proved), so the plain one is asked.
+                  kept.push_back(written.borrow_rows && !ctx.write_free
+                                     ? keep_or_alias(coll, idx, item, 1)
+                                     : hold_or_keep(coll, idx, item, 1, ctx.write_free));  // collected: copied (§3.4), unless nothing could tell
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
