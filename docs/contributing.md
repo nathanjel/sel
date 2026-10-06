@@ -662,7 +662,13 @@ stamps `Node.ev` on every node the physical tree owns; `eval_node` uses it
 before its table (`_EVAL`). A node shared with the caller's AST has none, and
 neither has a `replaced()` copy: a rewrite that runs after binding and changes
 a node's `t`, `op` or plan must clear `ev`, or the node keeps running its old
-evaluator.
+evaluator. `eval_cond`, which FILTER, IF, COND and the join's pre-filter ask
+whether a node holds, reads `ev` too: the evaluator of a comparison, `$==`,
+`$!=`, `AND` and `OR` has a `_cond_*` form answering a bool, which the
+`_eval_*` form wraps, so there is one copy of each. And `handler_for` binds a
+`RECORD` with distinct literal keys to `structure._eval_record`
+(`eval._CALL_HANDLERS`), a second copy of `_record`'s copy-or-hold rule, which
+the plain tree still runs: a change to one is a change to both.
 
 **The physical tree is a function of the AST alone, in every host.** `run`
 evaluates a rewritten tree (TOP fusion, whatever a host adds), built once per
