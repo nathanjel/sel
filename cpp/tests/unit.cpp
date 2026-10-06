@@ -458,6 +458,18 @@ void test_karatsuba_and_early_range() {
     if (bn::trailing_decimal_zeros(scaled, ~std::size_t{0}) != k || bn::trailing_decimal_zeros(scaled, k / 2) != k / 2) ++bad_pow;
   }
   selt::eq(bad_pow, 0, "powers of ten, their nines, division by them and trailing zeros are exact");
+  // a * 10^k against a times 10^k read from its digits: one-word a and one-word
+  // 5^k (k <= 27) take the fused multiply-and-shift, word-aligned k included.
+  int bad_scaled = 0;
+  for (size_t k : {20, 26, 27, 28, 64, 128, 130, 640, 1000, 1024}) {
+    const bn::Nat ten = bn::from_decimal("1" + std::string(k, '0'));
+    for (size_t n : {1, 2, 5, 40}) {
+      const bn::Nat a = words(n, static_cast<int>(next() % 3));
+      if (a.empty()) continue;
+      if (bn::mul_pow10(a, k) != plain(a, ten)) ++bad_scaled;
+    }
+  }
+  selt::eq(bad_scaled, 0, "a value times 10^k equals its product with 10^k read from text");
   // The early refusal: code and position are what dec_guard raises.
   auto code_of = [&](const std::function<void()>& f) {
     try { f(); return std::string("ok"); } catch (const SelError& e) { return e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col); }

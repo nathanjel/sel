@@ -1041,7 +1041,9 @@ Nat mul(Span a, Span b) {
   if (a.size() == 1 || b.size() == 1) {
     const Span lng = b.size() == 1 ? a : b;
     const std::uint64_t m = b.size() == 1 ? b[0] : a[0];
-    Nat out(lng.begin(), lng.end());
+    Nat out;
+    out.reserve(lng.size() + 1);   // the carry word, without a second allocation
+    out.assign(lng.begin(), lng.end());
     const std::uint64_t carry = mul_1(out, m);
     if (carry != 0) out.push_back(carry);
     return out;
@@ -1279,12 +1281,38 @@ constexpr std::uint64_t pow10_word(std::size_t k) {
 Nat mul_pow10(Span a, std::size_t k) {
   if (a.empty() || k == 0) return Nat(a.begin(), a.end());
   if (k <= 19) {
-    Nat out(a.begin(), a.end());
+    Nat out;
+    out.reserve(a.size() + 1);
+    out.assign(a.begin(), a.end());
     const std::uint64_t carry = mul_1(out, pow10_word(k));
     if (carry != 0) out.push_back(carry);
     return out;
   }
-  return shl(mul(a, pow5(k)->value), k);
+  const std::shared_ptr<const Power> p = pow5(k);
+  const Span f = p->value;
+  if (a.size() != 1 && f.size() != 1) return shl(mul(a, f), k);
+  // One word times a magnitude (a small value brought to a large value's
+  // scale, or a large one by a 5^k that fits a word), shifted as it is
+  // written: one allocation and one pass instead of a product and its copy.
+  const Span lng = a.size() == 1 ? f : a;
+  const std::uint64_t m = a.size() == 1 ? a[0] : f[0];
+  const std::size_t words = k / 64;
+  const unsigned bits = static_cast<unsigned>(k % 64);
+  Nat out(words + lng.size() + 2, 0);
+  std::uint64_t carry = 0, spill = 0;
+  const auto put = [&](std::size_t at, std::uint64_t lo) {
+    out[at] = bits == 0 ? lo : (lo << bits | spill);
+    spill = bits == 0 ? 0 : lo >> (64 - bits);
+  };
+  for (std::size_t i = 0; i < lng.size(); ++i) {
+    const u128 t = static_cast<u128>(lng[i]) * m + carry;
+    put(words + i, static_cast<std::uint64_t>(t));
+    carry = static_cast<std::uint64_t>(t >> 64);
+  }
+  put(words + lng.size(), carry);
+  out[words + lng.size() + 1] = spill;
+  normalize(out);
+  return out;
 }
 
 // a / 5^k and a mod 5^k.
