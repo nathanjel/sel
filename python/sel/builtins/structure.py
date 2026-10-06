@@ -4,7 +4,8 @@ equi-join and nested-loop paths, and the run-time pre-filter that applies a
 FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
-from ..errors import SelError
+from ..errors import MAX_DEPTH, SelError, fail
+from ..eval import _CALL_HANDLERS, eval_node
 from ..lexer import ascii_lower, ascii_upper
 from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
@@ -98,6 +99,39 @@ def _record(args, ctx):
 
 define('RECORD', 0, INF,
        fn=_record)
+
+
+def _eval_record(node, ctx):
+    """A RECORD whose keys are distinct text literals (Node.record_shape), as
+    the generic call and _record run it -- every argument in order, the
+    count's cap, then the fields copied or held -- without an Args and
+    without building the keys' values: a text literal yields its text and can
+    raise nothing but the E_DEPTH every argument shares, at the first one,
+    where this call stands at the cap."""
+    nodes = node.args
+    if ctx.depth >= MAX_DEPTH:
+        fail('E_DEPTH', 'evaluation nested too deeply', nodes[0].pos)
+    count = len(nodes)
+    vals = [eval_node(nodes[i], ctx) for i in range(1, count, 2)]
+    pos = node.pos
+    check_collection(count // 2, pos)
+    if ctx.write_free:
+        for v in vals:
+            if v.storage is not None or v.children:
+                v.check_depth(2, pos)
+        return Value._from_shape(node.record_shape, vals)
+    i = 1
+    for j, v in enumerate(vals):
+        n = nodes[i]
+        i += 2
+        t = n.t
+        if not (t == 'un' or (t == 'bin' and n.op not in COALESCE_OPS) or (
+                t == 'call' and n.name in _SCALAR_FRESH_CALLS)):
+            vals[j] = v.clone(pos, 2)
+    return Value._from_shape(node.record_shape, vals)
+
+
+_CALL_HANDLERS['RECORD'] = lambda node: _eval_record if node.record_shape is not None else None
 
 
 def _take(args, ctx):

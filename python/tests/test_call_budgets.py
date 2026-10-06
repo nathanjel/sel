@@ -39,7 +39,11 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # 5357 -> 4987 because it is a write-free program (no assignment, no host
 # function): FILTER, MAP and RECORD hold what they collect instead of copying
 # it (SPEC 3.4, Context.write_free).
-BUDGETS = {'pixel': 2251, 'rows': 4987}
+# pixel 2251 -> 2239 and rows 4987 -> 4977 when a strict call evaluated its
+# arguments in _eval_call's own loop instead of through Args.val, one call per
+# argument; rows 4977 -> 4937 when a RECORD with literal keys ran on its own
+# evaluator (structure._eval_record: no Args, no key values, no _record call).
+BUDGETS = {'pixel': 2239, 'rows': 4937}
 
 
 def python_calls(label):

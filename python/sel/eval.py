@@ -516,11 +516,16 @@ def _eval_seq(node: Node, ctx: Context) -> Value:
 
 def _eval_call(node: Node, ctx: Context) -> Value:
     args = Args(node, ctx)
-    if not node.spec.lazy:
-        # Strict: every argument evaluated once, left to right, before the body.
-        for i in range(len(node.args)):
-            args.val(i)
-    return node.spec.fn(args, ctx)
+    spec = node.spec
+    if not spec.lazy:
+        # Strict: every argument evaluated once, left to right, before the body
+        # (Args.val's own work, without a call per argument).
+        vals = args._vals
+        i = 0
+        for arg in node.args:
+            vals[i] = eval_node(arg, ctx)
+            i += 1
+    return spec.fn(args, ctx)
 
 
 def _eval_unknown(node: Node, ctx: Context) -> Value:
@@ -903,6 +908,13 @@ _EVAL = {
 }
 
 
+# Builtins that run some calls of theirs without the Args framework: the name
+# maps to a function of the call node that returns the evaluator for that node,
+# or None when the node needs the generic call (structure.py registers RECORD).
+# Only handler_for reads it, so only the optimiser's own nodes take that path.
+_CALL_HANDLERS: dict[str, Any] = {}
+
+
 def handler_for(node: Node) -> Any:
     """The function eval_node runs NODE with, for the optimiser to stamp on the
     physical tree: a planned node's plan, or its type's entry in _EVAL."""
@@ -910,4 +922,10 @@ def handler_for(node: Node) -> Any:
         return _eval_planned
     if node.t == 'bin':
         return _BINARY.get(node.op, _eval_binary)
+    if node.t == 'call':
+        make = _CALL_HANDLERS.get(node.name)
+        if make is not None:
+            handler = make(node)
+            if handler is not None:
+                return handler
     return _EVAL.get(node.t, _eval_unknown)

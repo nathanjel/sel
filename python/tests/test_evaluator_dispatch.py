@@ -81,3 +81,51 @@ def test_a_copy_does_not_carry_the_handler_and_is_still_equal():                
     copy = node.replaced()
     assert node.ev is not None and copy.ev is None
     assert copy == node and repr(copy) == repr(node)
+
+
+def _observe(run):
+    try:
+        return ('value', run().dump())
+    except SelError as e:
+        return (e.code, e.line, e.col)
+
+
+def test_a_record_with_literal_keys_runs_on_its_own_evaluator():
+    from sel.builtins.structure import _eval_record
+    from sel.eval import _eval_call
+    program = compile('X = 1; LIST(RECORD("a", X, "b", 2), RECORD("a" & "", 1), RECORD("a", 1, "a", 2))')
+    program.run({})
+    calls = {n.pos.col: n.ev for n in nodes(program.physical_ast())
+             if n.t == 'call' and n.name == 'RECORD'}
+    assert sorted(calls) == [13, 37, 58]
+    assert calls[13] is _eval_record          # distinct literal keys
+    assert calls[37] is _eval_call            # a computed key
+    assert calls[58] is _eval_call            # a repeated key
+
+
+@pytest.mark.parametrize('src', [
+    'RECORD("a", "x")',
+    'RECORD("a", "x", "b", RECORD("c", "z"))',
+    'RECORD("a", ("x" & "w"), "b", 1 + 2)',
+])
+def test_the_record_evaluator_meets_the_depth_cap_where_the_call_does(src):
+    # The keys are not evaluated, so the E_DEPTH the first one would raise at
+    # the cap is raised for it, at its position. A tree that deep runs as
+    # written (above), so the evaluator is met by starting the count high.
+    from sel import Value
+    from sel.builtins.structure import _eval_record
+    from sel.errors import MAX_DEPTH
+    program = compile(src)
+    physical = program.physical_ast()
+    assert physical.ev is _eval_record
+    for start in range(MAX_DEPTH - 3, MAX_DEPTH + 1):
+        observed = []
+        for tree in (program.ast, physical):
+            ctx = Context(Value.none())
+            ctx.depth = start
+            observed.append(_observe(lambda: eval_node(tree, ctx)))
+        assert observed[0] == observed[1], (start, observed)
+    assert observed[0][:3] == ('E_DEPTH', 1, 1)       # the call itself, past the cap
+    ctx = Context(Value.none())
+    ctx.depth = MAX_DEPTH - 1
+    assert _observe(lambda: eval_node(physical, ctx)) == ('E_DEPTH', 1, 8)   # the first key
