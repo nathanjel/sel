@@ -2511,47 +2511,7 @@ Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std
 }
 
 thread_local Internals::ImplFreelist tl_impl_freelist;
-
-// Dec's free list, the same scheme as Impl's above.
-struct DecFreelist {
-  struct Block {
-    Block* next;
-  };
-  Block* head = nullptr;
-  std::size_t count = 0;
-  static constexpr std::size_t MAX_CACHED = 2048;
-  ~DecFreelist() {
-    while (head) {
-      Block* next = head->next;
-      ::operator delete(head);
-      head = next;
-    }
-  }
-};
-
-thread_local DecFreelist tl_dec_freelist;
 }  // namespace
-
-void* Dec::operator new(std::size_t size) {
-  if (size == sizeof(Dec) && tl_dec_freelist.head) {
-    DecFreelist::Block* b = tl_dec_freelist.head;
-    tl_dec_freelist.head = b->next;
-    --tl_dec_freelist.count;
-    return b;
-  }
-  return ::operator new(size);
-}
-
-void Dec::operator delete(void* ptr, std::size_t size) noexcept {
-  if (ptr && size == sizeof(Dec) && tl_dec_freelist.count < DecFreelist::MAX_CACHED) {
-    DecFreelist::Block* b = static_cast<DecFreelist::Block*>(ptr);
-    b->next = tl_dec_freelist.head;
-    tl_dec_freelist.head = b;
-    ++tl_dec_freelist.count;
-    return;
-  }
-  ::operator delete(ptr);
-}
 
 void* Value::Impl::operator new(std::size_t size) {
   if (size == sizeof(Value::Impl) && tl_impl_freelist.head) {
