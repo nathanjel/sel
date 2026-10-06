@@ -164,7 +164,8 @@ generated: the exact oracle reaches scales past 64 and scale gaps past 64,
 ties through wide divisors and Karatsuba-length products; conformance 24 adds
 products at the digit cap whose bounds mislead a refusal and `CANON` past a
 machine word; 32 adds the scale of a plan's `x + 0.00` and `x * 1.00` folds and
-a sum held for a later product (Go's plan aliased its alignment scratch there).
+a sum held for a later product (a mutant that aligns Go's plan ADD into its own
+register survived until then; the shipped code was correct).
 
 **Documentation:** one package description naming all seven hosts in every
 manifest (checked); CLAUDE.md, `docs/contributing.md` and the usage docs cover
