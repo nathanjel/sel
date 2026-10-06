@@ -2399,6 +2399,30 @@ struct Internals {
   // could tell apart from the original (keep_or_alias), so that the error a
   // too-deep element raises is still raised, at the same moment.
   static void check_clone_depth(const Value& v, int depth, Pos pos) {
+    // A scalar, or a container of scalars -- a row, nearly always -- is settled
+    // here, without the walk's stack.
+    if (depth > MAX_DEPTH) fail("E_DEPTH", "value nested too deeply", pos);
+    const Value::Impl* root = v.p_;
+    if (!root || !root->collection) return;
+    {
+      const Value::Collection& c = *root->collection;
+      const bool stored = c.shape || (root->is_list && c.children.empty());
+      bool flat = true;
+      if (stored) {
+        for (const Value& x : c.storage) {
+          if (x.p_ && x.p_->collection) { flat = false; break; }
+        }
+      } else {
+        for (const Value::Entry& e : c.children) {
+          if (e.second.p_ && e.second.p_->collection) { flat = false; break; }
+        }
+      }
+      if (flat) {
+        const bool empty = stored ? c.storage.empty() : c.children.empty();
+        if (!empty && depth + 1 > MAX_DEPTH) fail("E_DEPTH", "value nested too deeply", pos);
+        return;
+      }
+    }
     std::vector<std::pair<const Value::Impl*, int>> stack{{v.p_, depth}};
     while (!stack.empty()) {
       const auto [p, d] = stack.back();
@@ -2506,6 +2530,24 @@ bool writes_nothing(const Node& root) {
 // scale-test scenario 1's time).
 Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
   if (Internals::exclusively_held(coll, index, item, extra)) return item;
+  Internals::check_clone_depth(item, 1, Pos{});
+  return item;
+}
+
+// In a program that cannot write (Context::write_free) nothing a collector or a
+// constructor collects can change, so no copy of it could be told from it
+// (spec §3.4): it is kept as it is, after the depth check the copy would have
+// made -- E_DEPTH, at the same position, is the one thing such a program can see
+// of a copy. Otherwise these are adopt_or_clone and keep_element.
+Value hold_or_adopt(Value&& v, int levels, Pos pos, bool write_free) {
+  if (!write_free) return adopt_or_clone(std::move(v), levels, pos);
+  Internals::check_clone_depth(v, 1 + levels, pos);
+  return std::move(v);
+}
+
+Value hold_or_keep(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra,
+                   bool write_free) {
+  if (!write_free) return keep_element(coll, index, item, extra);
   Internals::check_clone_depth(item, 1, Pos{});
   return item;
 }
@@ -4562,6 +4604,13 @@ struct Context {
   // an error, and whether it dropped any (SEL-0052, SEL-0054).
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
+  // Nothing in the tree being evaluated can write: it holds no assignment and
+  // no call to a host function (Program::run decides it once per program,
+  // writes_nothing). Assignment is the one way a program changes a value, so
+  // no copy a collector or a constructor makes (spec §3.4) can be told from
+  // the value it copies: they keep what they collect as it is, after the depth
+  // check the copy would have made. Off unless the Program proved it.
+  bool write_free = false;
   // The frames of the math plans running now, one after another. A plan's slots
   // are addressed by index, never by pointer or reference held across a step
   // that can evaluate: a load may run a whole nested plan, which grows both
@@ -4826,10 +4875,17 @@ Value eval_list(const Node& node, Context& ctx) {
     if (v.kind() == Kind::None && v.size() > 0) {
       // Cloned, not aliased: `,` copies what it collects (§5.9), so the list it
       // builds does not share structure with the values that fed it
-      // (conformance/25-value-ownership.selt).
-      for (const auto& child : v.entries()) out.push_back(child.second.clone_below(1, node.pos));
+      // (conformance/25-value-ownership.selt) -- unless nothing can write.
+      for (const auto& child : v.entries()) {
+        if (ctx.write_free) {
+          Internals::check_clone_depth(child.second, 2, node.pos);
+          out.push_back(child.second);
+        } else {
+          out.push_back(child.second.clone_below(1, node.pos));
+        }
+      }
     } else {
-      out.push_back(adopt_or_clone(std::move(v), 1, node.pos));
+      out.push_back(hold_or_adopt(std::move(v), 1, node.pos, ctx.write_free));
     }
   }
   return Value::list(std::move(out));
@@ -7026,18 +7082,18 @@ void register_structure() {
                 return Value::boolean(a.val(0).has(a.text(1)));
               }});
 
-  define(Spec{"LIST", 0, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
+  define(Spec{"LIST", 0, VARIADIC, false, false, nullptr, [](Args& a, Context& ctx) -> Value {
                 cap_collection(static_cast<u128>(a.count()), a.pos());
                 std::vector<Value> out;
                 out.reserve(a.count());
                 for (int i = 0; i < a.count(); i++) {
-                  out.push_back(adopt_or_clone(a.take_val(i), 1, a.pos()));
+                  out.push_back(hold_or_adopt(a.take_val(i), 1, a.pos(), ctx.write_free));
                 }
                 return Value::list(std::move(out));
               }});
 
   define(Spec{"RECORD", 0, VARIADIC, false, false, nullptr,   // even count: spec/builtins.json
-              [](Args& a, Context&) -> Value {
+              [](Args& a, Context& ctx) -> Value {
                 const int n = a.count();
                 cap_collection(static_cast<u128>(n / 2), a.pos());
                 // Literal, distinct keys (prepare_record_shape): the keys are the shape's own,
@@ -7056,7 +7112,7 @@ void register_structure() {
                   std::vector<Value> values;
                   values.reserve(static_cast<std::size_t>(n / 2));
                   for (int i = 0; i < n; i += 2) {
-                    values.push_back(adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
+                    values.push_back(hold_or_adopt(a.take_val(i + 1), 1, a.pos(), ctx.write_free));
                   }
                   return Internals::shaped(a.record_shape(), std::move(values));
                 }
@@ -7066,7 +7122,7 @@ void register_structure() {
                   // unspecified, and the copy below can raise E_DEPTH for an over-deep
                   // host value, which must not beat the key's own E_NOT_TEXT.
                   const std::string key = a.text(i);
-                  rec.set(key, adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
+                  rec.set(key, hold_or_adopt(a.take_val(i + 1), 1, a.pos(), ctx.write_free));
                 }
                 if (a.record_shape() && a.record_shape()->keys == rec.keys()) {
                   std::vector<Value> values;
@@ -7375,7 +7431,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     const Snapshot snap = take_snapshot(val, false);
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.items[i];
-      Value detached = keep_element(val, i, item, 0);
+      Value detached = hold_or_keep(val, i, item, 0, ctx.write_free);
       // The comparator only reads the key. Keep one detached tree and give the
       // output item and comparison key handles to that same immutable snapshot;
       // the old code recursively cloned the item twice.
@@ -7406,7 +7462,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
           ctx.frames.back()[1].second = make_text(snap.keys[i]);
         }
         Value eval_key = a.eval(*body);
-        indexed.push_back({keep_element(val, i, item, 1), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
+        indexed.push_back({hold_or_keep(val, i, item, 1, ctx.write_free), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
       }
     }
     scope.pop();
@@ -7526,8 +7582,8 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       // the source. Without a body the key is the item, and reads the copy.
       // The candidate holds the item and, bodyless, the key; with a body the
       // binder's frame does: two handles either way beside the snapshot's.
-      auto detach = [&body, &value, &snap](TopEntry& c) {
-        c.item = keep_element(value, c.idx, snap.items[c.idx], 2);
+      auto detach = [&body, &value, &snap, &ctx](TopEntry& c) {
+        c.item = hold_or_keep(value, c.idx, snap.items[c.idx], 2, ctx.write_free);
         if (!body) c.key = c.item;
       };
       if (sort_all) {
@@ -7605,11 +7661,11 @@ Value do_bucket(Args& a, Context& ctx) {
   // no row reaches the result uncopied. When neither the key nor the projection
   // writes anything, no row can change while the BUCKET runs either, and the
   // copy spec §3.4 asks for is one nobody could tell from the row itself.
-  const bool alias_rows = agg_node && agg_node->t == NT::Call && agg_node->spec && !agg_node->spec->host &&
+  const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && agg_node->spec && !agg_node->spec->host &&
                           (agg_node->spec->name == "RECORD" || agg_node->spec->name == "LIST") &&
                           writes_nothing(*key_node) && writes_nothing(*agg_node);
   const auto keep = [&](std::size_t i, const Value& item) {
-    return alias_rows ? keep_or_alias(val, i, item, 1) : keep_element(val, i, item, 1);
+    return alias_rows ? keep_or_alias(val, i, item, 1) : hold_or_keep(val, i, item, 1, ctx.write_free);
   };
   const Snapshot snap = take_snapshot(val, needs_k_key);
   {
@@ -7698,7 +7754,7 @@ Value do_bucket(Args& a, Context& ctx) {
     if (Internals::identity(projected) == Internals::identity(ctx.frames.back()[0].second)) {
       out.push_back(std::move(projected));
     } else {
-      out.push_back(adopt_or_clone(std::move(projected), 0, Pos{}));
+      out.push_back(hold_or_adopt(std::move(projected), 0, Pos{}, ctx.write_free));
     }
   }
   scope.pop();
@@ -7726,13 +7782,15 @@ void register_aggregates() {
 
   define(Spec{"MAP", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 std::vector<Value> out;
-                walk(a, ctx, [&out](Value&& r, std::size_t, const Value&,
-                                    const Node&) -> std::optional<Value> {
+                const bool hold = ctx.write_free;
+                walk(a, ctx, [&out, hold](Value&& r, std::size_t, const Value&,
+                                          const Node&) -> std::optional<Value> {
                   // Collected, so copied (§3.4): a body that returns `_` hands
                   // back the source's own element, which the result must not share.
                   // A fresh temporary (RECORD(...), an arithmetic result) is already
-                  // its own copy and is kept as it is.
-                  out.push_back(adopt_or_clone(std::move(r), 0, Pos{}));
+                  // its own copy and is kept as it is, and so is everything in a
+                  // program that cannot write.
+                  out.push_back(hold_or_adopt(std::move(r), 0, Pos{}, hold));
                   return std::nullopt;
                 });
                 return Value::list(std::move(out));
@@ -7825,7 +7883,7 @@ void register_aggregates() {
                   if (!r.as_bool(body.pos)) return std::nullopt;
                   if (sequential && idx != kept.size()) sequential = false;
                   kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
-                                                     : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
+                                                     : hold_or_keep(coll, idx, item, 1, ctx.write_free));  // collected: copied (§3.4), unless nothing could tell
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
@@ -11087,6 +11145,9 @@ NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true);
 struct Program::Physical {
   std::once_flag once;
   NodePtr tree;
+  // No assignment and no host function anywhere in `tree` (Context::write_free),
+  // decided with it: such a program makes none of the copies spec §3.4 names.
+  bool write_free = false;
 };
 
 Program::Program(std::string source, std::shared_ptr<const Node> ast)
@@ -11094,13 +11155,18 @@ Program::Program(std::string source, std::shared_ptr<const Node> ast)
       physical_(std::make_shared<Physical>()) {}
 
 std::shared_ptr<const Node> Program::physical_ast() const {
-  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast_in_memory(ast_); });
+  std::call_once(physical_->once, [this] {
+    physical_->tree = optimize_ast_in_memory(ast_);
+    physical_->write_free = physical_->tree && writes_nothing(*physical_->tree);
+  });
   return physical_->tree;
 }
 
 Value Program::run(Value& context) const {
+  const std::shared_ptr<const Node> tree = physical_ast();
   Context ctx(context);
-  return eval_node(*physical_ast(), ctx);
+  ctx.write_free = physical_->write_free;
+  return eval_node(*tree, ctx);
 }
 
 Value Program::run() const {

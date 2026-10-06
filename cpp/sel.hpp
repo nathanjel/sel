@@ -278,8 +278,9 @@ class Value {
   std::string dump() const;
 
   // A deep copy, sharing nothing with this value. What `=` does in the language
-  // (§5.7), and what `,` and the aggregates do with what they collect. Copying
-  // a Value does *not* do this — see the note on the class.
+  // (§5.7), and what `,` and the aggregates do with what they collect in a
+  // program that can write (§3.4). Copying a Value does *not* do this — see the
+  // note on the class.
   //
   // Throws E_DEPTH past the value-nesting cap of spec/SPEC.md §6.4, as dump()
   // and eql() do: these three walk the tree recursively, and a value nested past
@@ -428,7 +429,11 @@ class Program {
   Program(std::string source, std::shared_ptr<const Node> ast);
 
   // Evaluates against `context`, whose direct children are the variables. The
-  // context is mutated in place by any assignment the program performs.
+  // context is mutated in place by any assignment the program performs. The
+  // result may hold the context's own values -- a variable, an index, TAKE's
+  // elements and, in a program with no assignment and no host function, what
+  // the collectors collected (spec §3.4 lets that program skip their copies) --
+  // so clone() it before changing it if the context must not change with it.
   Value run(Value& context) const;
   // Convenience for a program that needs no inputs.
   Value run() const;
