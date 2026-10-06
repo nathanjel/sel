@@ -5077,7 +5077,9 @@ Value eval_assign(const Node& node, Context& ctx) {
     }
     Value value;
     if (node.s == "=") {
-      value = eval_node(*node.r, ctx).clone(node.pos);
+      // A fresh temporary is adopted, anything shared is cloned (§3.4): the
+      // same rule, and the same E_DEPTH, as the indexed form below.
+      value = adopt_or_clone(eval_node(*node.r, ctx), 0, node.pos);
       ctx.root->set(var_name, value);
       return value;
     } else {
@@ -5234,12 +5236,14 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
   // a subtree, which may run another plan and reallocate them.
   const auto slot = [&](uint32_t i) -> Dec& { return ctx.math_scratchpad[base + i]; };
   // An operand: the coerced number, or the raw load coerced now (spec §6.2).
+  // A raw load is read in place, not copied into its slot: the loaded value
+  // stays held in math_raw until the frame ends, every load is read by exactly
+  // one step (the plan is a tree), and an arithmetic step evaluates nothing
+  // between coercing its operands and using them -- so the reference cannot
+  // move or change under the step. Copying it cost a heap copy of every large
+  // operand's words.
   const auto operand = [&](uint32_t i, bool raw, const Pos& pos) -> const Dec& {
-    if (raw) {
-      std::optional<Value>& r = ctx.math_raw[base + i];
-      slot(i) = as_dec(*r, pos);
-      r.reset();
-    }
+    if (raw) return as_dec_ref(*ctx.math_raw[base + i], pos);
     return slot(i);
   };
 
