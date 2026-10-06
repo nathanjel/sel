@@ -756,9 +756,20 @@ Nat shr_bits(Span a, unsigned bits) {
 // a << k, trimmed.
 Nat shl(Span a, std::size_t k) {
   if (a.empty()) return {};
-  Nat out(k / 64, 0);
-  const Nat shifted = shl_bits(a, static_cast<unsigned>(k % 64));
-  out.insert(out.end(), shifted.begin(), shifted.end());
+  // One allocation: the zero words, then a shifted in place after them.
+  const std::size_t words = k / 64;
+  const unsigned bits = static_cast<unsigned>(k % 64);
+  Nat out(words + a.size() + 1, 0);
+  if (bits == 0) {
+    std::copy(a.begin(), a.end(), out.begin() + static_cast<std::ptrdiff_t>(words));
+  } else {
+    std::uint64_t carry = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      out[words + i] = a[i] << bits | carry;
+      carry = a[i] >> (64 - bits);
+    }
+    out[words + a.size()] = carry;
+  }
   normalize(out);
   return out;
 }
@@ -1540,10 +1551,17 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
 // words they come from the bit length, with no conversion and no division.
 std::pair<long long, long long> dec_digit_bounds(const Dec& d) {
   if (d.small) {
-    __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
-                                   : static_cast<__uint128_t>(d.mantissa);
-    long long n = 1;
-    while (m >= 10) { m /= 10; ++n; }
+    const __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
+                                         : static_cast<__uint128_t>(d.mantissa);
+    if (m < 10) return {1, 1};
+    // 2^(b-1) <= m < 2^b puts floor(log10 m) at t or t + 1, t = floor((b - 1)
+    // log10 2) -- which (x * 1233) >> 12 is for every x < 128 -- and one
+    // comparison with 10^(t+1) says which. A 128-bit `/ 10` per digit was a
+    // library call each.
+    const std::uint64_t hi = static_cast<std::uint64_t>(m >> 64);
+    const int bits = hi != 0 ? 128 - __builtin_clzll(hi) : 64 - __builtin_clzll(static_cast<std::uint64_t>(m));
+    const int t = ((bits - 1) * 1233) >> 12;
+    const long long n = t + 1 + (m >= static_cast<__uint128_t>(POW10_128[t + 1]) ? 1 : 0);
     return {n, n};
   }
   if (!d.words.empty()) {
@@ -1780,31 +1798,41 @@ const std::vector<std::uint64_t>& dec_words_scaled(const Dec& d, long long k, st
   return keep;
 }
 
-Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
+// a + b, or a - b when `minus`: b's sign is read through the flag, so a
+// subtraction never copies its right operand (all its words) just to negate it.
+Dec dec_add_signed(const Dec& a, const Dec& b, bool minus, Pos pos) {
   if (a.small && b.small) {
     __int128_t sa, sb;
     long long target_scale;
     if (align_small(a, b, sa, sb, target_scale)) {
+      // No small mantissa is -2^127 (dec_from_mantissa), and no other one
+      // reaches it times a power of ten (5 does not divide 2^127), so the
+      // negation is safe -- and it is the value dec_negate would have aligned.
+      if (minus) sb = -sb;
       __int128_t sum;
       if (!__builtin_add_overflow(sa, sb, &sum)) {
         return dec_guard(dec_from_mantissa(sum, target_scale), pos);
       }
     }
   }
+  // A zero b's sign is never read wrongly: either branch below gives a's value.
+  const bool b_neg = b.neg != minus;
   const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
   std::vector<std::uint64_t> keep_a, keep_b;
   const std::vector<std::uint64_t>& wa = dec_words_scaled(a, s - a.scale, keep_a);
   const std::vector<std::uint64_t>& wb = dec_words_scaled(b, s - b.scale, keep_b);
-  if (a.neg == b.neg) {
+  if (a.neg == b_neg) {
     return dec_guard(dec_from_words(a.neg, bn::add(wa, wb), s), pos);
   }
   const int c = bn::cmp(wa, wb);
   if (c == 0) return dec_from_mantissa(0, s);
   return c > 0 ? dec_guard(dec_from_words(a.neg, bn::sub(wa, wb), s), pos)
-               : dec_guard(dec_from_words(b.neg, bn::sub(wb, wa), s), pos);
+               : dec_guard(dec_from_words(b_neg, bn::sub(wb, wa), s), pos);
 }
 
-Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
+Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add_signed(a, b, false, pos); }
+
+Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add_signed(a, b, true, pos); }
 
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
