@@ -11,6 +11,159 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## Unreleased
+
+The 0.10.0 consolidated review (158 issues, SEL-R001–SEL-R158), resolved in
+every host. Behaviour changes are listed first; most of the rest is shared
+definitions, generated tables, gate lanes and documentation.
+
+**Language and evaluator fixes:**
+
+  - Rust: `IS_BLANK`, `IS_PRESENT` and `???` treated NBSP, VT, FF and U+3000 as
+    blank; blank is SEL whitespace (space, TAB, CR, LF) as in every host.
+  - Rust: a `LINK` on `$==` joined distinct non-UTF-8 BIN keys (a lossy
+    decode); join keys now compare BIN by its bytes.
+  - Rust: `TOP`/`TOP_DESC` with four arguments take a binder second, as
+    everywhere else; a text literal there is `E_EXPECT_SYMBOL`.
+  - PHP: the equi-join fast path missed zeros written with a scale (`-0` vs
+    `0.00`, `"0.0"`).
+  - PHP: a non-ASCII literal regex under `i` skipped compile-time validation and
+    reported `E_BAD_ARG` at the flag instead of `E_REGEX_SYNTAX` at the pattern;
+    regex error messages could be invalid UTF-8.
+  - PHP: counted groups at the 65,535 cap (`(ab){65535}`, nested `{300}{300}`)
+    were refused as too large for PCRE; they are rewritten exactly. A bounded
+    range too wide for PCRE2's program is still refused — the remaining parity
+    exception is now stated in SPEC §7.8 and `docs/parity.md`.
+  - Go: legal nested counted regexes that RE2 cannot hold
+    (`^(?:(?:(?:ab){1000}){1000}){2}$`) run on a counter-based matcher instead
+    of raising `E_REGEX_SYNTAX`.
+  - Lisp: a `LINK` binder over a scalar or list element is a record of its names
+    with no scalar of its own (NONE), as in every host (SPEC §7.4).
+  - Lisp: registration is safe beside threads that compile and run, and
+    concurrent `LINK`s can no longer corrupt the alias-plan cache.
+  - Lisp: a plain `(asdf:load-system "sel-lang")` from a clean cache failed
+    (a helper clobbered the `context-root` structure accessor).
+  - `LIST`/`RECORD` past MAX_COLLECTION raise `E_RANGE` in PHP, JS, Go and Lisp
+    (they answered); C++ refused large `RECORD`s with a bogus `E_ARITY`, and a
+    legal 1,000,000-pair `RECORD` now evaluates.
+  - Every host's optimiser no longer moves a `FILTER` in front of a sort whose
+    direction is computed or whose binder slot is not a bare name, which hid the
+    sort key's error.
+  - A value chain built through a host API is refused with `E_DEPTH` in scalar
+    context at MAX_DEPTH (200) rather than 1000.
+
+**SQL translation and hybrid plans (all hosts unless named):**
+
+  - A one-value `IN` (`A IN ("ab")`, `A IN V`) translates exactly as `EQL`: no
+    binary-collation cast beside an `exact` column, operands left to right
+    (SEL-R158, reported downstream).
+  - The regex flag `"I"` is refused (`E_SQL_UNSUPPORTED`), as SEL refuses it;
+    only `""` and `"i"` translate.
+  - Every constant helper is validated by SEL whatever its expanded size
+    (`E_SQL_INVALID` at SEL's position); size is charged only where a helper is
+    read.
+  - SEL codes are raised only where SEL raises them: computed `RECORD` keys,
+    `SELECT_COLS` names and sort directions are `E_SQL_SHAPE` (were
+    `E_BAD_ARG`); a NULL count is `E_NULL`; `E_SQL_SIZE` carries no position;
+    `sql/errors.md` lists the SEL codes the layer raises.
+  - Hybrid execution never writes the caller's context: a continuation that
+    calls an application function runs on a copy (PHP and C++ let `POKE(A)`
+    write through, directly or inside `IF`/`MAP`).
+  - A helper that reassigns the source (`ORDERS = ORDERS .> DROP(2); …`) is
+    read correctly by later steps (PHP, Python, C++, Go, Lisp), and is no
+    longer re-run before a three-argument `LINK` (JS, Rust).
+  - FILTER+FILTER fusion stops at the depth cap; a pipeline of more than
+    MAX_DEPTH unwound steps is a pure-memory plan; the planner does not fold
+    `&` of text literals (PHP did); Rust's planner is no longer exponential in
+    call nesting.
+  - `SORT_BY`/`TOP_BY` read their form off the call as written when a helper
+    supplies a text; constant classification follows the manifest's binding
+    forms; `SUM` over a group with a non-name binder is refused.
+  - A NUM value binding of a BOOL or BIN is `E_SQL_BINDING`; PHP's
+    `Binding::column()`/`raw()` refuse non-boolean flags; a negative fractional
+    `TAKE`/`DROP`/`TOP` count is `E_NOT_INT` in PHP's translator.
+  - The comparison refusal names both operands' kinds.
+  - Dialect facts are inherited map data: `lexical.identifierBytes`,
+    `skel.limit`/`limitOffset`/`offsetOnly`/`guardedSum`/`latestMember`
+    (`sql/MAP.md`). A registered child dialect gets its parent's latest-member
+    plan and OFFSET spelling; a dialect registered on `ansi` spells standard
+    `FETCH FIRST`/`OFFSET … ROWS`. Shipped dialects' SQL is unchanged.
+  - The PostgreSQL alias-collision check follows the dialect chain (Lisp) and
+    cuts at a character boundary, not byte 63 (PHP, Python, Go, C++, Lisp).
+  - Hybrid plans: a three-argument `LINK` continuation is fed under the
+    relation's name (`continuation_source_var`), and every host has a plan-kind
+    accessor.
+
+**Host APIs** (pre-1.0; undocumented internals were narrowed, documented API
+kept or deprecated):
+
+  - JS: `register`/`registerBuiltin` validate like `registerFunction` and are
+    deprecated; `optimizeAst*` and `RecordShape` deprecated; `sql.d.ts` and
+    `sel.d.ts` match the code and are checked; `translate`/`translateStatement`
+    accept a `Bindings`; `Fragment.exact` is `exactCollation`; the SQL layer no
+    longer uses Node's `Buffer`.
+  - PHP: Composer loads the SQL layer on first use of a `Sel\Sql` class;
+    `Sel\Value` throws on undeclared properties; `Dec` test hooks are behind
+    `Dec::testHooks()`; HybridPlan's copied snake_case members are removed;
+    `Optimizer::PIPELINE_OPS` is deprecated.
+  - Python: `py.typed` annotations no longer resolve to `Value.int/list/bool`;
+    `Args.symbol` raises `E_BAD_ARG`; `SqlError` pickles; the unused camelCase
+    `HybridPlan`/`Sql` aliases are removed.
+  - C++: unsafe mutators (`set_dec`, `set_dec_val`, `set_is_list`) and the
+    `Impl`/`Collection` internals are private; new `Value::as_decimal(Pos)`,
+    `sel::dec_digits`, `HostArgs::bytes/decimal`; a thread contract in `sel.hpp`;
+    `sel_optimizer.cpp` is folded into `sel.cpp`; MSVC is refused explicitly.
+  - Go: the accidental public surface is unexported (lexer, parser, evaluator
+    internals, ~120 SQL translator internals); new `sel.Decimal`/`NewDecimal`/
+    `Value.Decimal` (`NewNum`/`AsDecimal` deprecated); typed SQL option
+    constructors (`sql.Column`, `Relation`, `DefineDialectWith`); exported
+    constructors validate their input; `Fragment.Exact` is `ExactCollation`.
+  - Rust: internal modules are `#[doc(hidden)]` and struct fields private;
+    `Program` sharing is documented (Send, not Sync) and probed at compile time;
+    `ColumnOptions`, `Binding::column_with`/`raw_with`, `PlanKind`.
+  - Lisp: exported accessors (`value-keys`, `value-entries`, `to-native`) return
+    fresh structure.
+
+**Command lines and runners:** every host's `sel` follows one contract
+(`docs/usage/repl.md`): `--help`, `--version`, usage errors exit 2, an
+unreadable file or directory exits 1, the prompt only on a terminal, a line is
+blank only if it is SEL whitespace, an empty `--deps` prints nothing. Lisp's
+CLIs end at once on SIGTERM (SBCL could deadlock in its exit protocol). Every
+runner reads its input as bytes, removes exactly one newline per record, refuses
+an unreadable path and fails a run of zero cases; each host's CLI and runners
+share one value renderer.
+
+**Shared definitions and generated tables:** `spec/lexicon.json` (reserved
+words, operators, precedence, families) and classification keys in
+`spec/builtins.json` (pipeline steps, regex argument positions, SQL argument
+kinds) are rendered into every host, which refuse to load when their dispatch
+lacks an entry; `spec/limits.json` carries the ROUND, POWER, quantifier and
+§7.8 ambiguity caps; generators share one strict command line (`--check`,
+`--help` never writes) and write gofmt-clean Go; error messages follow the
+conventions in `spec/errors.md`.
+
+**Gate:** new lanes for corpus bytes, runner and CLI contracts, top-level host
+examples, reference fragments (JS, Rust and the rest), budgets, regex resources,
+the regex verdict differential, hybrid parity in every host with an
+application-call section, C++ TSan and ASan, generator command lines, registry
+completeness, manifest versions/descriptions, message conventions and stale host
+rosters; `SEL_DEFAULT_IMPLS`, `SEL_EXTRA_IMPLS`, `SEL_SKIP_SANITIZERS`,
+`SEL_SKIP_SQL_BUDGETS`, `SEL_BUDGET_PARSE_TIME`; a narrowed run ends
+`GREEN, PARTIAL`. The one-off measurement harnesses of closed worklists
+(`tools/perf/` and others) are removed.
+
+**Documentation:** one package description naming all seven hosts in every
+manifest (checked); CLAUDE.md, `docs/contributing.md` and the usage docs cover
+Go and Rust throughout; SPEC §5 numbering fixed.
+
+Performance: measured A B B A against 0.10.0 on a quiet box, every host is
+within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
+largest gains Go S4 −20%, Lisp S1 −16%, JS S3 −9%; the largest change the other
+way Go S2 +2.6%).
+
+Lanes: 2238 conformance cases in every host; 1392 SQL translation cases in every
+host; 222 SQL mutations caught, none surviving.
+
 ## 0.10.0 — 2026-10-04
 
 **Two new hosts: Rust and Go.** SEL now has seven implementations, all held to
