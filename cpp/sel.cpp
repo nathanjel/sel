@@ -10781,14 +10781,21 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
       auto body = copy_node(copy->items.back());
       body->keys_unobserved = opt_keys_renumbered_by(i + 1 < steps.size() ? &steps[i + 1] : nullptr);
       // The next step is where what this FILTER keeps is copied: a MAP copies what
-      // it collects, a FILTER keeps (and copies) its elements. When neither body
-      // can write, nothing kept can change on the way there, and keeping the
-      // element itself is indistinguishable from keeping a copy of it.
+      // it collects, a FILTER, a sort or a TOP keeps (and copies) its elements.
+      // When neither this body nor anything the next step evaluates can write,
+      // nothing kept can change on the way there, and keeping the element itself
+      // is indistinguishable from keeping a copy of it.
       if (i + 1 < steps.size()) {
         const Node& after = *steps[i + 1];
-        body->borrow_rows = after.t == NT::Call && after.spec && !after.spec->host &&
-                            (after.s == "MAP" || after.s == "FILTER") && !after.items.empty() &&
-                            writes_nothing(*body) && writes_nothing(*after.items.back());
+        const bool copies_its_elements =
+            after.s == "MAP" || after.s == "FILTER" || after.s == "SORT" || after.s == "SORT_DESC" ||
+            after.s == "SORT_BY" || after.s == "TOP" || after.s == "TOP_DESC" || after.s == "TOP_BY";
+        bool after_writes = false;
+        for (std::size_t k = 1; k < after.items.size(); ++k) {
+          after_writes = after_writes || (after.items[k] && !writes_nothing(*after.items[k]));
+        }
+        body->borrow_rows = after.t == NT::Call && after.spec && !after.spec->host && copies_its_elements &&
+                            writes_nothing(*body) && !after_writes;
       }
       copy->items.back() = std::move(body);
     }

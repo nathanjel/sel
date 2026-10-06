@@ -74,9 +74,10 @@ struct Node {
   // evaluator's join pre-filter may drop rows below the join (SEL-0050/0052).
   bool keys_unobserved = false;
   // On a FILTER body: the FILTER may keep its elements uncopied (keep_or_alias).
-  // Stamped by the physical optimiser when this body and the next pipeline step's
-  // (a MAP or a FILTER) write nothing, so no kept element can change before the
-  // next step has copied what it keeps (the Rust host's borrowed_filter).
+  // Stamped by the physical optimiser when this body and the next pipeline step
+  // (a MAP, a FILTER, a sort or a TOP) write nothing, so no kept element can
+  // change before the next step has copied what it keeps (the Rust host's
+  // borrowed_filter).
   bool borrow_rows = false;
   // On a Var, set by the hybrid planner only: this read is of the catalogue's
   // binding, not of a same-named helper. `ORDERS = ORDERS .> DROP(2); ORDERS .> ...`

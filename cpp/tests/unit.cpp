@@ -679,7 +679,17 @@ void test_filter_borrows_rows_for_a_read_only_next_step() {
   selt::eq(flags("L .> FILTER((X = 1; _[\"v\"] > 0)) .> MAP(_)"), std::string("c"), "a FILTER body that assigns");
   selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> MAP(REG1_POKE(_))"), std::string("c"),
            "a next step that calls a host function");
-  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"])"), std::string("c"), "a next step that is not MAP/FILTER");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"])"), std::string("B"), "read-only FILTER then SORT_BY");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT()"), std::string("B"), "read-only FILTER then SORT");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TOP_BY(_[\"v\"], 2)"), std::string("B"), "read-only FILTER then TOP_BY");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"]) .> TAKE(2)"), std::string("B"),
+           "read-only FILTER then a SORT_BY and TAKE (one TOP_BY)");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(REG1_POKE(_))"), std::string("c"),
+           "a next sort whose key calls a host function");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TOP_BY(_[\"v\"], (X = 2))"), std::string("c"),
+           "a next TOP whose count assigns");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TAKE(2)"), std::string("c"), "a next step that aliases (TAKE)");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> DISTINCT()"), std::string("c"), "a next step that aliases (DISTINCT)");
   selt::eq(flags("L .> FILTER(_[\"v\"] > 0)"), std::string("c"), "no next step");
 
   auto run = [](const std::string& src) {
@@ -710,6 +720,22 @@ void test_filter_borrows_rows_for_a_read_only_next_step() {
   }
   selt::ok(!copy_err.empty(), "the copying FILTER refuses the too-deep element");
   selt::eq(borrow_err, copy_err, "the borrowing FILTER refuses it the same way");
+  // A borrowing FILTER before a sort: the sort copies what it keeps, so a host
+  // function after it that writes the source does not reach the sorted rows.
+  static std::optional<Value> poke_row;
+  register_function("REG2_POKE", 0, 0, [](HostArgs&) {
+    if (poke_row) poke_row->set("v", Value::integer(100));
+    return Value::integer(0);
+  });
+  {
+    Value ctx = Value::none();
+    compile(L + "0").run(ctx);
+    poke_row = *ctx.get("L")->get("2");
+    const std::string got =
+        compile("JOIN(L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"]) .> MAP(REG2_POKE() + _[\"v\"]), \",\")").run(ctx).dump();
+    poke_row.reset();
+    selt::eq(got, std::string("t\"1,2,3\""), "a host function's write after the sort does not reach its rows");
+  }
 }
 
 void test_pipeline_temporaries_are_kept() {
