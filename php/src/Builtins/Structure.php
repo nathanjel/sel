@@ -1810,6 +1810,7 @@ final class Structure
         usort($heap, $compare);
         $pos = $a->pos;
         if ($eager) return Value::list(array_map(static fn (array $entry): Value => $entry['item'], $heap));
+        if ($ctx->writeFree) return Value::list(array_map(static fn (array $entry): Value => $entry['item']->checkDepthBelow(1, $pos), $heap));
         return Value::list(array_map(static fn (array $entry): Value => $entry['item']->copyBelow(1, $pos), $heap));
     }
 
@@ -1914,7 +1915,9 @@ final class Structure
             // levels below the result, a list inside the record.
             foreach ($groups as $group) {
                 $rows = [];
-                foreach ($group['rows'] as $row) $rows[] = $eager ? $row : $row->copyBelow(2, $a->pos);
+                foreach ($group['rows'] as $row) {
+                    $rows[] = $eager ? $row : ($ctx->writeFree ? $row->checkDepthBelow(2, $a->pos) : $row->copyBelow(2, $a->pos));
+                }
                 $out->set($group['keyString'], Value::list($rows));
             }
             return $out;
@@ -1929,7 +1932,7 @@ final class Structure
                 $ctx->setFrameValue($binder, $aggregateFrame[$binder]);
                 $ctx->setFrameValue('_K', $aggregateFrame['_K']);
                 $projected = $a->evalNode($aggregateNode);
-                $out[] = Core::buildsItsResult($aggregateNode)
+                $out[] = $ctx->writeFree || Core::buildsItsResult($aggregateNode)
                     ? $projected->checkDepthBelow(1, $a->pos) : $projected->copyBelow(1, $a->pos);
             }
         } finally {

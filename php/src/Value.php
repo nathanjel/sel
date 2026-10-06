@@ -1052,7 +1052,8 @@ final class Value
 
     /**
      * copyBelow()'s depth check without the copy, for a value a collector may
-     * hold as it is: the body built the value and nothing else holds it. The
+     * hold as it is: nothing in the running program can write (Context's
+     * writeFree), or the body built the value and nothing else holds it. The
      * same E_DEPTH at the same `$pos` as copyBelow(), and the value itself back.
      *
      * @param array<string,mixed>|null $pos

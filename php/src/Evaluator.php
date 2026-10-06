@@ -254,6 +254,7 @@ final class Evaluator
     private static function evalList(array $node, Context $ctx): Value
     {
         $out = [];
+        $hold = $ctx->writeFree;
         foreach ($node['items'] as $item) {
             $v = self::evalNode($item, $ctx);
             // `,` collects, so it copies what it collects (spec §3.4): the list
@@ -265,10 +266,10 @@ final class Evaluator
                 // flattens past the collection cap is not built.
                 Budget::checkCollection(count($out) + $v->size(), $node['pos'], 'the list');
                 foreach ($v->values() as $child) {
-                    $out[] = $child->copyBelow(1, $node['pos']);
+                    $out[] = $hold ? $child->checkDepthBelow(1, $node['pos']) : $child->copyBelow(1, $node['pos']);
                 }
             } else {
-                $out[] = $v->copyBelow(1, $node['pos']);
+                $out[] = $hold ? $v->checkDepthBelow(1, $node['pos']) : $v->copyBelow(1, $node['pos']);
             }
         }
         if (count($out) > Limits::MAX_COLLECTION) Budget::checkCollection(count($out), $node['pos'], 'the list');
