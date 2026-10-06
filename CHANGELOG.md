@@ -198,6 +198,12 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     7.6 → 5.1 ms (0.9.2: 6.6), S4 −9%, the other scenarios unchanged. A
     projected BUCKET now copies a projection value that names a variable, as
     every other host did (`alias.aggregate-copies.bucket-projection-of-a-variable`).
+  - C++: a write-free program walks its collections in place instead of
+    snapshotting them (nothing can change them; the snapshot touched every
+    element twice), and a join decides a side's binder alias once per row
+    shape rather than per row. Scale S6 273 → 259 ms (0.9.2: 266), S1 −3%,
+    S2 −8%, S3 −4%, S4 −8%, S5 −8%; Mandelbrot +1.6%, a function-alignment
+    shift (equal when both are built with 64-byte function alignment).
   - Go: a comparison with a literal no longer builds the literal (an operator
     reads the value its node keeps) and a condition no longer builds its BOOL
     (FILTER, ALL, ANY, IF, COND, AND, OR and NOT read the answer as it is) —

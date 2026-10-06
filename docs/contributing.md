@@ -568,7 +568,12 @@ check (`Value::checkDepthBelow`, `Internals::check_clone_depth`), because
 lets a `FILTER` keep its rows uncopied when the next pipeline step copies what it
 keeps (a `MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`).
 Made everywhere, those copies were a fifth to a third of the PHP scale
-scenarios' time and over a quarter of C++ scenario 2's. A write-free program's
+scenarios' time and over a quarter of C++ scenario 2's. The snapshot an
+aggregate visits (§7.3) is left out the same way: C++ walks a write-free
+program's collections in place (`Snapshot::live`), since nothing can change
+them, where taking it touched every element twice (scenario 6's 90,000 joined
+rows; the snapshot's handle is also why `Internals::exclusively_held` is asked
+only outside such programs). A write-free program's
 result may hold the context's own values, as a bare variable's and `TAKE`'s
 always could; a host that changes a result through its API clones it first.
 
