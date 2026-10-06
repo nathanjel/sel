@@ -989,8 +989,31 @@ void sqr_into(Out out, Span a, Out scratch) {
   sub_in(out.subspan(h), trimmed(p));
 }
 
+// The last two squares of large operands, per thread. Squaring the same value
+// twice in a row is common -- `x * x` in a test and again in the expression it
+// guards, as in an escape-time loop -- and recognising the operand costs one
+// pass over it where the square costs a quadratic one (or Karatsuba's).
+// Bounded: operands of SQR_MEMO_MIN to SQR_MEMO_MAX words only, two of them;
+// below the minimum a square costs about what the lookup and the copy would.
+constexpr std::size_t SQR_MEMO_MIN = 16;
+constexpr std::size_t SQR_MEMO_MAX = std::size_t{1} << 14;
+
+struct SqrMemo {
+  Nat operand;
+  Nat square;
+};
+
+thread_local std::array<SqrMemo, 2> sqr_memo;
+thread_local unsigned sqr_memo_next = 0;
+
 Nat sqr(Span a) {
   a = trimmed(a);
+  const bool memo = a.size() >= SQR_MEMO_MIN && a.size() <= SQR_MEMO_MAX;
+  if (memo) {
+    for (const SqrMemo& m : sqr_memo) {
+      if (m.operand.size() == a.size() && std::equal(a.begin(), a.end(), m.operand.begin())) return m.square;
+    }
+  }
   const std::size_t n = 2 * a.size() + 1;
   Nat out(n, 0);
   if (a.size() < karatsuba_sqr_at()) {
@@ -999,6 +1022,12 @@ Nat sqr(Span a) {
     with_scratch(scratch_len(n), [&](Out s) { sqr_into(out, a, s); });
   }
   normalize(out);
+  if (memo) {
+    SqrMemo& m = sqr_memo[sqr_memo_next];
+    sqr_memo_next ^= 1;
+    m.operand.assign(a.begin(), a.end());
+    m.square = out;
+  }
   return out;
 }
 

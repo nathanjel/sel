@@ -333,6 +333,28 @@ void test_karatsuba_and_early_range() {
     }
   }
   selt::eq(bad_rows, 0, "the schoolbook rows and squares equal an independent product on " + std::to_string(rows) + " pairs");
+
+  // The square memo (the last two large squares, per thread): a repeated
+  // operand gets its square back, a returned square is the caller's own (a
+  // change to it does not reach the memo), and three operands taking turns
+  // through two entries never get one another's square -- operands of one
+  // length that differ in a single word, in the middle or at the top.
+  int bad_memo = 0;
+  for (size_t n : {15, 16, 17, 100, 300}) {
+    const bn::Nat x = words(n, 0);
+    bn::Nat y = x, z = x;
+    y[n / 2] ^= 1;
+    z[n - 1] ^= 2;
+    const bn::Nat px = plain(x, x), py = plain(y, y), pz = plain(z, z);
+    bn::Nat first = bn::sqr(x);
+    if (first != px) ++bad_memo;
+    first.assign(first.size(), 7);
+    if (bn::sqr(x) != px) ++bad_memo;
+    for (int turn = 0; turn < 3; ++turn) {
+      if (bn::sqr(y) != py || bn::sqr(z) != pz || bn::sqr(x) != px || bn::sqr(x) != px) ++bad_memo;
+    }
+  }
+  selt::eq(bad_memo, 0, "a square asked again is the same square, and the caller's own copy");
   int bad_mul = 0, bad_sqr = 0, products = 0;
   for (int it = 0; it < 150; ++it) {
     const size_t sizes[] = {1, 2, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 97, 333};
@@ -420,7 +442,10 @@ void test_karatsuba_and_early_range() {
   // Powers of ten: 10^k, its all-nines neighbour, and division by it is slicing
   // the digit string (the large k go through Barrett with a cached reciprocal).
   int bad_pow = 0;
-  const std::string big = digit_string(30000);
+  // Its last digit is not 0, or every trailing-zero count below is one more
+  // than k (a draw that ended in 0 made this check fail on a correct engine).
+  std::string big = digit_string(30000);
+  if (big.back() == '0') big.back() = '3';
   const bn::Nat bigx = bn::from_decimal(big);
   for (size_t k : {1, 19, 20, 27, 28, 100, 1000, 4321, 9728, 19456}) {
     const bn::Nat ten = bn::mul_pow10(bn::Nat{1}, k);
