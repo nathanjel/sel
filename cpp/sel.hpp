@@ -153,6 +153,11 @@ struct Dec {
   bool small = false;
   dec_mantissa_t mantissa = 0;
   mutable std::vector<std::uint64_t> words;
+
+  // From a per-thread free list (sel.cpp): every arithmetic result is a
+  // number value with a Dec of its own, made and dropped once per operation.
+  static void* operator new(std::size_t size);
+  static void operator delete(void* ptr, std::size_t size) noexcept;
 };
 
 // The magnitude of `d` as ASCII digits, without sign or decimal point ("150"
