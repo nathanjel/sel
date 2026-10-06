@@ -300,6 +300,39 @@ void test_karatsuba_and_early_range() {
     bn::normalize(out);
     return out;
   };
+  // The rows themselves (addmul_1, which takes the MULX/ADX kernel on a CPU
+  // that has it) against products written here, word by word in __int128 and
+  // sharing no code with the engine: every length through a few 8-word blocks
+  // and their 4-word and single-word tails, in each shape.
+  auto plain = [](const bn::Nat& a, const bn::Nat& b) {
+    bn::Nat out(a.size() + b.size() + 1, 0);
+    for (size_t i = 0; i < a.size(); ++i) {
+      u128 carry = 0;
+      for (size_t j = 0; j < b.size(); ++j) {
+        const u128 t = static_cast<u128>(a[i]) * b[j] + out[i + j] + carry;
+        out[i + j] = static_cast<std::uint64_t>(t);
+        carry = t >> 64;
+      }
+      for (size_t k = i + b.size(); carry != 0; ++k) {
+        const u128 t = static_cast<u128>(out[k]) + carry;
+        out[k] = static_cast<std::uint64_t>(t);
+        carry = t >> 64;
+      }
+    }
+    bn::normalize(out);
+    return out;
+  };
+  int bad_rows = 0, rows = 0;
+  for (size_t na = 1; na <= 40; ++na) {
+    for (int shape = 0; shape < 3; ++shape) {
+      const bn::Nat a = words(na, shape), b = words(1 + next() % 40, shape);
+      if (a.empty() || b.empty()) continue;
+      rows += 2;
+      if (school(a, b) != plain(a, b)) ++bad_rows;
+      if (bn::sqr(a) != plain(a, a)) ++bad_rows;
+    }
+  }
+  selt::eq(bad_rows, 0, "the schoolbook rows and squares equal an independent product on " + std::to_string(rows) + " pairs");
   int bad_mul = 0, bad_sqr = 0, products = 0;
   for (int it = 0; it < 150; ++it) {
     const size_t sizes[] = {1, 2, 31, 32, 33, 47, 48, 49, 64, 65, 97, 130, 200, 333};
