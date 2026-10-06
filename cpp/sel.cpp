@@ -4602,6 +4602,25 @@ struct JoinReport {
 // in a header names these two as well. eval_node comes with them because its
 // declaration sits between them and has to be on the same side as its
 // definition.
+// Where a variable was last found in a root record, by the address of the
+// name asked for: the AST's or a plan step's string, which live as long as the
+// program, so one reference reads the same name every time. Only a hint: the
+// key at that position is compared with the name before the child is used
+// (Internals::child_if_keyed), and keys in a plain record are unique, so a
+// stale entry -- another run's root, another program's string at a reused
+// address, a collision -- costs a search and never a wrong value. Per thread,
+// not per run: nothing to set up when a program starts, and 256 entries keep a
+// program's names from evicting one another (64 thrashed on Mandelbrot's 50).
+// Saves the record search -- a scan of the root's index -- on nearly every
+// read and write of a variable.
+namespace {
+struct RootHint {
+  const std::string* name = nullptr;
+  std::size_t index = 0;
+};
+thread_local std::array<RootHint, 256> root_hints{};
+}  // namespace
+
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -4622,19 +4641,6 @@ struct Context {
   std::vector<std::optional<Value>> math_raw;
   size_t math_scratchpad_top = 0;
 
-  // Where a variable was last found in the root record, by the address of the
-  // name asked for: the AST's or a plan step's string, which live as long as
-  // the program, so one reference reads the same name every time. Only a hint:
-  // the key at that position is compared with the name before the child is
-  // used (Internals::child_if_keyed), so a stale or colliding entry costs a
-  // search and never a wrong value. Saves the record search -- a scan of the
-  // root's index -- on nearly every read of a variable.
-  struct RootHint {
-    const std::string* name = nullptr;
-    std::size_t index = 0;
-  };
-  mutable std::array<RootHint, 64> root_hints{};
-
   explicit Context(Value& r) : root(&r) {}
 
   const Value* lookup(const std::string& name) const {
@@ -4649,7 +4655,7 @@ struct Context {
   // The root record's own `name` (Value::get), through the hints.
   const Value* root_find(const std::string& name) const {
     if (!Internals::plain_record(*root)) return root->get(name);
-    RootHint& hint = root_hints[(reinterpret_cast<std::uintptr_t>(&name) * 0x9E3779B97F4A7C15ULL) >> 58];
+    RootHint& hint = root_hints[(reinterpret_cast<std::uintptr_t>(&name) * 0x9E3779B97F4A7C15ULL) >> 56];
     if (hint.name == &name) {
       if (const Value* v = Internals::child_if_keyed(*root, hint.index, name)) return v;
     }
