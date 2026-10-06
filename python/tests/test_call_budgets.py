@@ -33,7 +33,25 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # copy ran a function-level import on every call), then 5363 -> 5358 when
 # lexer.ascii_upper took str.upper() for an all-ASCII string instead of a
 # generator over its characters (the sort direction "DESC" is folded once).
-BUDGETS = {'pixel': 2252, 'rows': 5358}
+# Both went down by one (2252 -> 2251, 5358 -> 5357) when the count started
+# after the Context is built, as run() builds it before it evaluates, so that
+# the count could see the write_free flag run() sets on it; rows then went
+# 5357 -> 4987 because it is a write-free program (no assignment, no host
+# function): FILTER, MAP and RECORD hold what they collect instead of copying
+# it (SPEC 3.4, Context.write_free).
+# pixel 2251 -> 2239 and rows 4987 -> 4977 when a strict call evaluated its
+# arguments in _eval_call's own loop instead of through Args.val, one call per
+# argument; rows 4977 -> 4937 when a RECORD with literal keys ran on its own
+# evaluator (structure._eval_record: no Args, no key values, no _record call).
+# pixel 2239 -> 2179 and rows 4937 -> 4047 when MAP and FILTER ran their
+# loops themselves instead of through walk() with a visit (and FILTER a keep
+# and a kept) call per element, and every aggregate whose body never reads
+# _K took its elements without the key text iter_elements built for each.
+# pixel 2179 -> 2029 and rows 4047 -> 2247 when FILTER, IF and COND asked
+# whether a comparison, $==, $!=, AND or OR holds without building its BOOL
+# (eval.eval_cond), and a comparison read a number or ASCII text literal on
+# its right where its node keeps it instead of building a Value per row.
+BUDGETS = {'pixel': 2029, 'rows': 2247}
 
 
 def python_calls(label):
@@ -43,13 +61,15 @@ def python_calls(label):
     program = compile(PROGRAMS[label])
     for _ in range(40):          # warm: caches built, hot math plans compiled
         program.run(CONTEXTS.get(label, {}))
-    tree, root = program.physical_ast(), Value.from_native(CONTEXTS.get(label, {}))
+    (tree, write_free), root = program._physical_plan(), Value.from_native(CONTEXTS.get(label, {}))
+    ctx = Context(root)
+    ctx.write_free = write_free  # as run() sets it
     seen = Counter()
     collecting = gc.isenabled()
     gc.disable()                 # no collector pass, and no gc.callbacks, inside the count
     sys.setprofile(lambda frame, event, arg: seen.update((event,)))
     try:
-        eval_node(tree, Context(root))
+        eval_node(tree, ctx)
     finally:
         sys.setprofile(None)
         if collecting:

@@ -1060,3 +1060,25 @@ def test_join_prefilter_through_a_pushed_filter_keeps_results_keys_and_errors():
         as_written = _joined(src, ctx)[0]
         assert as_written == without_prefilter(src), src
 
+
+
+def test_element_values_are_the_elements_iter_elements_yields():
+    # MAP, FILTER and walk() take an aggregate's elements without their keys
+    # when the body never reads _K (aggregate.element_values): the same
+    # values, the same objects, in the same order, for every form a source
+    # takes -- and a snapshot, not the source's own list.
+    from sel.builtins.aggregate import element_values
+    from sel.value import iter_elements
+    forms = [
+        Value.from_native([1, 'a', [2]]),
+        evaluate('FILTER(LIST(1, 2, 3), _ != 2)'),          # a list keyed by position
+        Value.from_native({'a': 1, 'b': [2]}),               # a shaped record
+        evaluate('RECORD("a", 1, "a", 2, "b", 3)'),          # a record with a repeated key
+        evaluate('X = RECORD("a", 1); X["b"] = 2; X'),       # a record grown by assignment
+        evaluate('L = LIST(1); L["k"] = 2; L'),               # a list given a named key
+        Value.text('t'), Value.bool(True), Value.null(), Value.none(), Value.from_native([]),
+    ]
+    for value in forms:
+        got = element_values(value)
+        assert [id(v) for v in got] == [id(v) for _, v in iter_elements(value)], value.dump()
+        assert got is not value.storage

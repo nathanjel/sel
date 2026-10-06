@@ -558,24 +558,28 @@ another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.
 
 Leaving a copy out is allowed exactly where §3.4 allows it, where nothing can
-tell. PHP and C++ make none in a program whose evaluated tree holds no
+tell. PHP, C++ and Python make none in a program whose evaluated tree holds no
 assignment and no host-function call (`Context::$writeFree`,
-`Context::write_free`, decided once with the physical tree), and none of a value
-the body built itself (PHP's `Core::buildsItsResult`; C++'s `adopt_or_clone`
-keeps any value nothing else holds); either way they still make the copy's depth
-check (`Value::checkDepthBelow`, `Internals::check_clone_depth`), because
-`E_DEPTH` is the one thing a copy reports that such a program can see. C++ also
-lets a `FILTER` keep its rows uncopied when the next pipeline step copies what it
-keeps (a `MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`).
-Made everywhere, those copies were a fifth to a third of the PHP scale
-scenarios' time and over a quarter of C++ scenario 2's. The snapshot an
-aggregate visits (§7.3) is left out the same way: C++ walks a write-free
-program's collections in place (`Snapshot::live`), since nothing can change
-them, where taking it touched every element twice (scenario 6's 90,000 joined
-rows; the snapshot's handle is also why `Internals::exclusively_held` is asked
-only outside such programs). A write-free program's
-result may hold the context's own values, as a bare variable's and `TAKE`'s
-always could; a host that changes a result through its API clones it first.
+`Context::write_free`, Python's `Context.write_free`, decided once with the
+physical tree; Python counts a function `define()`d outside the manifest as the
+application's too, `registry.is_host_function`), and none of a value the body
+built itself (PHP's `Core::buildsItsResult`; C++'s `adopt_or_clone` keeps any
+value nothing else holds; Python's `aggregate.collected`); either way they still
+make the copy's depth check (`Value::checkDepthBelow`,
+`Internals::check_clone_depth`, `Value.check_depth`), because `E_DEPTH` is the
+one thing a copy reports that such a program can see. C++ also lets a `FILTER`
+keep its rows uncopied when the next pipeline step copies what it keeps (a
+`MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`); Python
+does so before a `MAP` (`Node.adopt_items`). Made everywhere, those copies were
+a fifth to a third of the PHP scale scenarios' time, over a quarter of C++
+scenario 2's and a tenth of Python scenario 1's. The snapshot an aggregate
+visits (§7.3) is left out the same way: C++ walks a write-free program's
+collections in place (`Snapshot::live`), since nothing can change them, where
+taking it touched every element twice (scenario 6's 90,000 joined rows; the
+snapshot's handle is also why `Internals::exclusively_held` is asked only outside
+such programs). A write-free program's result may hold the context's own values,
+as a bare variable's and `TAKE`'s always could; a host that changes a result
+through its API clones it first.
 
 C++ is the host where this is easy to get wrong, because `Value` is a handle
 over an intrusive, reference-counted `Impl` and copying it *looks* like a deep
@@ -663,7 +667,13 @@ stamps `Node.ev` on every node the physical tree owns; `eval_node` uses it
 before its table (`_EVAL`). A node shared with the caller's AST has none, and
 neither has a `replaced()` copy: a rewrite that runs after binding and changes
 a node's `t`, `op` or plan must clear `ev`, or the node keeps running its old
-evaluator.
+evaluator. `eval_cond`, which FILTER, IF, COND and the join's pre-filter ask
+whether a node holds, reads `ev` too: the evaluator of a comparison, `$==`,
+`$!=`, `AND` and `OR` has a `_cond_*` form answering a bool, which the
+`_eval_*` form wraps, so there is one copy of each. And `handler_for` binds a
+`RECORD` with distinct literal keys to `structure._eval_record`
+(`eval._CALL_HANDLERS`), a second copy of `_record`'s copy-or-hold rule, which
+the plain tree still runs: a change to one is a change to both.
 
 **The physical tree is a function of the AST alone, in every host.** `run`
 evaluates a rewritten tree (TOP fusion, whatever a host adds), built once per

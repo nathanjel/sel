@@ -7,6 +7,7 @@ import heapq
 from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
+from ..eval import _COND, eval_cond, eval_node
 from ..parser import Node, may_write
 from ..opinfo import COALESCE_OPS, RELATIONAL, TEXT_COMPARE
 from ..registry import define, sort_form
@@ -58,9 +59,28 @@ def node_contains_var(node, name):
     return False
 
 
+def element_values(value):
+    """The elements iter_elements yields, without their keys, as a list taken
+    now. A snapshot (SPEC 7.3): the elements are fixed before the first body
+    runs, so a body that adds a key, appends, or overwrites a later element
+    does not change what is visited. What is inside an element is not copied,
+    and a change made there is seen. A body that never reads `_K` needs no
+    key text per element."""
+    if value.shape is not None:
+        return value.storage[:len(value.shape.keys)]
+    if value.is_list and value.storage is not None:
+        return list(value.storage)
+    if value.children:
+        return list(value.children.values())
+    if value.kind != NONE:
+        return [value]
+    return []
+
+
 def walk(args, ctx, visit, body_override=None):
     """Runs `visit` per element with the binder and _K in scope. Returning a
-    value from `visit` stops the walk and becomes the result.
+    value from `visit` stops the walk and becomes the result. `visit` is
+    handed the element's key only when the body reads `_K` (None otherwise).
 
     The frame is popped in a finally, so a body that raises does not leave the
     binder in scope for whatever runs next.
@@ -73,17 +93,19 @@ def walk(args, ctx, visit, body_override=None):
         frame['_K'] = None
     ctx.push_frame(frame)
     try:
-        # A snapshot (SPEC 7.3): the elements are fixed before the first body runs,
-        # so a body that adds a key, appends, or overwrites a later element does
-        # not change what is visited. What is inside an element is not copied, and
-        # a change made there is seen.
-        for key, item in list(iter_elements(args.val(0))):
-            frame[binder] = item
-            if '_K' in frame:
+        if '_K' in frame:
+            for key, item in list(iter_elements(args.val(0))):
+                frame[binder] = item
                 frame['_K'] = Value.text(key)
-            result = visit(args.eval_node(body), key, item, body)
-            if result is not None:
-                return result
+                result = visit(eval_node(body, ctx), key, item, body)
+                if result is not None:
+                    return result
+        else:
+            for item in element_values(args.val(0)):
+                frame[binder] = item
+                result = visit(eval_node(body, ctx), None, item, body)
+                if result is not None:
+                    return result
     finally:
         ctx.pop_frame()
     return None
@@ -132,21 +154,57 @@ _SCALAR_FRESH_CALLS = _FRESH_CALLS - {'LIST', 'RECORD'}
 
 def collected(value, body, args):
     """What an aggregate stores in its result (SPEC 3.4): a copy, one level down,
-    unless the body's node cannot have produced anything shared."""
-    if _is_fresh(body):
+    unless nothing in the program can write (Context.write_free) or the body's
+    node cannot have produced anything shared -- then only the copy's depth
+    check is made."""
+    if args.ctx.write_free or _is_fresh(body):
         value.check_depth(2, args.pos)
         return value
     return value.clone(args.pos, 2)
 
 
 def _map(args, ctx):
+    """walk() and collected(), written out: MAP runs its body once per row of
+    a pipeline, and a visit and a collected() call per element were the
+    measurable part of it."""
+    binder, body = shape(args)
+    frame = {binder: None}
+    with_k = node_contains_var(body, '_K')
+    if with_k:
+        frame['_K'] = None
+    # What the body returns is copied (SPEC 3.4) unless nothing in the program
+    # can write or the body built it; then only the copy's depth check is
+    # made, which a value with no children passes one level down.
+    hold = ctx.write_free or _is_fresh(body)
+    pos = args.pos
     out = []
-
-    def visit(r, k, i, body):
-        out.append(collected(r, body, args))
-        return None
-
-    walk(args, ctx, visit)
+    add = out.append
+    ctx.push_frame(frame)
+    try:
+        source = args.val(0)
+        if with_k:
+            for key, item in list(iter_elements(source)):
+                frame[binder] = item
+                frame['_K'] = Value.text(key)
+                r = eval_node(body, ctx)
+                if hold:
+                    if r.storage is not None or r.children:
+                        r.check_depth(2, pos)
+                    add(r)
+                else:
+                    add(r.clone(pos, 2))
+        else:
+            for item in element_values(source):
+                frame[binder] = item
+                r = eval_node(body, ctx)
+                if hold:
+                    if r.storage is not None or r.children:
+                        r.check_depth(2, pos)
+                    add(r)
+                else:
+                    add(r.clone(pos, 2))
+    finally:
+        ctx.pop_frame()
     return Value._list_owned(out)
 
 
@@ -317,56 +375,75 @@ def _filter(args, ctx):
             for node in rest[1:]:
                 body_override = Node('bin', body_override.pos, op='AND', l=body_override, r=node)
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
-    def keep(r, body):
-        return r.as_bool(body.pos)
     pos = args.pos
-    if args.adopt:
-        # The step after this one only reads what is kept and copies what it
-        # collects (optimizer.adopts_elements), so a kept element is handed on
-        # as it is. The copy also refuses an element nested past the cap, so
-        # that is still checked, without copying (Value.check_depth).
-        def kept(item):
-            item.check_depth(2, pos)
-            return item
-    else:
-        def kept(item):
-            return item.clone(pos, 2)
+    # Nothing in the program can write (Context.write_free), or the step after
+    # this one only reads what is kept and copies what it collects
+    # (optimizer.adopts_elements): a kept element is handed on as it is. The
+    # copy also refuses an element nested past the cap, so that is still
+    # checked, without copying (Value.check_depth) -- which an element with no
+    # children passes one level down.
+    hold = args.adopt or ctx.write_free
+    binder, body = shape(args)
+    if body_override is not None:
+        body = body_override
+    # Whether the predicate holds is asked without the BOOL it would build
+    # (eval.eval_cond) where its node has that form; any other node is
+    # evaluated as it was, without eval_cond's extra call per row.
+    cond = body.ev in _COND
+    body_pos = body.pos
+    frame = {binder: None}
+    with_k = node_contains_var(body, '_K')
+    if with_k:
+        frame['_K'] = None
     storage = []
+    add = storage.append
     keys = None
-    needs_custom_keys = False
-    orig_idx = 1
-
-    if is_dense:
-        def visit(r, key, item, body):
-            nonlocal needs_custom_keys, keys, orig_idx
-            if keep(r, body):
-                storage.append(kept(item))
-                if needs_custom_keys:
-                    keys.append(str(orig_idx))
-            else:
-                if not needs_custom_keys:
-                    needs_custom_keys = True
+    # walk(), written out: FILTER runs its predicate once per row of a
+    # pipeline, and a visit, a keep and a kept call per row were the
+    # measurable part of it. The source is the value read above.
+    ctx.push_frame(frame)
+    try:
+        if is_dense:
+            # A dense list's keys are its positions: the kept elements keep
+            # theirs, which only need writing down once one has been dropped.
+            n = 0
+            for item in list(in_val.storage):
+                n += 1
+                frame[binder] = item
+                if with_k:
+                    frame['_K'] = Value.text(str(n))
+                if (eval_cond(body, ctx) if cond else eval_node(body, ctx).as_bool(body_pos)):
+                    if hold:
+                        if item.storage is not None or item.children:
+                            item.check_depth(2, pos)
+                        add(item)
+                    else:
+                        add(item.clone(pos, 2))
+                    if keys is not None:
+                        keys.append(str(n))
+                elif keys is None:
                     keys = [str(j + 1) for j in range(len(storage))]
-            orig_idx += 1
-            return None
-    else:
-        expected_index = 1
-        def visit(r, key, item, body):
-            nonlocal needs_custom_keys, keys, expected_index
-            if keep(r, body):
-                storage.append(kept(item))
-                if not needs_custom_keys and str(key) != str(expected_index):
-                    needs_custom_keys = True
-                    keys = [str(j + 1) for j in range(len(storage) - 1)]
-                if needs_custom_keys:
-                    if keys is None:
-                        keys = []
-                    keys.append(str(key))
-                expected_index += 1
-            return None
-
-    walk(args, ctx, visit, body_override)
-    return Value._list_owned(storage, keys if needs_custom_keys else None)
+        else:
+            expected_index = 1
+            for key, item in list(iter_elements(in_val)):
+                frame[binder] = item
+                if with_k:
+                    frame['_K'] = Value.text(key)
+                if (eval_cond(body, ctx) if cond else eval_node(body, ctx).as_bool(body_pos)):
+                    if hold:
+                        if item.storage is not None or item.children:
+                            item.check_depth(2, pos)
+                        add(item)
+                    else:
+                        add(item.clone(pos, 2))
+                    if keys is None and str(key) != str(expected_index):
+                        keys = [str(j + 1) for j in range(len(storage) - 1)]
+                    if keys is not None:
+                        keys.append(str(key))
+                    expected_index += 1
+    finally:
+        ctx.pop_frame()
+    return Value._list_owned(storage, keys)
 
 
 def _sum(args, ctx):
@@ -570,6 +647,15 @@ def do_sort(args, ctx, forced_dir):
     # rule for DESC (SPEC 7.3: only unequal ranks reverse, ties stay put).
     keys = [sort_key(x['key']) for x in indexed]
     order = sorted(range(len(indexed)), key=keys.__getitem__, reverse=(direction == 'DESC'))
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        out = []
+        for i in order:
+            item = indexed[i]['item']
+            item.check_depth(2, args.pos)
+            out.append(item)
+        return Value._list_owned(out)
     return Value._list_owned([indexed[i]['item'] if indexed[i].get('owned') else indexed[i]['item'].clone(args.pos, 2)
                               for i in order])
 
@@ -651,6 +737,12 @@ def do_top(args, ctx, forced_dir):
         order = sorted(range(len(items)), key=keys.__getitem__, reverse=(direction == 'DESC'))
     else:
         order = select(limit, range(len(items)), key=keys.__getitem__)
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        for i in order:
+            items[i].check_depth(2, args.pos)
+        return Value._list_owned([items[i] for i in order])
     return Value._list_owned([items[i] if eager else items[i].clone(args.pos, 2) for i in order])
 
 
@@ -761,8 +853,17 @@ def do_bucket(args, ctx):
 
     if agg_node is None:
         out = Value.none()
+        hold = ctx.write_free
         for g in groups:
-            out.set(g['key_str'], Value._list_owned(g['rows'] if eager else [row.clone(args.pos, 3) for row in g['rows']]))
+            rows = g['rows']
+            if hold:
+                # Nothing can write (Context.write_free): the rows are held as
+                # they are, after the copy's depth check.
+                for row in rows:
+                    row.check_depth(3, args.pos)
+            elif not eager:
+                rows = [row.clone(args.pos, 3) for row in rows]
+            out.set(g['key_str'], Value._list_owned(rows))
         return out
 
     out = []

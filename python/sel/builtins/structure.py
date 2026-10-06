@@ -4,7 +4,8 @@ equi-join and nested-loop paths, and the run-time pre-filter that applies a
 FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
-from ..errors import SelError
+from ..errors import MAX_DEPTH, SelError, fail
+from ..eval import _CALL_HANDLERS, eval_cond, eval_node
 from ..lexer import ascii_lower, ascii_upper
 from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
@@ -39,6 +40,13 @@ define('HAS', 2, 2, fn=lambda args, ctx: Value.bool(args.val(0).has(args.text(1)
 # call rather than at 0:0 by whatever walks it later.
 def _list(args, ctx):
     check_collection(args.count(), args.pos)
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): held as they are, after the
+        # copy's depth check.
+        out = [args.val(i) for i in range(args.count())]
+        for v in out:
+            v.check_depth(2, args.pos)
+        return Value._list_owned(out)
     return Value._list_owned([args.val(i).clone(args.pos, 2) for i in range(args.count())])
 
 
@@ -63,6 +71,18 @@ def _record(args, ctx):
     # measurable part of it).
     nodes = args.nodes
     vals = []
+    if ctx.write_free:
+        # Nothing can write (Context.write_free): every field is held as it
+        # is, after the copy's depth check -- which a field with no children
+        # passes one level down.
+        for i in range(1, count, 2):
+            v = args.val(i)
+            if v.storage is not None or v.children:
+                v.check_depth(2, pos)
+            vals.append(v)
+        if shape is not None:
+            return Value._from_shape(shape, vals)
+        return Value._record_owned(keys, vals)
     for i in range(1, count, 2):
         v = args.val(i)
         n = nodes[i]
@@ -79,6 +99,39 @@ def _record(args, ctx):
 
 define('RECORD', 0, INF,
        fn=_record)
+
+
+def _eval_record(node, ctx):
+    """A RECORD whose keys are distinct text literals (Node.record_shape), as
+    the generic call and _record run it -- every argument in order, the
+    count's cap, then the fields copied or held -- without an Args and
+    without building the keys' values: a text literal yields its text and can
+    raise nothing but the E_DEPTH every argument shares, at the first one,
+    where this call stands at the cap."""
+    nodes = node.args
+    if ctx.depth >= MAX_DEPTH:
+        fail('E_DEPTH', 'evaluation nested too deeply', nodes[0].pos)
+    count = len(nodes)
+    vals = [eval_node(nodes[i], ctx) for i in range(1, count, 2)]
+    pos = node.pos
+    check_collection(count // 2, pos)
+    if ctx.write_free:
+        for v in vals:
+            if v.storage is not None or v.children:
+                v.check_depth(2, pos)
+        return Value._from_shape(node.record_shape, vals)
+    i = 1
+    for j, v in enumerate(vals):
+        n = nodes[i]
+        i += 2
+        t = n.t
+        if not (t == 'un' or (t == 'bin' and n.op not in COALESCE_OPS) or (
+                t == 'call' and n.name in _SCALAR_FRESH_CALLS)):
+            vals[j] = v.clone(pos, 2)
+    return Value._from_shape(node.record_shape, vals)
+
+
+_CALL_HANDLERS['RECORD'] = lambda node: _eval_record if node.record_shape is not None else None
 
 
 def _take(args, ctx):
@@ -1170,7 +1223,7 @@ def _link_verdict(call, conjuncts, row, frame):
     args = call.args
     for conjunct in conjuncts:
         try:
-            keep = args.eval_node(conjunct).as_bool(conjunct.pos)
+            keep = eval_cond(conjunct, args.ctx)
         except SelError:
             call.errored = True
             return 2
@@ -1347,7 +1400,7 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
         # made once (on the first left row, so an empty left side still does no
         # work), not once per PAIR -- it was 21% of a 500x500 join.
         rights = None if needs_right_alias else right_items
-        eval_predicate = args.eval_node
+        ctx = call.ctx
         for left_item in left_items:
             left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
             frame[b1] = left
@@ -1362,7 +1415,7 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
                 frame[b2] = right
                 frame[b2_lower] = right
                 frame['_2'] = right
-                if eval_predicate(predicate).as_bool(predicate.pos):
+                if eval_cond(predicate, ctx):
                     matched = True
                     check_collection(len(output) + 1, args.pos)
                     output.append(project(left, right))

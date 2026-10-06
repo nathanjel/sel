@@ -43,7 +43,8 @@ _COERCE = OpCode.COERCE
 
 
 class Context:
-    __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report')
+    __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report',
+                 'write_free')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
@@ -64,6 +65,14 @@ class Context:
         # error -- in which case the join above applies them all again -- and
         # whether any row was dropped.
         self.join_prefilter_report = None
+        # Nothing in the tree being evaluated can write: it holds no assignment
+        # and no call to an application's function (parser.may_write), and
+        # assignment is the one way a program changes a value. Then no copy a
+        # collector or a constructor makes (SPEC 3.4) can be told from what it
+        # copied, so they hold what they collect as it is, after the depth
+        # check the copy would have made (Value.check_depth). Off unless
+        # Program.run proved it for the tree it runs.
+        self.write_free = False
 
     def lookup(self, name: str) -> Value | None:
         frames = self.frames
@@ -507,11 +516,16 @@ def _eval_seq(node: Node, ctx: Context) -> Value:
 
 def _eval_call(node: Node, ctx: Context) -> Value:
     args = Args(node, ctx)
-    if not node.spec.lazy:
-        # Strict: every argument evaluated once, left to right, before the body.
-        for i in range(len(node.args)):
-            args.val(i)
-    return node.spec.fn(args, ctx)
+    spec = node.spec
+    if not spec.lazy:
+        # Strict: every argument evaluated once, left to right, before the body
+        # (Args.val's own work, without a call per argument).
+        vals = args._vals
+        i = 0
+        for arg in node.args:
+            vals[i] = eval_node(arg, ctx)
+            i += 1
+    return spec.fn(args, ctx)
 
 
 def _eval_unknown(node: Node, ctx: Context) -> Value:
@@ -542,7 +556,15 @@ def _eval_list(node: Node, ctx: Context) -> Value:
                 children = ()
             # Held one level down, and a value past the cap is refused here, at
             # the node that built it (SPEC 3.4), not at 0:0 by whatever walks it.
-            values.extend(child.clone(node.pos, 2) for child in children)
+            if ctx.write_free:
+                for child in children:
+                    child.check_depth(2, node.pos)
+                    values.append(child)
+            else:
+                values.extend(child.clone(node.pos, 2) for child in children)
+        elif ctx.write_free:
+            v.check_depth(2, node.pos)
+            values.append(v)
         else:
             values.append(v.clone(node.pos, 2))
         check_collection(len(values), node.pos)
@@ -625,52 +647,109 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     fail('E_SYNTAX', f'unknown operator {op}', node.pos)
 
 
-def _eval_and(node: Node, ctx: Context) -> Value:
-    if not eval_node(node.l, ctx).as_bool(node.l.pos):
-        return Value.bool(False)
-    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+# AND, OR, the six numeric comparisons, $== and $!= each have two forms: the
+# _cond_* function answers a Python bool, and the _eval_* one wraps it in the
+# BOOL Value eval_node returns. eval_cond() asks for the bool where a caller
+# only wants to know whether the node holds (FILTER's predicate, IF's
+# condition, a join's conjunct), so no Value is built per row for it.
+
+def _cond_and(node: Node, ctx: Context) -> bool:
+    return eval_cond(node.l, ctx) and eval_cond(node.r, ctx)
 
 
-def _eval_or(node: Node, ctx: Context) -> Value:
-    if eval_node(node.l, ctx).as_bool(node.l.pos):
-        return Value.bool(True)
-    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+def _cond_or(node: Node, ctx: Context) -> bool:
+    return eval_cond(node.l, ctx) or eval_cond(node.r, ctx)
 
 
-def _eval_compare(node: Node, ctx: Context) -> Value:
+def _cond_compare(node: Node, ctx: Context) -> bool:
     """The six numeric comparisons, exactly as _eval_binary runs them (only IN
-    carries a const_value, so the right operand is always evaluated)."""
+    carries a const_value, so the right operand is always evaluated) -- except
+    that a number literal on the right is read where its node keeps it.
+    Evaluating it would build a Value only to read back the node's decimal,
+    and it raises nothing: not even E_DEPTH, which the left operand, as deep,
+    has already met."""
     l = eval_node(node.l, ctx)
-    r = eval_node(node.r, ctx)
-    a = l.as_decimal(node.l.pos); b = r.as_decimal(node.r.pos)
+    rn = node.r
+    b = rn.dec if rn.t == 'num' else None
+    if b is None:
+        r = eval_node(rn, ctx)
+        a = l.as_decimal(node.l.pos); b = r.as_decimal(rn.pos)
+    else:
+        a = l.as_decimal(node.l.pos)
     op = node.op
     if a.scale == b.scale:
         left = -a.digits if a.neg else a.digits
         right = -b.digits if b.neg else b.digits
         if op == '>':
-            return Value.bool(left > right)
+            return left > right
         if op == '<':
-            return Value.bool(left < right)
+            return left < right
         if op == '==':
-            return Value.bool(left == right)
+            return left == right
         if op == '!=':
-            return Value.bool(left != right)
+            return left != right
         if op == '>=':
-            return Value.bool(left >= right)
-        return Value.bool(left <= right)
-    return Value.bool(compare_result(op, D.cmp(a, b), node.pos))
+            return left >= right
+        return left <= right
+    return compare_result(op, D.cmp(a, b), node.pos)
+
+
+def _cond_text_equal(node: Node, ctx: Context) -> bool:
+    """$== and $!=, as _eval_binary runs them -- except that an ASCII text
+    literal on the right is compared where its node keeps it, when the left
+    operand is a text with no children (as _eval_compare reads a number
+    literal; it raises nothing)."""
+    l = eval_node(node.l, ctx)
+    rn = node.r
+    v = rn.v
+    if rn.t == 'text' and l.kind == TEXT and not l.children and type(v) is str and v.isascii():
+        same = l.scalar == v
+    else:
+        r = eval_node(rn, ctx)
+        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
+            same = l.scalar == r.scalar
+        else:
+            a = l.as_bytes(node.l.pos); b = r.as_bytes(rn.pos)
+            same = a == b
+    return same if node.op == '$==' else not same
+
+
+def _eval_and(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_and(node, ctx))
+
+
+def _eval_or(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_or(node, ctx))
+
+
+def _eval_compare(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_compare(node, ctx))
 
 
 def _eval_text_equal(node: Node, ctx: Context) -> Value:
-    """$== and $!=, as _eval_binary runs them."""
-    l = eval_node(node.l, ctx)
-    r = eval_node(node.r, ctx)
-    if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
-        same = l.scalar == r.scalar
-    else:
-        a = l.as_bytes(node.l.pos); b = r.as_bytes(node.r.pos)
-        same = a == b
-    return Value.bool(same if node.op == '$==' else not same)
+    return Value(BOOL, _cond_text_equal(node, ctx))
+
+
+_COND = {_eval_and: _cond_and, _eval_or: _cond_or,
+         _eval_compare: _cond_compare, _eval_text_equal: _cond_text_equal}
+
+
+def eval_cond(node: Node, ctx: Context) -> builtins.bool:
+    """eval_node(node, ctx).as_bool(node.pos): whether NODE holds, without the
+    BOOL Value a node of the optimiser's own copy with a _cond_* form would
+    build only to be read back. The same depth count, and the same errors at
+    the same positions, as eval_node -- a BOOL's as_bool raises nothing."""
+    cond = _COND.get(node.ev)
+    if cond is None:
+        return eval_node(node, ctx).as_bool(node.pos)
+    ctx.depth += 1
+    if ctx.depth > MAX_DEPTH:
+        ctx.depth -= 1
+        fail('E_DEPTH', 'evaluation nested too deeply', node.pos)
+    try:
+        return cond(node, ctx)
+    finally:
+        ctx.depth -= 1
 
 
 _BINARY = {
@@ -886,6 +965,13 @@ _EVAL = {
 }
 
 
+# Builtins that run some calls of theirs without the Args framework: the name
+# maps to a function of the call node that returns the evaluator for that node,
+# or None when the node needs the generic call (structure.py registers RECORD).
+# Only handler_for reads it, so only the optimiser's own nodes take that path.
+_CALL_HANDLERS: dict[str, Any] = {}
+
+
 def handler_for(node: Node) -> Any:
     """The function eval_node runs NODE with, for the optimiser to stamp on the
     physical tree: a planned node's plan, or its type's entry in _EVAL."""
@@ -893,4 +979,10 @@ def handler_for(node: Node) -> Any:
         return _eval_planned
     if node.t == 'bin':
         return _BINARY.get(node.op, _eval_binary)
+    if node.t == 'call':
+        make = _CALL_HANDLERS.get(node.name)
+        if make is not None:
+            handler = make(node)
+            if handler is not None:
+                return handler
     return _EVAL.get(node.t, _eval_unknown)

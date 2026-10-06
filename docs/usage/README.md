@@ -590,10 +590,10 @@ A result may share values with the context. A bare variable, an index and
 `TAKE` hand back the context's own value in every host, and SPEC §3.4 lets a
 host skip the collectors' copies (`MAP`, `FILTER`, `SORT_BY`, `LIST`, …) in a
 program that has no assignment and no host function, because nothing in such
-a program can tell the difference; PHP and C++ do. If the host changes a result
-through the API, or stores it back into a context that a later program assigns
-into, and the original values must stay as they were, `clone()` the result
-first.
+a program can tell the difference; PHP, C++ and Python do. If the host changes a
+result through the API, or stores it back into a context that a later program
+assigns into, and the original values must stay as they were, `clone()` the
+result first.
 
 ## Errors
 

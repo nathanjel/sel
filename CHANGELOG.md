@@ -210,10 +210,20 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     two values per row of every FILTER, which S2 paid as fresh pages since the
     Value grew (the copies were already elided there). Scale S2 7.2 → 3.3 ms
     (0.9.2: 6.3), S4 −21%, S1 −4%, S3 −5%, S5 −8%, S6 −4%, Mandelbrot −4%.
-  - Host APIs (PHP, C++): in such a write-free program `run()`'s result may share
-    values with the context, as a bare variable, an index or `TAKE` already did;
-    `clone()` a result before changing it through the API if the context must
-    not see the change (docs/usage, "Variables flow back").
+  - Python: a program with no assignment and no host function makes no
+    collector copies (SPEC §3.4, as PHP and C++ above; a function `define()`d
+    outside the manifest counts as the application's), a `RECORD` with literal
+    keys builds no values for its keys and no argument wrapper, `MAP` and
+    `FILTER` loop over their elements without a key text each, and a condition
+    (`FILTER`, `IF`, `COND`, a join's pre-filter) builds neither its BOOL nor a
+    literal operand. 0.10.0 had left S1 and S3 3–4% slower than 0.9.2 (S1 made
+    169,183 copies a run). Against the previous main: S1 −31%, S2 −39%,
+    S3 −28%, S4 −45%, S5 −13%, S6 −8%, Mandelbrot −7%; against 0.9.2 every
+    scenario is 16–49% faster and Mandelbrot 34%.
+  - Host APIs (PHP, C++, Python): in such a write-free program `run()`'s result
+    may share values with the context, as a bare variable, an index or `TAKE`
+    already did; `clone()` a result before changing it through the API if the
+    context must not see the change (docs/usage, "Variables flow back").
 
 Performance (the review itself): measured A B B A against 0.10.0 on a quiet box, every host is
 within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the

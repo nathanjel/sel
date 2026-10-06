@@ -1,4 +1,5 @@
 from ..errors import fail
+from ..eval import eval_cond
 from ..registry import INF, define
 from ..value import Value
 
@@ -6,7 +7,7 @@ from ..value import Value
 # The whole of SEL's control flow. Lazy, so only the taken branch is evaluated —
 # exactly the property the AST calling convention exists to provide.
 def _if(args, ctx):
-    if args.bool(0):
+    if eval_cond(args.nodes[0], ctx):          # args.bool(0), without its BOOL
         return args.val(1)
     if args.count() == 3:
         return args.val(2)
@@ -27,8 +28,9 @@ define('IF', 2, 3, lazy=True, fn=_if)
 # the default turns that into a compile-time E_ARITY instead of a wrong answer.
 def _cond(args, ctx):
     last = args.count() - 1
+    nodes = args.nodes
     for i in range(0, last, 2):
-        if args.bool(i):
+        if eval_cond(nodes[i], ctx):            # args.bool(i), without its BOOL
             return args.val(i + 1)
     return args.val(last)
 

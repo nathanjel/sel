@@ -20,7 +20,7 @@ from . import builtins as _builtins   # noqa: F401  registers the function table
 from .errors import Pos, SelError, fail
 from .errors import MAX_DEPTH
 from .eval import Context as _Context, eval_node
-from .parser import Node, parse
+from .parser import Node, parse, may_write as _may_write
 from .registry import names as _names, binding_form as _binding_form
 from .registry import register_function
 from .opinfo import SHORT_CIRCUIT as _SHORT_CIRCUIT
@@ -65,8 +65,9 @@ class Program:
         # optimiser, built on the first run and kept, because the rewrite and
         # the copy it makes cost more than evaluating a small rule does. Keyed
         # by the identity of `ast` so a reassignment is noticed. Private; SQL
-        # translation never sees it.
-        self._physical: Node | None = None
+        # translation never sees it. Kept beside whether that tree can write
+        # nothing (Context.write_free), decided with it, as one pair.
+        self._physical: tuple[Node, bool] | None = None
         self._physical_of: Node | None = None
 
     def run(self, context: Any = None) -> Value:
@@ -77,6 +78,12 @@ class Program:
         particular a falsy one such as 0 or "" -- is E_BAD_ARG: it is not a
         context, and `run(1.5)` was already refused while `run(0.0)` quietly
         ran against an empty one.
+
+        The result may hold the context's own values: a bare variable, an
+        index and TAKE always hand them back, and a program with no assignment
+        and no application function makes none of SPEC 3.4's collector copies
+        (Context.write_free), since nothing in it can tell. Clone a result
+        before changing it through the API if the context must not see that.
         """
         if isinstance(context, Value):
             root = context
@@ -89,16 +96,26 @@ class Program:
         # The cyclic collector is paused for the run (sel/_gc.py): a run builds
         # rows, never cycles, and every pass the collector made found nothing.
         with _recursion_budget(), _bulk_allocation():
-            return eval_node(self.physical_ast(), _Context(root))
+            tree, write_free = self._physical_plan()
+            ctx = _Context(root)
+            ctx.write_free = write_free
+            return eval_node(tree, ctx)
 
     def physical_ast(self) -> Node:
         """The optimised tree run() evaluates, built once per `ast` and from the
         AST alone -- every other host's rule, which this host broke by keying
         the tree on the context too (SEL-0049): a fresh context per run rebuilt
         it, and its join-filter pushdown read the rows to decide a side."""
+        return self._physical_plan()[0]
+
+    def _physical_plan(self) -> tuple[Node, bool]:
         if self._physical_of is not self.ast:
             from .optimizer import optimize_ast
-            self._physical = optimize_ast(self.ast)
+            physical = optimize_ast(self.ast)
+            # An assignment or an application's function anywhere in the tree
+            # may write (parser.may_write), and then every copy SPEC 3.4 names
+            # is made.
+            self._physical = (physical, not _may_write(physical))
             self._physical_of = self.ast
         return self._physical
 
