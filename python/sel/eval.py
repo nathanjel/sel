@@ -647,52 +647,109 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     fail('E_SYNTAX', f'unknown operator {op}', node.pos)
 
 
-def _eval_and(node: Node, ctx: Context) -> Value:
-    if not eval_node(node.l, ctx).as_bool(node.l.pos):
-        return Value.bool(False)
-    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+# AND, OR, the six numeric comparisons, $== and $!= each have two forms: the
+# _cond_* function answers a Python bool, and the _eval_* one wraps it in the
+# BOOL Value eval_node returns. eval_cond() asks for the bool where a caller
+# only wants to know whether the node holds (FILTER's predicate, IF's
+# condition, a join's conjunct), so no Value is built per row for it.
+
+def _cond_and(node: Node, ctx: Context) -> bool:
+    return eval_cond(node.l, ctx) and eval_cond(node.r, ctx)
 
 
-def _eval_or(node: Node, ctx: Context) -> Value:
-    if eval_node(node.l, ctx).as_bool(node.l.pos):
-        return Value.bool(True)
-    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+def _cond_or(node: Node, ctx: Context) -> bool:
+    return eval_cond(node.l, ctx) or eval_cond(node.r, ctx)
 
 
-def _eval_compare(node: Node, ctx: Context) -> Value:
+def _cond_compare(node: Node, ctx: Context) -> bool:
     """The six numeric comparisons, exactly as _eval_binary runs them (only IN
-    carries a const_value, so the right operand is always evaluated)."""
+    carries a const_value, so the right operand is always evaluated) -- except
+    that a number literal on the right is read where its node keeps it.
+    Evaluating it would build a Value only to read back the node's decimal,
+    and it raises nothing: not even E_DEPTH, which the left operand, as deep,
+    has already met."""
     l = eval_node(node.l, ctx)
-    r = eval_node(node.r, ctx)
-    a = l.as_decimal(node.l.pos); b = r.as_decimal(node.r.pos)
+    rn = node.r
+    b = rn.dec if rn.t == 'num' else None
+    if b is None:
+        r = eval_node(rn, ctx)
+        a = l.as_decimal(node.l.pos); b = r.as_decimal(rn.pos)
+    else:
+        a = l.as_decimal(node.l.pos)
     op = node.op
     if a.scale == b.scale:
         left = -a.digits if a.neg else a.digits
         right = -b.digits if b.neg else b.digits
         if op == '>':
-            return Value.bool(left > right)
+            return left > right
         if op == '<':
-            return Value.bool(left < right)
+            return left < right
         if op == '==':
-            return Value.bool(left == right)
+            return left == right
         if op == '!=':
-            return Value.bool(left != right)
+            return left != right
         if op == '>=':
-            return Value.bool(left >= right)
-        return Value.bool(left <= right)
-    return Value.bool(compare_result(op, D.cmp(a, b), node.pos))
+            return left >= right
+        return left <= right
+    return compare_result(op, D.cmp(a, b), node.pos)
+
+
+def _cond_text_equal(node: Node, ctx: Context) -> bool:
+    """$== and $!=, as _eval_binary runs them -- except that an ASCII text
+    literal on the right is compared where its node keeps it, when the left
+    operand is a text with no children (as _eval_compare reads a number
+    literal; it raises nothing)."""
+    l = eval_node(node.l, ctx)
+    rn = node.r
+    v = rn.v
+    if rn.t == 'text' and l.kind == TEXT and not l.children and type(v) is str and v.isascii():
+        same = l.scalar == v
+    else:
+        r = eval_node(rn, ctx)
+        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
+            same = l.scalar == r.scalar
+        else:
+            a = l.as_bytes(node.l.pos); b = r.as_bytes(rn.pos)
+            same = a == b
+    return same if node.op == '$==' else not same
+
+
+def _eval_and(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_and(node, ctx))
+
+
+def _eval_or(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_or(node, ctx))
+
+
+def _eval_compare(node: Node, ctx: Context) -> Value:
+    return Value(BOOL, _cond_compare(node, ctx))
 
 
 def _eval_text_equal(node: Node, ctx: Context) -> Value:
-    """$== and $!=, as _eval_binary runs them."""
-    l = eval_node(node.l, ctx)
-    r = eval_node(node.r, ctx)
-    if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
-        same = l.scalar == r.scalar
-    else:
-        a = l.as_bytes(node.l.pos); b = r.as_bytes(node.r.pos)
-        same = a == b
-    return Value.bool(same if node.op == '$==' else not same)
+    return Value(BOOL, _cond_text_equal(node, ctx))
+
+
+_COND = {_eval_and: _cond_and, _eval_or: _cond_or,
+         _eval_compare: _cond_compare, _eval_text_equal: _cond_text_equal}
+
+
+def eval_cond(node: Node, ctx: Context) -> builtins.bool:
+    """eval_node(node, ctx).as_bool(node.pos): whether NODE holds, without the
+    BOOL Value a node of the optimiser's own copy with a _cond_* form would
+    build only to be read back. The same depth count, and the same errors at
+    the same positions, as eval_node -- a BOOL's as_bool raises nothing."""
+    cond = _COND.get(node.ev)
+    if cond is None:
+        return eval_node(node, ctx).as_bool(node.pos)
+    ctx.depth += 1
+    if ctx.depth > MAX_DEPTH:
+        ctx.depth -= 1
+        fail('E_DEPTH', 'evaluation nested too deeply', node.pos)
+    try:
+        return cond(node, ctx)
+    finally:
+        ctx.depth -= 1
 
 
 _BINARY = {

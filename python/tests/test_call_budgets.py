@@ -47,7 +47,11 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # loops themselves instead of through walk() with a visit (and FILTER a keep
 # and a kept) call per element, and every aggregate whose body never reads
 # _K took its elements without the key text iter_elements built for each.
-BUDGETS = {'pixel': 2179, 'rows': 4047}
+# pixel 2179 -> 2029 and rows 4047 -> 2247 when FILTER, IF and COND asked
+# whether a comparison, $==, $!=, AND or OR holds without building its BOOL
+# (eval.eval_cond), and a comparison read a number or ASCII text literal on
+# its right where its node keeps it instead of building a Value per row.
+BUDGETS = {'pixel': 2029, 'rows': 2247}
 
 
 def python_calls(label):

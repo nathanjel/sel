@@ -5,7 +5,7 @@ FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
 from ..errors import MAX_DEPTH, SelError, fail
-from ..eval import _CALL_HANDLERS, eval_node
+from ..eval import _CALL_HANDLERS, eval_cond, eval_node
 from ..lexer import ascii_lower, ascii_upper
 from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
@@ -1223,7 +1223,7 @@ def _link_verdict(call, conjuncts, row, frame):
     args = call.args
     for conjunct in conjuncts:
         try:
-            keep = args.eval_node(conjunct).as_bool(conjunct.pos)
+            keep = eval_cond(conjunct, args.ctx)
         except SelError:
             call.errored = True
             return 2
@@ -1400,7 +1400,7 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
         # made once (on the first left row, so an empty left side still does no
         # work), not once per PAIR -- it was 21% of a 500x500 join.
         rights = None if needs_right_alias else right_items
-        eval_predicate = args.eval_node
+        ctx = call.ctx
         for left_item in left_items:
             left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
             frame[b1] = left
@@ -1415,7 +1415,7 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
                 frame[b2] = right
                 frame[b2_lower] = right
                 frame['_2'] = right
-                if eval_predicate(predicate).as_bool(predicate.pos):
+                if eval_cond(predicate, ctx):
                     matched = True
                     check_collection(len(output) + 1, args.pos)
                     output.append(project(left, right))

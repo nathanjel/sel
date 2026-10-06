@@ -7,7 +7,7 @@ import heapq
 from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
-from ..eval import eval_node
+from ..eval import _COND, eval_cond, eval_node
 from ..parser import Node, may_write
 from ..opinfo import COALESCE_OPS, RELATIONAL, TEXT_COMPARE
 from ..registry import define, sort_form
@@ -386,6 +386,10 @@ def _filter(args, ctx):
     binder, body = shape(args)
     if body_override is not None:
         body = body_override
+    # Whether the predicate holds is asked without the BOOL it would build
+    # (eval.eval_cond) where its node has that form; any other node is
+    # evaluated as it was, without eval_cond's extra call per row.
+    cond = body.ev in _COND
     body_pos = body.pos
     frame = {binder: None}
     with_k = node_contains_var(body, '_K')
@@ -408,7 +412,7 @@ def _filter(args, ctx):
                 frame[binder] = item
                 if with_k:
                     frame['_K'] = Value.text(str(n))
-                if eval_node(body, ctx).as_bool(body_pos):
+                if (eval_cond(body, ctx) if cond else eval_node(body, ctx).as_bool(body_pos)):
                     if hold:
                         if item.storage is not None or item.children:
                             item.check_depth(2, pos)
@@ -425,7 +429,7 @@ def _filter(args, ctx):
                 frame[binder] = item
                 if with_k:
                     frame['_K'] = Value.text(key)
-                if eval_node(body, ctx).as_bool(body_pos):
+                if (eval_cond(body, ctx) if cond else eval_node(body, ctx).as_bool(body_pos)):
                     if hold:
                         if item.storage is not None or item.children:
                             item.check_depth(2, pos)
