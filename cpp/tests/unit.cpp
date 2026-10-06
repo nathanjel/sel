@@ -335,7 +335,7 @@ void test_karatsuba_and_early_range() {
   selt::eq(bad_rows, 0, "the schoolbook rows and squares equal an independent product on " + std::to_string(rows) + " pairs");
   int bad_mul = 0, bad_sqr = 0, products = 0;
   for (int it = 0; it < 150; ++it) {
-    const size_t sizes[] = {1, 2, 31, 32, 33, 47, 48, 49, 64, 65, 97, 130, 200, 333};
+    const size_t sizes[] = {1, 2, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 97, 333};
     const size_t na = it < 14 ? sizes[it] : 1 + next() % 340;
     const size_t nb = it < 14 ? sizes[13 - it] : 1 + next() % 340;
     const bn::Nat a = words(na, static_cast<int>(next() % 3)), b = words(nb, static_cast<int>(next() % 3));

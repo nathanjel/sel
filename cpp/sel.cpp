@@ -660,6 +660,25 @@ inline std::uint64_t addmul_1(Out acc, Span a, std::uint64_t m) {
   return carry;
 }
 
+// Where Karatsuba takes over from the schoolbook rows: the thresholds above
+// (the Rust host's) for the portable rows; with the ADX rows, which are about
+// 1.5 times as fast, the crossover moves up to 64 words for a product and 96
+// for a square (measured in-process, best of 15, from 32 to 266 words: the
+// 133-word square 8% and product 10% faster than at 48 and 32).
+inline std::size_t karatsuba_mul_at() {
+#if SEL_BN_ADX
+  if (HAVE_ADX) return 64;
+#endif
+  return KARATSUBA;
+}
+
+inline std::size_t karatsuba_sqr_at() {
+#if SEL_BN_ADX
+  if (HAVE_ADX) return 96;
+#endif
+  return KARATSUBA_SQR;
+}
+
 // acc[..a.size()] -= a * m; the word borrowed out.
 inline std::uint64_t submul_1(Out acc, Span a, std::uint64_t m) {
   std::uint64_t borrow = 0;
@@ -884,7 +903,7 @@ void karatsuba(Out out, Span x, Span y, Out scratch);
 void mul_into(Out out, Span a, Span b, Out scratch) {
   if (a.size() < b.size()) std::swap(a, b);
   if (b.empty()) return;
-  if (b.size() < KARATSUBA) {
+  if (b.size() < karatsuba_mul_at()) {
     basecase_mul(out, a, b);
   } else if (a.size() >= 2 * b.size()) {
     // Unbalanced: the long factor in pieces as long as the short one.
@@ -942,7 +961,7 @@ void karatsuba(Out out, Span x, Span y, Out scratch) {
 // out = a^2, out zeroed and 2 a.size() + 1 long: Karatsuba's squaring,
 // a^2 = a0^2 (1 + B^h) + a1^2 (B^h + B^2h) - (a1 - a0)^2 B^h.
 void sqr_into(Out out, Span a, Out scratch) {
-  if (a.size() < KARATSUBA_SQR) {
+  if (a.size() < karatsuba_sqr_at()) {
     basecase_sqr(out, a);
     return;
   }
@@ -974,7 +993,7 @@ Nat sqr(Span a) {
   a = trimmed(a);
   const std::size_t n = 2 * a.size() + 1;
   Nat out(n, 0);
-  if (a.size() < KARATSUBA_SQR) {
+  if (a.size() < karatsuba_sqr_at()) {
     basecase_sqr(out, a);
   } else {
     with_scratch(scratch_len(n), [&](Out s) { sqr_into(out, a, s); });
@@ -1000,7 +1019,7 @@ Nat mul(Span a, Span b) {
   }
   const std::size_t n = a.size() + b.size() + 1;
   Nat out(n, 0);
-  if (std::min(a.size(), b.size()) < KARATSUBA) {
+  if (std::min(a.size(), b.size()) < karatsuba_mul_at()) {
     if (a.size() >= b.size()) {
       basecase_mul(out, a, b);
     } else {
