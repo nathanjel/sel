@@ -80,6 +80,34 @@ func aggregateWalk(args *Args, ctx *Context, visit visitFunc, bodyOverride *Node
 	return nil
 }
 
+// condWalk is aggregateWalk for a body read as a condition (FILTER, ALL, ANY):
+// the body goes through evalCond, so a comparison builds no BOOL per element.
+// visit gets the condition, the element's key and the element, and ends the
+// walk by returning true.
+func condWalk(args *Args, ctx *Context, visit func(keep bool, key string, item *Value) bool, bodyOverride *Node) {
+	binder, body := aggregateShape(args)
+	if bodyOverride != nil {
+		body = bodyOverride
+	}
+	coll := args.Val(0)
+	frame := map[string]*Value{binder: nil}
+	if nodeContainsVar(body, "_K") {
+		frame["_K"] = nil
+	}
+	ctx.PushFrame(frame)
+	defer ctx.PopFrame()
+
+	for _, entry := range coll.Elements() {
+		frame[binder] = entry.Val
+		if _, ok := frame["_K"]; ok {
+			frame["_K"] = NewText(entry.Key)
+		}
+		if visit(evalCond(body, ctx), entry.Key, entry.Val) {
+			return
+		}
+	}
+}
+
 // sortRank is the kind rank of the total order (spec §7.3): NULL < BOOL <
 // numeric-looking text and numbers < other TEXT < BIN < lists and records.
 // sortLeaf is the value scalar context reads (spec §3.2: the first child,
@@ -1728,16 +1756,12 @@ func init() {
 		Lazy:  true,
 		Binds: true,
 		Fn: func(args *Args, ctx *Context) *Value {
-			short := aggregateWalk(args, ctx, func(r *Value, k string, item *Value, body *Node) *Value {
-				if !r.AsBool(body.Pos) {
-					return NewBool(false)
-				}
-				return nil
+			all := true
+			condWalk(args, ctx, func(keep bool, _ string, _ *Value) bool {
+				all = keep
+				return !keep
 			}, nil)
-			if short != nil {
-				return short
-			}
-			return NewBool(true)
+			return NewBool(all)
 		},
 	})
 
@@ -1748,16 +1772,12 @@ func init() {
 		Lazy:  true,
 		Binds: true,
 		Fn: func(args *Args, ctx *Context) *Value {
-			short := aggregateWalk(args, ctx, func(r *Value, k string, item *Value, body *Node) *Value {
-				if r.AsBool(body.Pos) {
-					return NewBool(true)
-				}
-				return nil
+			found := false
+			condWalk(args, ctx, func(keep bool, _ string, _ *Value) bool {
+				found = keep
+				return keep
 			}, nil)
-			if short != nil {
-				return short
-			}
-			return NewBool(false)
+			return NewBool(found)
 		},
 	})
 
@@ -1872,8 +1892,8 @@ func init() {
 			origIdx := 1
 
 			if isDense {
-				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
-					if r.AsBool(body.Pos) {
+				condWalk(args, ctx, func(keep bool, key string, item *Value) bool {
+					if keep {
 						storage = append(storage, keepRow(item, noCopy, args.Pos()))
 						if needsCustomKeys {
 							keys = append(keys, strconv.Itoa(origIdx))
@@ -1888,12 +1908,12 @@ func init() {
 						}
 					}
 					origIdx++
-					return nil
+					return false
 				}, overrideBody)
 			} else {
 				expectedIndex := 1
-				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
-					if r.AsBool(body.Pos) {
+				condWalk(args, ctx, func(keep bool, key string, item *Value) bool {
+					if keep {
 						storage = append(storage, keepRow(item, noCopy, args.Pos()))
 						if !needsCustomKeys && key != strconv.Itoa(expectedIndex) {
 							needsCustomKeys = true
@@ -1907,7 +1927,7 @@ func init() {
 						}
 						expectedIndex++
 					}
-					return nil
+					return false
 				}, overrideBody)
 			}
 			if needsCustomKeys {

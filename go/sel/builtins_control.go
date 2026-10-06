@@ -13,7 +13,7 @@ func init() {
 		Max:  3,
 		Lazy: true,
 		Fn: func(args *Args, ctx *Context) *Value {
-			if args.Bool(0) {
+			if args.cond(0) {
 				return args.Val(1)
 			}
 			if args.Count() == 3 {
@@ -31,7 +31,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			last := args.Count() - 1
 			for i := 0; i < last; i += 2 {
-				if args.Bool(i) {
+				if args.cond(i) {
 					return args.Val(i + 1)
 				}
 			}
