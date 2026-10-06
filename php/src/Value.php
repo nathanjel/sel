@@ -1051,6 +1051,45 @@ final class Value
     }
 
     /**
+     * copyBelow()'s depth check without the copy, for a value a collector may
+     * hold as it is: the body built the value and nothing else holds it. The
+     * same E_DEPTH at the same `$pos` as copyBelow(), and the value itself back.
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    public function checkDepthBelow(int $below, ?array $pos = null): Value
+    {
+        if ($this->storage === null && $this->children === null) {
+            if ($below + 1 > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', $pos);
+            return $this;
+        }
+        $this->checkDepthAt($below + 1, $pos);
+        return $this;
+    }
+
+    /**
+     * Fails where copyAt($depth) would: a level past MAX_DEPTH. A childless
+     * element -- almost every field of a row -- is settled without a call.
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    private function checkDepthAt(int $depth, ?array $pos): void
+    {
+        if ($depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', $pos);
+        // The branches copyAt takes, in its order.
+        $items = ($this->shape !== null || ($this->isList && $this->storage !== null)) ? $this->storage : $this->children;
+        if ($items === null) return;
+        $next = $depth + 1;
+        foreach ($items as $child) {
+            if ($child->storage === null && $child->children === null) {
+                if ($next > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', $pos);
+            } else {
+                $child->checkDepthAt($next, $pos);
+            }
+        }
+    }
+
+    /**
      * A copy of a record made to be written through by a program that assigns
      * only to the top-level names in `$writable`: those children are
      * deep-copied, every other top-level child is shared with the original. The

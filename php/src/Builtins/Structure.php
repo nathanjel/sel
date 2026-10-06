@@ -1928,7 +1928,9 @@ final class Structure
                 $aggregateFrame['_K'] = $group['key'];
                 $ctx->setFrameValue($binder, $aggregateFrame[$binder]);
                 $ctx->setFrameValue('_K', $aggregateFrame['_K']);
-                $out[] = $a->evalNode($aggregateNode)->copyBelow(1, $a->pos);
+                $projected = $a->evalNode($aggregateNode);
+                $out[] = Core::buildsItsResult($aggregateNode)
+                    ? $projected->checkDepthBelow(1, $a->pos) : $projected->copyBelow(1, $a->pos);
             }
         } finally {
             $ctx->popFrame();

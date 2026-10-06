@@ -434,6 +434,27 @@ final class Core
     }
 
     /**
+     * Whether evaluating $node always yields a value no other reference holds: a
+     * RECORD or LIST call (which copied its own arguments, or holds them where
+     * nothing can write) or an operator that builds its result -- arithmetic, a
+     * comparison, `&`, the logic and bitwise operators, unary minus and NOT --
+     * never `??` or `???`, which hand back an operand. A collector holding such a
+     * value needs no copy of it (spec §3.4), only the copy's depth check.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    public static function buildsItsResult(?array $node): bool
+    {
+        if ($node === null) return false;
+        return match ($node['t']) {
+            'call' => $node['name'] === 'RECORD' || $node['name'] === 'LIST',
+            'bin' => $node['op'] !== '??' && $node['op'] !== '???',
+            'un' => true,
+            default => false,
+        };
+    }
+
+    /**
      * Whether evaluating $node might write into a value: it holds an assignment or
      * calls a host function. A collector copies an element when it collects it
      * (spec §3.4); while nothing below the body can write, deferring the copy to
@@ -489,10 +510,20 @@ final class Core
             'fn' => static function (Args $a, Context $ctx): Value {
                 $out = [];
                 $pos = $a->pos;
-                self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
-                    $out[] = $r->copyBelow(1, $pos);
-                    return null;
-                });
+                // MAP collects what its body returns (spec §3.4): a copy, unless
+                // the body built the value and nothing else holds it -- then only
+                // the copy's depth check is made.
+                if (self::buildsItsResult(self::shape($a)['body'])) {
+                    self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
+                        $out[] = $r->checkDepthBelow(1, $pos);
+                        return null;
+                    });
+                } else {
+                    self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
+                        $out[] = $r->copyBelow(1, $pos);
+                        return null;
+                    });
+                }
                 return Value::list($out);
             }]);
 
