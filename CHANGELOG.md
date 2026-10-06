@@ -192,6 +192,16 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     wrong products, removed in 0.10.0; `dec.mul.repeated-square-past-10e38`,
     `dec.mul.eight-squarings-keep-every-digit` and `dec.mul.integers-past-int128`
     now pin the exact results in every host.
+  - C++: a program with no assignment and no host function makes no collector
+    copies (SPEC §3.4, as PHP above), a FILTER before a sort or TOP keeps its
+    rows uncopied, and an index over a variable allocates nothing — scale S2
+    7.6 → 5.1 ms (0.9.2: 6.6), S4 −9%, the other scenarios unchanged. A
+    projected BUCKET now copies a projection value that names a variable, as
+    every other host did (`alias.aggregate-copies.bucket-projection-of-a-variable`).
+  - Host APIs (PHP, C++): in such a write-free program `run()`'s result may share
+    values with the context, as a bare variable, an index or `TAKE` already did;
+    `clone()` a result before changing it through the API if the context must
+    not see the change (docs/usage, "Variables flow back").
 
 Performance (the review itself): measured A B B A against 0.10.0 on a quiet box, every host is
 within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
