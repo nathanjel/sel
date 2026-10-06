@@ -2295,6 +2295,32 @@ struct Internals {
     return v;
   }
   static const void* identity(const Value& v) { return v.p_; }
+  // A plain record's lookup by position, for Context's name hints: whether `v`
+  // is a record whose children are its keys (no shape, not a list), and the
+  // child at `index` when its key is `key`. Keys in such a record are unique
+  // and keep their positions (Value::set), so a key confirmed there is exactly
+  // the child Value::get would find.
+  static bool plain_record(const Value& v) {
+    const Value::Impl* p = v.p_;
+    return p && p->collection && !p->collection->shape && !p->is_list;
+  }
+  static const Value* child_if_keyed(const Value& v, std::size_t index, const std::string& key) {
+    const std::vector<Value::Entry>& children = v.p_->collection->children;
+    if (index >= children.size()) return nullptr;
+    const std::string& at = children[index].first;
+    if (at.size() != key.size()) return nullptr;
+    for (std::size_t i = 0; i < key.size(); ++i) {
+      if (at[i] != key[i]) return nullptr;
+    }
+    return &children[index].second;
+  }
+  // Value::get on a plain record, reporting the child's position.
+  static const Value* find_child(const Value& v, const std::string& key, std::size_t& index) {
+    const auto it = v.find(key);
+    if (it == v.p_->collection->children.end()) return nullptr;
+    index = static_cast<std::size_t>(it - v.p_->collection->children.begin());
+    return &it->second;
+  }
   static Value shaped_direct(std::shared_ptr<const RecordShape> shape, std::size_t reserve_size) {
     Value v(Value::make_collection_impl());
     v.p_->mutable_coll().shape = std::move(shape);
@@ -4526,6 +4552,19 @@ struct Context {
   std::vector<std::optional<Value>> math_raw;
   size_t math_scratchpad_top = 0;
 
+  // Where a variable was last found in the root record, by the address of the
+  // name asked for: the AST's or a plan step's string, which live as long as
+  // the program, so one reference reads the same name every time. Only a hint:
+  // the key at that position is compared with the name before the child is
+  // used (Internals::child_if_keyed), so a stale or colliding entry costs a
+  // search and never a wrong value. Saves the record search -- a scan of the
+  // root's index -- on nearly every read of a variable.
+  struct RootHint {
+    const std::string* name = nullptr;
+    std::size_t index = 0;
+  };
+  mutable std::array<RootHint, 64> root_hints{};
+
   explicit Context(Value& r) : root(&r) {}
 
   const Value* lookup(const std::string& name) const {
@@ -4534,7 +4573,18 @@ struct Context {
         if (e.first == name) return &e.second;
       }
     }
-    return root->get(name);
+    if (!Internals::plain_record(*root)) return root->get(name);
+    RootHint& hint = root_hints[(reinterpret_cast<std::uintptr_t>(&name) * 0x9E3779B97F4A7C15ULL) >> 58];
+    if (hint.name == &name) {
+      if (const Value* v = Internals::child_if_keyed(*root, hint.index, name)) return v;
+    }
+    std::size_t index = 0;
+    const Value* v = Internals::find_child(*root, name, index);
+    if (v) {
+      hint.name = &name;
+      hint.index = index;
+    }
+    return v;
   }
 
   bool is_bound(const std::string& name) const {
