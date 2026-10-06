@@ -558,12 +558,19 @@ another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.
 
 Leaving a copy out is allowed exactly where §3.4 allows it, where nothing can
-tell. PHP makes none in a program whose evaluated tree holds no assignment and
-no host-function call (`Context::$writeFree`), and none of a value the body
-built itself (`Core::buildsItsResult`); either way it still makes the copy's
-depth check (`Value::checkDepthBelow`), because `E_DEPTH` is the one thing a copy
-reports that such a program can see. Made everywhere, those copies were a fifth
-to a third of the PHP scale scenarios' time.
+tell. PHP and C++ make none in a program whose evaluated tree holds no
+assignment and no host-function call (`Context::$writeFree`,
+`Context::write_free`, decided once with the physical tree), and none of a value
+the body built itself (PHP's `Core::buildsItsResult`; C++'s `adopt_or_clone`
+keeps any value nothing else holds); either way they still make the copy's depth
+check (`Value::checkDepthBelow`, `Internals::check_clone_depth`), because
+`E_DEPTH` is the one thing a copy reports that such a program can see. C++ also
+lets a `FILTER` keep its rows uncopied when the next pipeline step copies what it
+keeps (a `MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`).
+Made everywhere, those copies were a fifth to a third of the PHP scale
+scenarios' time and over a quarter of C++ scenario 2's. A write-free program's
+result may hold the context's own values, as a bare variable's and `TAKE`'s
+always could; a host that changes a result through its API clones it first.
 
 C++ is the host where this is easy to get wrong, because `Value` is a handle
 over an intrusive, reference-counted `Impl` and copying it *looks* like a deep

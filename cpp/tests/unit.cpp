@@ -625,16 +625,18 @@ void test_bucket_rows_alias_when_unobservable() {
                    "_[\"k\"] & \"=\" & _[\"s\"]), \",\")"),
            std::string("t\"a=3,b=5\""), "a read-only projection answers as before");
   // A row that reaches the result is a copy: changing it through the host API must
-  // not change the variable it came from.
+  // not change the variable it came from. The programs assign (`Z = 0`), so they
+  // make the copies spec §3.4 names; one that cannot write makes none
+  // (test_write_free_programs_hold).
   {
     Value ctx = Value::none();
     compile(L + "0").run(ctx);
-    Value out = compile("BUCKET(L, _[\"k\"], RECORD(\"rows\", _))").run(ctx);
+    Value out = compile("Z = 0; BUCKET(L, _[\"k\"], RECORD(\"rows\", _))").run(ctx);
     Value row = *(*(*out.get("1")).get("rows")).get("1");
     row.set("v", Value::integer(77));
     selt::eq(ctx.get("L")->get("1")->get("v")->scalar(), std::string("1"),
              "a row a RECORD projection keeps is a copy, not the variable's row");
-    Value out2 = compile("BUCKET(L, _[\"k\"], LIST(_[1], COUNT(_)))").run(ctx);
+    Value out2 = compile("Z = 0; BUCKET(L, _[\"k\"], LIST(_[1], COUNT(_)))").run(ctx);
     Value row2 = *(*out2.get("1")).get("1");
     row2.set("v", Value::integer(78));
     selt::eq(ctx.get("L")->get("1")->get("v")->scalar(), std::string("1"), "and so is one a LIST projection keeps");
@@ -677,7 +679,17 @@ void test_filter_borrows_rows_for_a_read_only_next_step() {
   selt::eq(flags("L .> FILTER((X = 1; _[\"v\"] > 0)) .> MAP(_)"), std::string("c"), "a FILTER body that assigns");
   selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> MAP(REG1_POKE(_))"), std::string("c"),
            "a next step that calls a host function");
-  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"])"), std::string("c"), "a next step that is not MAP/FILTER");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"])"), std::string("B"), "read-only FILTER then SORT_BY");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT()"), std::string("B"), "read-only FILTER then SORT");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TOP_BY(_[\"v\"], 2)"), std::string("B"), "read-only FILTER then TOP_BY");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"]) .> TAKE(2)"), std::string("B"),
+           "read-only FILTER then a SORT_BY and TAKE (one TOP_BY)");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(REG1_POKE(_))"), std::string("c"),
+           "a next sort whose key calls a host function");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TOP_BY(_[\"v\"], (X = 2))"), std::string("c"),
+           "a next TOP whose count assigns");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> TAKE(2)"), std::string("c"), "a next step that aliases (TAKE)");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> DISTINCT()"), std::string("c"), "a next step that aliases (DISTINCT)");
   selt::eq(flags("L .> FILTER(_[\"v\"] > 0)"), std::string("c"), "no next step");
 
   auto run = [](const std::string& src) {
@@ -688,9 +700,10 @@ void test_filter_borrows_rows_for_a_read_only_next_step() {
   selt::eq(run(L + "JOIN(L .> FILTER(_[\"v\"] > 1) .> MAP(_[\"v\"] * 2), \",\")"), std::string("t\"4,6\""),
            "the answer is unchanged");
   {
+    // The program assigns (`Z = 0`), so it copies (a write-free one would not).
     Value ctx = Value::none();
     compile(L + "0").run(ctx);
-    Value out = compile("L .> FILTER(_[\"v\"] > 1) .> MAP(_)").run(ctx);
+    Value out = compile("Z = 0; L .> FILTER(_[\"v\"] > 1) .> MAP(_)").run(ctx);
     Value row = *out.get("1");
     row.set("v", Value::integer(77));
     selt::eq(ctx.get("L")->get("2")->get("v")->scalar(), std::string("2"), "what the MAP after it keeps is a copy");
@@ -707,6 +720,22 @@ void test_filter_borrows_rows_for_a_read_only_next_step() {
   }
   selt::ok(!copy_err.empty(), "the copying FILTER refuses the too-deep element");
   selt::eq(borrow_err, copy_err, "the borrowing FILTER refuses it the same way");
+  // A borrowing FILTER before a sort: the sort copies what it keeps, so a host
+  // function after it that writes the source does not reach the sorted rows.
+  static std::optional<Value> poke_row;
+  register_function("REG2_POKE", 0, 0, [](HostArgs&) {
+    if (poke_row) poke_row->set("v", Value::integer(100));
+    return Value::integer(0);
+  });
+  {
+    Value ctx = Value::none();
+    compile(L + "0").run(ctx);
+    poke_row = *ctx.get("L")->get("2");
+    const std::string got =
+        compile("JOIN(L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"]) .> MAP(REG2_POKE() + _[\"v\"]), \",\")").run(ctx).dump();
+    poke_row.reset();
+    selt::eq(got, std::string("t\"1,2,3\""), "a host function's write after the sort does not reach its rows");
+  }
 }
 
 void test_pipeline_temporaries_are_kept() {
@@ -770,6 +799,95 @@ void test_pipeline_temporaries_are_kept() {
            std::string("t\"0,2\""), "TOP of a temporary");
   selt::eq(run("B = BUCKET(MAP(LIST(1, 2), RECORD(\"k\", _)), _[\"k\"], _); B[1][1][\"k\"] = 9; B[2][1][\"k\"]"),
            std::string("t\"2\""), "buckets of a temporary stay independent of each other");
+}
+
+// The physical tree evaluated with the copies made (write_free false) or left out.
+std::string outcome_physical(const Program& prog, Value& root, bool write_free) {
+  try {
+    const NodePtr tree = prog.physical_ast();
+    Context ctx(root);
+    ctx.write_free = write_free;
+    return "v " + eval_node(*tree, ctx).dump();
+  } catch (const SelError& e) {
+    return "e " + e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col);
+  }
+}
+
+// A program with no assignment and no host function anywhere in its tree cannot
+// write, so no copy a collector or a constructor makes (spec §3.4) could be told
+// from what it copied, and it makes none (Context::write_free): its result may hold
+// the context's own elements, as TAKE's and a bare variable's do. One that can
+// write makes every copy. Either way the copy's depth check is made.
+void test_write_free_programs_hold() {
+  selt::section("a program that cannot write makes no collector copies");
+  const auto setup = [] {
+    Value ctx = Value::none();
+    compile("X = LIST(RECORD(\"k\", 1), RECORD(\"k\", 2))").run(ctx);
+    return ctx;
+  };
+  const std::vector<std::string> forms = {
+      "MAP(X, _)[1]", "FILTER(X, _[\"k\"] > 0)[1]", "SORT_BY(X, _[\"k\"])[1]", "SORT(X)[1]",
+      "TOP(X, _[\"k\"], 1)[1]", "BUCKET(X, _[\"k\"])[\"1\"][1]", "BUCKET(X, _[\"k\"], _)[1][1]",
+      "RECORD(\"a\", X[1])[\"a\"]", "LIST(X[1])[1]", "(X, 0)[1]",
+      "(X .> FILTER(_[\"k\"] > 0) .> SORT_BY(_[\"k\"]) .> TAKE(1) .> MAP(_))[1]"};
+  for (const std::string& src : forms) {
+    Value ctx = setup();
+    const Program prog = compile(src);
+    const Value got = prog.run(ctx);
+    selt::ok(Internals::identity(got) == Internals::identity(*ctx.get("X")->get("1")),
+             src + ": holds the context's element when nothing can write");
+    // An assignment anywhere in the program brings every copy back.
+    Value ctx2 = setup();
+    const Value copied = compile("Y = 0; " + src).run(ctx2);
+    selt::ok(Internals::identity(copied) != Internals::identity(*ctx2.get("X")->get("1")),
+             src + ": copies beside an assignment");
+    selt::eq(copied.dump(), got.dump(), src + ": the same answer either way");
+  }
+
+  // A host function may write (spec §3.4): one that rewrites X[1] after FILTER (MAP,
+  // SORT_BY) collected it must not reach the result, so its program copies.
+  static std::optional<Value> poke_target;
+  register_function("WF_POKE", 0, 0, [](HostArgs&) {
+    if (poke_target) poke_target->set("k", Value::integer(9));
+    return Value::integer(1);
+  });
+  for (const char* src : {"FILTER(X, _[\"k\"] > 0)[WF_POKE()][\"k\"]", "MAP(X, _)[WF_POKE()][\"k\"]",
+                          "SORT_BY(X, _[\"k\"])[WF_POKE()][\"k\"]", "LIST(X[1], X[2])[WF_POKE()][\"k\"]"}) {
+    Value ctx = setup();
+    poke_target = *ctx.get("X")->get("1");
+    const std::string got = compile(src).run(ctx).dump();
+    poke_target.reset();
+    selt::eq(got, std::string("t\"1\""), std::string(src) + ": a host function's write does not reach the result");
+  }
+
+  // The depth check the copy made is still made: the same E_DEPTH at the same
+  // position, or the same answer, with the copies and without, just below the cap
+  // and past it.
+  auto nest = [](int levels) {
+    Value v = Value::text("x");
+    for (int i = 1; i < levels; i++) v = Value::list({v});
+    return v;
+  };
+  for (const char* src : {"MAP(LIST(1), D)", "FILTER(E, TRUE)", "SORT(E)", "SORT_BY(E, 1)", "TOP(E, 1, 1)",
+                          "BUCKET(E, 1)", "BUCKET(E, 1, _)", "BUCKET(LIST(1), \"a\", D)", "RECORD(\"a\", D)",
+                          "LIST(D)", "(D, 1)", "(E, 1)"}) {
+    bool raised = false;
+    for (int levels : {MAX_DEPTH - 2, MAX_DEPTH - 1, MAX_DEPTH, MAX_DEPTH + 1}) {
+      const Program prog = compile(std::string("COUNT(") + src + ")");
+      auto fresh = [&] {
+        Value ctx = Value::none();
+        ctx.set("D", nest(levels));
+        ctx.set("E", Value::list({nest(levels)}));
+        return ctx;
+      };
+      Value a = fresh(), b = fresh();
+      const std::string held = outcome_physical(prog, a, true);
+      const std::string copied = outcome_physical(prog, b, false);
+      raised = raised || copied.rfind("e E_DEPTH", 0) == 0;
+      selt::eq(held, copied, std::string(src) + " at " + std::to_string(levels) + " levels: as the copy answers");
+    }
+    selt::ok(raised, std::string(src) + ": the copy meets E_DEPTH at one of the depths tried");
+  }
 }
 
 void test_filter_packed_result() {
@@ -1988,7 +2106,7 @@ void test_plain_vs_optimised() {
   std::sort(files.begin(), files.end());
   if (files.empty()) { selt::ok(true, "conformance/ not reachable from here: skipped"); return; }
 
-  std::size_t programs = 0, diffs = 0;
+  std::size_t programs = 0, diffs = 0, copy_diffs = 0;
   for (const std::string& path : files) {
     // The budget file builds values of the size caps on purpose, three times a
     // program here; conformance and tools/check-budgets.sh already run it, and
@@ -2019,14 +2137,21 @@ void test_plain_vs_optimised() {
           if (!setup.empty()) compile(setup).run(root);
           return root;
         };
-        Value a = fresh(), b = fresh(), c = fresh();
+        Value a = fresh(), b = fresh(), c = fresh(), d = fresh();
         const std::string plain = outcome_plain(prog, a) + " | " + a.dump();
         const std::string first = outcome_run(prog, b) + " | " + b.dump();
         const std::string second = outcome_run(prog, c) + " | " + c.dump();
+        // The physical tree with every copy of spec §3.4 made, against run(),
+        // which leaves them out of a program that cannot write (Context::write_free).
+        const std::string copying = outcome_physical(prog, d, false) + " | " + d.dump();
         programs++;
         if (plain != first || plain != second) {
           diffs++;
           if (diffs <= 5) selt::ok(false, "plain vs optimised differ for " + name + ": " + plain.substr(0, 80) + " vs " + first.substr(0, 80));
+        }
+        if (copying != first) {
+          copy_diffs++;
+          if (copy_diffs <= 5) selt::ok(false, "copying vs write-free differ for " + name + ": " + copying.substr(0, 80) + " vs " + first.substr(0, 80));
         }
       } catch (const SelError&) {
         // A compile error or a setup error has no run to compare.
@@ -2045,6 +2170,8 @@ void test_plain_vs_optimised() {
   }
   selt::ok(diffs == 0, "no conformance program differs between plain and optimised evaluation (" +
                            std::to_string(programs) + " compared, " + std::to_string(diffs) + " differ)");
+  selt::ok(copy_diffs == 0, "no conformance program differs with the collector copies made (" +
+                                std::to_string(programs) + " compared, " + std::to_string(copy_diffs) + " differ)");
 }
 
 // The host boundary (spec/SPEC.md §8). C++ has no native
@@ -2507,6 +2634,7 @@ int main() {
   test_bucket_rows_alias_when_unobservable();
   test_filter_borrows_rows_for_a_read_only_next_step();
   test_pipeline_temporaries_are_kept();
+  test_write_free_programs_hold();
   test_filter_packed_result();
   test_round2_fast_paths();
   test_round3_fast_paths();
