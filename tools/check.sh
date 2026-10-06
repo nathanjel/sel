@@ -297,7 +297,7 @@ step "regex resources" sel_slot sel_hold php -- python3 tools/check-regex-resour
 # Every host's error messages follow one set of conventions (the codes and
 # positions are the contract; the wording is held to the same rules). Guarded on
 # the file so a tree that does not have the check yet still runs.
-[ ! -f tools/check-messages.py ] || step "message conventions" python3 tools/check-messages.py
+[ ! -f tools/check-messages.py ] || step "message conventions" sel_hold php -- python3 tools/check-messages.py
 step "regex validator vs reference, every host" ./tools/check-regex-ambiguity-diff.sh
 step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every runner refuses a path it cannot read and a run that executed nothing.

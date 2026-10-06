@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -73,6 +74,9 @@ def cases():
     return found
 
 
+TIMEOUT = object()
+
+
 def main():
     hosts = impls()
     if len(hosts) < 2:
@@ -87,15 +91,27 @@ def main():
         with open(os.path.join(work, f'{i}.sel'), 'wb') as fh:
             fh.write(src.encode('utf-8'))
 
+    # Under the gate this runs inside `sel_hold php` (tools/check.sh): one PHP
+    # slot is already held, so impl_cli's sel_php runs at once instead of waiting
+    # for a slot inside the timeout below -- and the PHP probes then take turns
+    # on that one slot here, which keeps PHP within the gate's bound.
+    php_turn = threading.Semaphore(1) if 'php' in os.environ.get('SEL_SLOT_HELD', '').split() else None
+
     def run(job):
         i, host = job
         path = os.path.join(work, f'{i}.sel')
+        held = php_turn if host == 'php' else None
         try:
+            if held:
+                held.acquire()
             r = subprocess.run(['bash', '-c', '. tools/impls.sh; impl_cli "$0" "$1"', host, path],
                                cwd=ROOT, capture_output=True, timeout=300)
             err = r.stderr.decode('utf-8', 'replace').split('\n')[0]
         except subprocess.TimeoutExpired:
-            err = 'TIMEOUT'
+            err = TIMEOUT
+        finally:
+            if held:
+                held.release()
         return i, host, err
 
     jobs = int(os.environ.get('SEL_JOBS') or max(2, (os.cpu_count() or 4) // 2))
@@ -105,6 +121,14 @@ def main():
             messages.setdefault(i, {})[host] = err
 
     failures = 0
+    # A run that timed out says nothing about its message; report it as what it
+    # is rather than as a disagreement over a detail it never printed.
+    for i, (name, _) in enumerate(todo):
+        for h, m in messages[i].items():
+            if m is TIMEOUT:
+                failures += 1
+                print(f'TIMEOUT {name}: {h} gave no answer within 300 s')
+        messages[i] = {h: m for h, m in messages[i].items() if m is not TIMEOUT}
     for i, (name, _) in enumerate(todo):
         for what, rx in DETAILS:
             got = {h: (rx.search(m).group(1) if rx.search(m) else None) for h, m in messages[i].items()}
@@ -119,7 +143,7 @@ def main():
                 shown = '(none)' if v is None else v if len(v) <= 120 else v[:117] + '...'
                 print(f'    {",".join(hs):<36} {shown}')
     if failures:
-        print(f'check-messages: {failures} disagreement(s) over {len(todo)} cases on: {" ".join(hosts)}')
+        print(f'check-messages: {failures} disagreement(s) or timeout(s) over {len(todo)} cases on: {" ".join(hosts)}')
         return 1
     print(f'check-messages: {len(todo)} cases, the agreed details agree on: {" ".join(hosts)}')
     return 0
