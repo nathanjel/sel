@@ -5279,14 +5279,22 @@ Value eval_dispatch(const Node& node, Context& ctx) {
       // `A["a"] AND A["a"] AND ...` sits one level deeper than counting the
       // variable as a node of its own would put it (pinned by
       // lim.eval-depth.aggregate-body-*; every host reads it that way).
-      Value obj;
+      // A literal key -- `_["id"]`, nearly every index -- evaluates nothing
+      // between the lookup and the read, so the variable is read where it
+      // stands, with no handle of its own (an empty Value allocates one).
+      // A computed key may rebind the variable, which must not change the
+      // value already read (spec §3.4), so that one is held.
+      const Value* var = nullptr;
       if (node.l->t == NT::Var) {
-        const Value* v = ctx.lookup(node.l->s);
-        if (!v) fail("E_UNDEF_VAR", "undefined variable " + node.l->s, node.l->pos);
-        obj = *v;
-      } else {
-        obj = eval_node(*node.l, ctx);
+        var = ctx.lookup(node.l->s);
+        if (!var) fail("E_UNDEF_VAR", "undefined variable " + node.l->s, node.l->pos);
+        if (node.r->t == NT::Text) {
+          const Value* child = var->get(node.r->s);
+          if (!child) fail("E_NO_KEY", "no key " + quote_dump(node.r->s), node.pos);
+          return *child;
+        }
       }
+      const Value obj = var ? *var : eval_node(*node.l, ctx);
       if (node.r->t == NT::Text) {
         const Value* child = obj.get(node.r->s);
         if (!child) fail("E_NO_KEY", "no key " + quote_dump(node.r->s), node.pos);
