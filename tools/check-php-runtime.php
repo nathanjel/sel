@@ -1222,6 +1222,33 @@ $expect('lazy digits: a chain of big products converts no digits in between', fu
         return $growth <= 0 ? true : "$growth conversions for 40 more products";
     });
 });
+$expect('collectors copy only where a write could tell (Context::$writeFree): a write-free program holds the elements, an assignment or a host function brings the copies back', function () {
+    $ctx = Value::fromNative(['X' => [['k' => 1], ['k' => 2]]]);
+    $x1 = $ctx->get('X')->get('1');
+    // No assignment, no host function: MAP, FILTER, SORT_BY, RECORD and `,` hold X's own element.
+    foreach (['MAP(X, _)[1]', 'FILTER(X, TRUE)[1]', 'SORT_BY(X, _["k"])[1]', 'RECORD("a", X[1])["a"]', '(X, 0)[1]', 'LIST(X[1])[1]'] as $src) {
+        if (\Sel\Sel::compile($src)->run($ctx) !== $x1) return "$src copied in a write-free program";
+    }
+    // An assignment anywhere: the copy is made, and observable (conformance/25).
+    if (\Sel\Sel::compile('Y = 0; MAP(X, _)[1]')->run($ctx) === $x1) return 'MAP held an element beside an assignment';
+    // A host function may write (SPEC 3.4): one that rewrites X[1] after FILTER collected it
+    // must not reach FILTER's result.
+    \Sel\Sel::registerFunction('T_POKE', 0, 0, static function () use ($x1): Value { $x1->set('k', Value::int(9)); return Value::text('1'); });
+    try {
+        $got = \Sel\Sel::compile('FILTER(X, TRUE)[T_POKE()]["k"]')->run($ctx)->asText();
+    } finally {
+        $x1->set('k', Value::int(1));
+    }
+    if ($got !== '1') return "a host function's write reached FILTER's result: $got";
+    // The depth check the copy made is still made: a 200-level element is refused one level down.
+    $deep = Value::int(7);
+    for ($i = 1; $i < 200; $i++) $deep = Value::list([$deep]);
+    $dctx = Value::none(); $dctx->set('D', $deep); $dctx->set('E', Value::list([$deep]));
+    foreach (['MAP(LIST(1), D)', 'FILTER(E, TRUE)', 'SORT(E)', 'RECORD("a", D)', 'BUCKET(LIST(1), "a", D)'] as $src) {
+        try { \Sel\Sel::compile($src)->run($dctx); return "$src: no E_DEPTH"; } catch (SelError $e) { if ($e->code !== 'E_DEPTH') return "$src: {$e->code}"; }
+    }
+    return true;
+});
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

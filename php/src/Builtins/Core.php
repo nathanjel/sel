@@ -71,25 +71,28 @@ final class Core
             'fn' => static fn (Args $a): Value => Value::bool($a->val(0)->has($a->text(1)))]);
 
         Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
-            'fn' => static function (Args $a): Value {
+            'fn' => static function (Args $a, Context $ctx): Value {
                 $n = $a->count();
                 if ($n > Limits::MAX_COLLECTION) Budget::checkCollection($n, $a->pos, 'the list');
                 $out = [];
+                $hold = $ctx->writeFree;
                 for ($i = 0; $i < $n; $i++) {
-                    $out[] = $a->val($i)->copyBelow(1, $a->pos);
+                    $out[] = $hold ? $a->val($i)->checkDepthBelow(1, $a->pos) : $a->val($i)->copyBelow(1, $a->pos);
                 }
                 return Value::list($out);
             }]);
 
         Registry::define(['name' => 'RECORD', 'min' => 0, 'max' => PHP_INT_MAX,
-            'fn' => static function (Args $a): Value {
+            'fn' => static function (Args $a, Context $ctx): Value {
                 $n = $a->count();
                 if ($n === 0) return Value::none();
                 if ($n >> 1 > Limits::MAX_COLLECTION) Budget::checkCollection($n >> 1, $a->pos, 'the record');
+                // Copied as `,` copies (spec §3.4), unless nothing can write.
+                $hold = $ctx->writeFree;
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {
-                        $values[] = $a->val($i)->copyBelow(1, $a->pos);
+                        $values[] = $hold ? $a->val($i)->checkDepthBelow(1, $a->pos) : $a->val($i)->copyBelow(1, $a->pos);
                     }
                     return Value::fromShape($a->recordShape, $values);
                 }
@@ -97,7 +100,7 @@ final class Core
                 $values = [];
                 for ($i = 0; $i < $n; $i += 2) {
                     $keys[] = $a->text($i);
-                    $values[] = $a->val($i + 1)->copyBelow(1, $a->pos);
+                    $values[] = $hold ? $a->val($i + 1)->checkDepthBelow(1, $a->pos) : $a->val($i + 1)->copyBelow(1, $a->pos);
                 }
                 return Value::record($keys, $values);
             }]);
@@ -291,8 +294,9 @@ final class Core
             $indexed = [];
             $idx = 0;
             $pos = $a->pos;
-            $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx, $pos): void {
-                $indexed[] = ['item' => $item->copyBelow(1, $pos), 'sk' => self::sortKey($item), 'idx' => $idx++];
+            $hold = $ctx->writeFree;
+            $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx, $pos, $hold): void {
+                $indexed[] = ['item' => $hold ? $item->checkDepthBelow(1, $pos) : $item->copyBelow(1, $pos), 'sk' => self::sortKey($item), 'idx' => $idx++];
             });
         } else {
             // The form (Registry::sortForm): a text-literal third slot is the
@@ -325,7 +329,7 @@ final class Core
                         $ctx->setFrameValue('_K', $frame['_K']);
                     }
                     $evalKey = $a->evalNode($body);
-                    $indexed[] = ['item' => $item->copyBelow(1, $a->pos), 'sk' => self::sortKey($evalKey), 'idx' => $idx++];
+                    $indexed[] = ['item' => $ctx->writeFree ? $item->checkDepthBelow(1, $a->pos) : $item->copyBelow(1, $a->pos), 'sk' => self::sortKey($evalKey), 'idx' => $idx++];
                 });
             } finally {
                 $ctx->popFrame();
@@ -434,6 +438,27 @@ final class Core
     }
 
     /**
+     * Whether evaluating $node always yields a value no other reference holds: a
+     * RECORD or LIST call (which copied its own arguments, or holds them where
+     * nothing can write) or an operator that builds its result -- arithmetic, a
+     * comparison, `&`, the logic and bitwise operators, unary minus and NOT --
+     * never `??` or `???`, which hand back an operand. A collector holding such a
+     * value needs no copy of it (spec §3.4), only the copy's depth check.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    public static function buildsItsResult(?array $node): bool
+    {
+        if ($node === null) return false;
+        return match ($node['t']) {
+            'call' => $node['name'] === 'RECORD' || $node['name'] === 'LIST',
+            'bin' => $node['op'] !== '??' && $node['op'] !== '???',
+            'un' => true,
+            default => false,
+        };
+    }
+
+    /**
      * Whether evaluating $node might write into a value: it holds an assignment or
      * calls a host function. A collector copies an element when it collects it
      * (spec §3.4); while nothing below the body can write, deferring the copy to
@@ -489,10 +514,20 @@ final class Core
             'fn' => static function (Args $a, Context $ctx): Value {
                 $out = [];
                 $pos = $a->pos;
-                self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
-                    $out[] = $r->copyBelow(1, $pos);
-                    return null;
-                });
+                // MAP collects what its body returns (spec §3.4): a copy, unless
+                // nothing can write, or the body built the value and nothing else
+                // holds it -- then only the copy's depth check is made.
+                if ($ctx->writeFree || self::buildsItsResult(self::shape($a)['body'])) {
+                    self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
+                        $out[] = $r->checkDepthBelow(1, $pos);
+                        return null;
+                    });
+                } else {
+                    self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
+                        $out[] = $r->copyBelow(1, $pos);
+                        return null;
+                    });
+                }
                 return Value::list($out);
             }]);
 
@@ -550,7 +585,7 @@ final class Core
                 if ($own !== null && $report !== null && !$report[1]) {
                     $rest = [];
                     foreach ($own as $entry) {
-                        if (!isset($report[0][Structure::conjunctId($entry['node'])])) $rest[] = $entry['node'];
+                        if (!isset($report[0][$entry['id']])) $rest[] = $entry['node'];
                     }
                     if (count($rest) < count($own)) {
                         if ($rest === []) return $source;
@@ -561,11 +596,12 @@ final class Core
                     }
                 }
                 $pos = $a->pos;
+                $hold = $ctx->writeFree;
                 self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
-                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $pos
+                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $pos, $hold
                 ): ?Value {
                     if ($r->asBool($body['pos'])) {
-                        $storage[] = $item->copyBelow(1, $pos);
+                        $storage[] = $hold ? $item->checkDepthBelow(1, $pos) : $item->copyBelow(1, $pos);
                         // The key as written, not (int) of it: "1x", "01" and
                         // " 1" all cast to 1.
                         $inPlace = is_int($key) ? $key === $expectedIndex : $key === (string) $expectedIndex;

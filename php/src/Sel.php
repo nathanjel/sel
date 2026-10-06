@@ -35,6 +35,8 @@ final class Program
     private ?array $physical = null;
     /** The $ast the physical tree was built from. */
     private ?array $physicalOf = null;
+    /** Whether the physical tree is write-free (Context::$writeFree), decided with it. */
+    private bool $physicalWriteFree = false;
 
     /** @param array<string,mixed> $ast */
     public function __construct(string $source, array $ast)
@@ -116,7 +118,14 @@ final class Program
             gc_disable();
         }
         try {
-            return Evaluator::evalNode($physical ? $this->physicalAst() : $this->ast, new Context($root));
+            $ctx = new Context($root);
+            if ($physical) {
+                $tree = $this->physicalAst();
+                $ctx->writeFree = $this->physicalWriteFree;
+            } else {
+                $tree = $this->ast;
+            }
+            return Evaluator::evalNode($tree, $ctx);
         } finally {
             if ($wasGcEnabled) {
                 gc_enable();
@@ -162,6 +171,9 @@ final class Program
         if ($this->physical === null || $this->physicalOf !== $this->ast) {
             $this->physical = Optimizer::optimize($this->ast, true);
             $this->physicalOf = $this->ast;
+            // An assignment or a host function anywhere in the tree may write, and
+            // then every copy the spec names is made (spec §3.4).
+            $this->physicalWriteFree = !Builtins\Core::mayWrite($this->physical);
         }
         return $this->physical;
     }

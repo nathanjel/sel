@@ -931,13 +931,14 @@ final class Structure
 
     /**
      * Every AND-conjunct of a FILTER body, in order, as
-     * ['node' => ..., 'fields' => set|null, 'total' => reqs|null, 'binder' => ...]
+     * ['node' => ..., 'fields' => set|null, 'total' => reqs|null, 'binder' => ..., 'id' => key]
      * for a LINK to pre-apply to its left rows. `fields`: the upper-cased
      * fields of the row the conjunct reads (a nested `_["orders"]["year"]`
      * reads ORDERS), or null when it reads anything else. `total`: for a
      * comparison between literals and bare field reads, the [name, kind]
      * requirements under which it cannot raise; null when not provable.
-     * @return list<array{node: array, fields: array<string,true>|null, total: list<array{0:string,1:string}>|null, binder: string}>
+     * `id`: the key the join reports the conjunct applied under (conjunctId).
+     * @return list<array{node: array, fields: array<string,true>|null, total: list<array{0:string,1:string}>|null, binder: string, id: string}>
      */
     public static function leadingFieldConjuncts(array $body, string $binder): array
     {
@@ -984,7 +985,7 @@ final class Structure
                     $total[] = [$operand['idx']['v'], $kind];
                 }
             }
-            $out[] = ['node' => $c, 'fields' => $ok ? $fields : null, 'total' => $total, 'binder' => $binder];
+            $out[] = ['node' => $c, 'fields' => $ok ? $fields : null, 'total' => $total, 'binder' => $binder, 'id' => self::conjunctId($c)];
         }
         return $out;
     }
@@ -1038,8 +1039,16 @@ final class Structure
         return [$applied, null];
     }
 
-    /** A key naming one conjunct node of the tree: arrays have no identity, and the position and shape of a node do. */
-    public static function conjunctId(array $node): string
+    /**
+     * A key naming one conjunct node of the tree: arrays have no identity, and the
+     * position and shape of a node do. Taken ONCE per FILTER call, by
+     * leadingFieldConjuncts, and carried in the entry as `id`: a node holds
+     * inline caches (`slotCache`) that evaluation rewrites, so the same node
+     * hashed after the join below had run differed from the key the join had
+     * reported, and the FILTER re-tested every joined row the join had already
+     * tested -- and copied each one it kept.
+     */
+    private static function conjunctId(array $node): string
     {
         return json_encode($node['pos']) . '|' . ($node['op'] ?? $node['t']) . '|' . md5((string) json_encode($node, JSON_PARTIAL_OUTPUT_ON_ERROR));
     }
@@ -1414,7 +1423,7 @@ final class Structure
                 $selfNames = [Utf8::upper($b1) => true, '_1' => true];
                 [$applied, ] = $safe ? self::stageWalk($stages, $ownedHere, $totalHere, $rightHere) : [[], null];
                 foreach ($applied as [$c, $stage, $right]) {
-                    $key = self::conjunctId($c['node']);
+                    $key = $c['id'];
                     $appliedIds[$key] = true;
                     if (isset($appliedBelow[$key])) continue;
                     if ($right) {
@@ -1801,6 +1810,7 @@ final class Structure
         usort($heap, $compare);
         $pos = $a->pos;
         if ($eager) return Value::list(array_map(static fn (array $entry): Value => $entry['item'], $heap));
+        if ($ctx->writeFree) return Value::list(array_map(static fn (array $entry): Value => $entry['item']->checkDepthBelow(1, $pos), $heap));
         return Value::list(array_map(static fn (array $entry): Value => $entry['item']->copyBelow(1, $pos), $heap));
     }
 
@@ -1905,7 +1915,9 @@ final class Structure
             // levels below the result, a list inside the record.
             foreach ($groups as $group) {
                 $rows = [];
-                foreach ($group['rows'] as $row) $rows[] = $eager ? $row : $row->copyBelow(2, $a->pos);
+                foreach ($group['rows'] as $row) {
+                    $rows[] = $eager ? $row : ($ctx->writeFree ? $row->checkDepthBelow(2, $a->pos) : $row->copyBelow(2, $a->pos));
+                }
                 $out->set($group['keyString'], Value::list($rows));
             }
             return $out;
@@ -1919,7 +1931,9 @@ final class Structure
                 $aggregateFrame['_K'] = $group['key'];
                 $ctx->setFrameValue($binder, $aggregateFrame[$binder]);
                 $ctx->setFrameValue('_K', $aggregateFrame['_K']);
-                $out[] = $a->evalNode($aggregateNode)->copyBelow(1, $a->pos);
+                $projected = $a->evalNode($aggregateNode);
+                $out[] = $ctx->writeFree || Core::buildsItsResult($aggregateNode)
+                    ? $projected->checkDepthBelow(1, $a->pos) : $projected->copyBelow(1, $a->pos);
             }
         } finally {
             $ctx->popFrame();
