@@ -184,7 +184,12 @@ class Shard:
     def __init__(self, host, index, work, oracles, checks, env, slots):
         self.host, self.index, self.slots = host, index, slots
         self.tree = os.path.join(work, f'{host}.{index}')
-        self.oracles, self.checks, self.env = oracles, checks, env
+        self.oracles, self.checks = oracles, checks
+        # A fasl cache per shard: the Lisp shards start together on an empty
+        # cache, and two SBCLs compiling Quicklisp's dependencies into one
+        # directory can read each other's half-written fasl -- a baseline then
+        # fails on an unmutated tree.
+        self.env = dict(env, XDG_CACHE_HOME=os.path.join(work, f'xdg-cache.{host}.{index}'))
         self.log = os.path.join(work, f'{host}.{index}.log')
 
     def label(self):
@@ -359,9 +364,9 @@ def main(argv):
         # whole-second mtime and its size, so a same-size mutant restored in the
         # second it was compiled would be graded as the mutant again.
         env['PYTHONDONTWRITEBYTECODE'] = '1'
-        # The Lisp copies compile into a cache of their own, removed with the
-        # run, rather than leaving a fasl tree per run under ~/.cache.
-        env['XDG_CACHE_HOME'] = os.path.join(work, 'xdg-cache')
+        # The Lisp copies compile into caches of their own (one per shard, see
+        # Shard), removed with the run, rather than leaving fasl trees under
+        # ~/.cache.
         # Go keeps its own build cache: content-addressed, so sharing is safe.
         if 'GOCACHE' not in env:
             gocache = subprocess.run(['go', 'env', 'GOCACHE'], capture_output=True, text=True)

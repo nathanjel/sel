@@ -105,7 +105,12 @@
 (declaim (inline pow10))
 (defun pow10 (k)
   (declare (optimize (speed 3) (safety 1)))
-  (declare (type fixnum k))
+  ;; Never negative: 10^K for K < 0 is not an integer, and big-pow10 below
+  ;; refuses one. Saying so here keeps a call site whose argument is known to be
+  ;; at most 18 from deriving that the out-of-table branch gets a negative K --
+  ;; SBCL 2.6.9 reports that conflict as a full WARNING, which fails a plain
+  ;; ASDF load (lisp/bin/check-load).
+  (declare (type (integer 0 #.most-positive-fixnum) k))
   (if (and (>= k 0) (<= k 18))
       (svref *pow10-table* k)
       (or (gethash k *pow10-cache*)
