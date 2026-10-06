@@ -1666,9 +1666,11 @@ Dec dec_guard(Dec&& d, Pos pos) {
   if (d.small) {
     return std::move(d);
   }
-  // At most scale + MAX_INT_DIGITS mantissa digits. The bounds decide every
-  // value not within a digit of that line; only those are counted exactly.
+  // At most scale + MAX_INT_DIGITS mantissa digits. A word holds fewer than
+  // 20 digits, so the word count settles nearly every value; the bounds decide
+  // every value not within a digit of the line; only those are counted exactly.
   const long long limit = static_cast<long long>(d.scale) + MAX_INT_DIGITS;
+  if (!d.words.empty() && static_cast<long long>(d.words.size()) * 20 <= limit) return std::move(d);
   const auto [lo, hi] = dec_digit_bounds(d);
   const bool over = hi > limit && (lo > limit || dec_ndigits(d) > limit);
   if (over) {
