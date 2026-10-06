@@ -864,18 +864,18 @@ void basecase_sqr(Out out, Span a) {
   for (std::size_t i = 0; i + 1 < n; ++i) {
     out[i + n] = addmul_1(out.subspan(2 * i + 1), a.subspan(i + 1), a[i]);
   }
-  // Doubling and the diagonal in one pass, two words at a time. The cross
-  // products sum to under a^2 / 2, so the doubled sum still fits in 2n words.
   std::uint64_t top = 0;
+  for (std::size_t i = 0; i < 2 * n; ++i) {
+    const std::uint64_t x = out[i];
+    out[i] = x << 1 | top;
+    top = x >> 63;
+  }
   std::uint64_t carry = 0;
   for (std::size_t i = 0; i < n; ++i) {
-    const std::uint64_t x0 = out[2 * i], x1 = out[2 * i + 1];
-    const std::uint64_t d0 = x0 << 1 | top, d1 = x1 << 1 | x0 >> 63;
-    top = x1 >> 63;
     const u128 sq = static_cast<u128>(a[i]) * a[i];
-    const u128 lo = static_cast<u128>(d0) + static_cast<std::uint64_t>(sq) + carry;
+    const u128 lo = static_cast<u128>(out[2 * i]) + static_cast<std::uint64_t>(sq) + carry;
     out[2 * i] = static_cast<std::uint64_t>(lo);
-    const u128 hi = static_cast<u128>(d1) + static_cast<std::uint64_t>(sq >> 64) +
+    const u128 hi = static_cast<u128>(out[2 * i + 1]) + static_cast<std::uint64_t>(sq >> 64) +
                     static_cast<std::uint64_t>(lo >> 64);
     out[2 * i + 1] = static_cast<std::uint64_t>(hi);
     carry = static_cast<std::uint64_t>(hi >> 64);
