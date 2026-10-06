@@ -550,7 +550,7 @@ final class Core
                 if ($own !== null && $report !== null && !$report[1]) {
                     $rest = [];
                     foreach ($own as $entry) {
-                        if (!isset($report[0][Structure::conjunctId($entry['node'])])) $rest[] = $entry['node'];
+                        if (!isset($report[0][$entry['id']])) $rest[] = $entry['node'];
                     }
                     if (count($rest) < count($own)) {
                         if ($rest === []) return $source;
