@@ -120,6 +120,14 @@ type Node struct {
 
 	mathPlan *mathPlan
 
+	// lit is the value a number or text literal evaluates to, made once with the
+	// node (parser, constant folding): what an operator reads for a literal
+	// operand (operand). An operator only reads its operands and builds a fresh
+	// result, so the one value cannot be told from a fresh one; anything that may
+	// keep or hand on what it evaluated (an argument, a branch, a result) still
+	// gets a fresh value from evalNode. nil on a node made elsewhere.
+	lit *Value
+
 	keysUnobserved bool
 }
 

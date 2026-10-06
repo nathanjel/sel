@@ -353,6 +353,7 @@ func (p *parser) parsePrimary() *Node {
 		n := NewNode(NodeNum, t.Pos)
 		n.S = decimal.Format(parsed)
 		n.dec = parsed
+		n.lit = literalValue(n)
 		return n
 	}
 
@@ -360,6 +361,7 @@ func (p *parser) parsePrimary() *Node {
 		p.next()
 		n := NewNode(NodeText, t.Pos)
 		n.S = t.Value
+		n.lit = literalValue(n)
 		return n
 	}
 

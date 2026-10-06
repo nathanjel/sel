@@ -81,6 +81,32 @@ func evalNode(node *Node, ctx *Context) *Value {
 	return res
 }
 
+// literalValue is a fresh value of a number or text literal, as dispatch makes
+// one per evaluation; a node keeps one in lit for operand.
+func literalValue(node *Node) *Value {
+	if node.T == NodeNum {
+		return &Value{kind: KindText, strVal: node.S, decVal: node.dec}
+	}
+	return newTextOwned(node.S)
+}
+
+// operand evaluates an operand of a binary operator: evalNode, except that a
+// literal yields the value its node keeps (Node.lit) instead of a fresh one,
+// after the depth check evalNode makes. Every operator past AND, OR, ?? and ???
+// only reads its operands and builds a fresh result, so nothing can tell the
+// two apart; a FILTER over a large list that compared each row with a literal
+// built that literal once per row.
+func operand(node *Node, ctx *Context) *Value {
+	if node.lit == nil {
+		return evalNode(node, ctx)
+	}
+	if ctx.depth >= maxDepth {
+		ctx.noCopy = nil
+		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
+	}
+	return node.lit
+}
+
 func dispatch(node *Node, ctx *Context) *Value {
 	switch node.T {
 	case NodeNum:
@@ -275,8 +301,8 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		return l
 	}
 
-	l := evalNode(node.L, ctx)
-	r := evalNode(node.R, ctx)
+	l := operand(node.L, ctx)
+	r := operand(node.R, ctx)
 	lp, rp := node.L.Pos, node.R.Pos
 
 	switch op {
