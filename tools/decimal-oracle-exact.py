@@ -35,6 +35,9 @@ import subprocess
 import sys
 from fractions import Fraction
 
+if hasattr(sys, 'set_int_max_str_digits'):   # the long products below print past CPython's 4300 digits
+    sys.set_int_max_str_digits(0)
+
 DIV_SCALE = 10
 
 
@@ -132,7 +135,10 @@ DIVISORS = ['1', '1.0', '1.00', '-1', '0.1', '0.10', '-0.1', '0.000000001',
             '0.0000000000000000000000000000000000001', '3', '7', '-7',
             '99999999999999999999999999999999999999',
             '0.99999999999999999999999999999999999999',
-            '18446744073709551616', '9223372036854775808', '0.5', '2', '10', '100']
+            '18446744073709551616', '9223372036854775808', '0.5', '2', '10', '100',
+            # every odd integer operand divided by 2 * 10^10 is an exact half at the 11th digit:
+            # ties on the word path too, past every native mantissa (the tie cases elsewhere are short)
+            '20000000000', '-20000000000']
 
 TIES = ['0.5', '1.5', '2.5', '-0.5', '-1.5', '-2.5', '0.49999999999999999999999999999999999999',
         '0.50000000000000000000000000000000000000', '0.99999999999999999999999999999999999999',
@@ -159,10 +165,104 @@ def operands():
     return res
 
 
+# Scales past every host's power-of-ten table (JS keeps 10^0..10^64, Python
+# 10^0..10^18, C++ 10^38 in a 128-bit mantissa) and scale gaps past 64, where
+# Python's comparison decides by bit length before it aligns. Nothing above
+# scale 38 was generated until tools/mutate-decimal.sh showed it: a comparison
+# shortcut that decided a pair its digit bounds do not separate survived every
+# check, because no pair ever had a gap past 64.
+WIDE_SCALES = (39, 63, 64, 65, 66, 70, 100, 129, 130)
+GAP_PARTNERS = ['0', '1', '-1', '1.0', '2', '3', '7', '9', '10', '0.5']
+
+
+def wide_scale_operands():
+    out = []
+    for sc in WIDE_SCALES:
+        out += ['1.' + '0' * (sc - 1) + '1',          # just above 1
+                '0.' + '9' * sc,                       # just below 1
+                '9.' + '9' * sc,                       # just below 10
+                '1.' + '0' * sc,                       # 1, spelled at scale sc
+                '0.' + '0' * (sc - 1) + '5',           # half a unit in the last place
+                '-0.' + '0' * (sc - 1) + '1']          # the smallest negative at sc
+    return out
+
+
+def wide_scale_records():
+    recs = []
+    wide = wide_scale_operands()
+    for a in wide:
+        for b in GAP_PARTNERS:
+            for op in ('+', '-', '*', '/', '%', 'cmp'):
+                recs.append((op, a, b))
+                recs.append((op, b, a))
+        for n in (0, 1, 18, 38, 63, 64, 65, 66, 129, 130, 131):
+            recs.append(('round', a, str(n)))
+        for op in ('floor', 'ceil', 'trunc'):
+            recs.append((op, a, '0'))
+    # wide against wide: every scale gap from 1 to 91, both orders
+    for a in wide:
+        for b in wide:
+            if parse(a)[1] != parse(b)[1]:
+                for op in ('cmp', '+', '-'):
+                    recs.append((op, a, b))
+    for b in GAP_PARTNERS:
+        for n in (64, 65, 66, 100, 130):
+            recs.append(('round', b, str(n)))
+    return recs
+
+
+# Half-way ties at the tenth quotient digit through a divisor that no native
+# word holds once scaled: 2 * 10^10 spelled at scale 9 and up, and 2 * 10^30.
+# The tie cases elsewhere all divide by a short integer, which every host
+# answers on its native path; PHP's general path rounded a half down unseen.
+TIE_DIVIDENDS = ['1', '-1', '3', '-3', '7', '100000000000000000000', '-100000000000000000000']
+TIE_DIVISORS = ['20000000000', '20000000000.000000000', '20000000000.0000000000',
+                '20000000000.0000000000000000000', '2' + '0' * 30, '-2' + '0' * 30,
+                '0.2', '0.20000000000000000000', '2' + '0' * 40 + '.' + '0' * 20]
+
+# Products long enough for every host's Karatsuba (PHP's pure-PHP one at 40
+# limbs of 7 digits, Rust's and C++'s portable rows at 32 words, C++'s ADX rows
+# at 64 words / 96 for a square, about 1240 / 1850 digits): all nines, which
+# carry at every word, and random digits. The random pairs above stop at 45
+# integer digits, so no product reached a Karatsuba split until
+# tools/mutate-decimal.sh showed one surviving.
+LONG_LENGTHS = (300, 700, 1300, 2000, 2700)
+
+
+def long_records(rng):
+    def nines(n):
+        return '9' * n
+
+    def rand(n):
+        return str(rng.randint(1, 9)) + ''.join(str(rng.randint(0, 9)) for _ in range(n - 1))
+
+    recs = []
+    for la in LONG_LENGTHS:
+        for lb in LONG_LENGTHS:
+            if lb > la:
+                continue
+            recs.append(('*', nines(la), nines(lb)))
+            a, b = rand(la), rand(lb)
+            recs.append(('*', a, b))
+            recs.append(('*', '-' + a[:-20] + '.' + a[-20:], b))
+            recs.append(('+', a, nines(lb)))
+            recs.append(('-', a, nines(la)))
+        a = rand(la)
+        recs.append(('*', a, a))                       # a square
+        recs.append(('/', a, rand(la // 2)))
+        recs.append(('%', a, rand(la // 3)))
+    return recs
+
+
 def wide_records(count, seed):
     rng = random.Random(seed)
     ops = operands()
-    recs = []
+    recs = wide_scale_records()
+    for a in TIE_DIVIDENDS:
+        for b in TIE_DIVISORS:
+            recs.append(('/', a, b))
+            recs.append(('%', a, b))
+    recs += long_records(random.Random(seed + 1))
     # the structured matrix: every operand against every divisor spelling
     for a in ops:
         for b in DIVISORS:

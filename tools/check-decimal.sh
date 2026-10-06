@@ -5,12 +5,14 @@
 #
 # Two oracles feed every host. tools/decimal-oracle.py uses Python's `decimal`
 # on narrow operands. tools/decimal-oracle-exact.py is written from the spec in
-# exact rationals and reaches the magnitudes the cores can hold (scales 18/19,
-# int64/int128 boundaries, remainders past 2^126, divisor spellings, half-way
-# ties); its own records are first re-derived against the first oracle's
-# (`--self-check`), so a disagreement between the two is reported before either
-# grades a host. conformance/24-decimal-boundaries.selt is generated from the
-# exact oracle (tools/gen-decimal-cases.py).
+# exact rationals and reaches the magnitudes the cores can hold (scales 18/19
+# and past 64, int64/int128 boundaries, remainders past 2^126, divisor
+# spellings, half-way ties, Karatsuba-length products); its own records are
+# first re-derived against the first oracle's (`--self-check`), so a
+# disagreement between the two is reported before either grades a host.
+# conformance/24-decimal-boundaries.selt and 32-numeric-plans.selt are generated
+# from the exact oracle (tools/gen-decimal-cases.py), and tools/mutate-decimal.sh
+# checks that all of it would notice a broken core.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -35,8 +37,10 @@ fi
 
 status=0
 for impl in $(available_impls); do
-  { sel_slot impl_decimal "$impl" "$WORK/oracle.txt" > "$WORK/$impl.out" 2>&1
-    echo $? > "$WORK/$impl.rc"; } &
+  # `|| rc=$?`: under set -e a failing driver would end the group before its
+  # status was written, and the report below read an empty file.
+  { rc=0; sel_slot impl_decimal "$impl" "$WORK/oracle.txt" > "$WORK/$impl.out" 2>&1 || rc=$?
+    echo "$rc" > "$WORK/$impl.rc"; } &
 done
 wait
 for impl in $(available_impls); do

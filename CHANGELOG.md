@@ -152,6 +152,20 @@ rosters; `SEL_DEFAULT_IMPLS`, `SEL_EXTRA_IMPLS`, `SEL_SKIP_SANITIZERS`,
 `GREEN, PARTIAL`. The one-off measurement harnesses of closed worklists
 (`tools/perf/` and others) are removed.
 
+**Decimal mutations:** a new gate lane, `tools/mutate-decimal.sh`, breaks every
+decimal core and the numeric paths that bypass it on purpose (98 mutants in
+`tools/decimal-mutations.json`: 0.9.2's multiply, transcribed into every host,
+dropped carries, word boundaries, Karatsuba, scale alignment, caps, ties, zero
+signs, digit estimates, cached powers, the square memo, lazy digits, plan
+registers and folds) and requires the decimal checks to notice;
+`SEL_SKIP_DECIMAL_MUTATIONS=1` opts out. Under `--weak`, the checks 0.9.2 had,
+the 0.9.2 multiply survives in every host. Its survivors were real holes, now
+generated: the exact oracle reaches scales past 64 and scale gaps past 64,
+ties through wide divisors and Karatsuba-length products; conformance 24 adds
+products at the digit cap whose bounds mislead a refusal and `CANON` past a
+machine word; 32 adds the scale of a plan's `x + 0.00` and `x * 1.00` folds and
+a sum held for a later product (Go's plan aliased its alignment scratch there).
+
 **Documentation:** one package description naming all seven hosts in every
 manifest (checked); CLAUDE.md, `docs/contributing.md` and the usage docs cover
 Go and Rust throughout; SPEC §5 numbering fixed.
@@ -184,8 +198,9 @@ within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
 largest gains Go S4 −20%, Lisp S1 −16%, JS S3 −9%; the largest change the other
 way Go S2 +2.6%).
 
-Lanes: 2238 conformance cases in every host; 1392 SQL translation cases in every
-host; 222 SQL mutations caught, none surviving.
+Lanes: 2264 conformance cases in every host; 1392 SQL translation cases in every
+host; 222 SQL mutations caught, none surviving; 98 decimal mutations caught, none
+surviving.
 
 ## 0.10.0 — 2026-10-04
 

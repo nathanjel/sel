@@ -26,19 +26,29 @@ if ($lazyOperands) {
     $mode = 'php (lazy operands)';
 }
 
-$cases = [];
-foreach (explode("\n", file_get_contents($argv[1])) as $line) {
-    if ($line === '') {
-        continue;
-    }
-    [$op, $a, $b, $want] = explode('|', $line);
-    $cases[] = ['op' => $op, 'a' => $a, 'b' => $b, 'want' => $want];
+// Read a record at a time: the oracle files hold a quarter of a million records
+// and products of thousands of digits, and kept whole as arrays they passed
+// PHP's default 128 MB memory limit.
+$in = @fopen($argv[1], 'rb');
+if ($in === false) {
+    fwrite(STDERR, "cannot read {$argv[1]}\n");
+    exit(2);
 }
 $failures = [];
 // Counted separately from the displayed list; see check-decimal.mjs.
 $mismatches = 0;
+$n = 0;
 
-foreach ($cases as $c) {
+while (($line = fgets($in)) !== false) {
+    if (str_ends_with($line, "\n")) {
+        $line = substr($line, 0, -1);
+    }
+    if ($line === '') {
+        continue;
+    }
+    $n++;
+    [$op, $ta, $tb, $want] = explode('|', $line);
+    $c = ['op' => $op, 'a' => $ta, 'b' => $tb, 'want' => $want];
     $a = Dec::parse($c['a']);
     $b = Dec::parse($c['b']);
     if ($lazyOperands) {
@@ -71,7 +81,7 @@ foreach ($cases as $c) {
     }
 }
 
-$n = count($cases);
+fclose($in);
 echo "{$mode}: {$n} cases, {$mismatches} mismatches\n";
 foreach ($failures as $line) {
     echo "  {$line}\n";

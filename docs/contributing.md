@@ -958,8 +958,9 @@ cd rust && cargo test --workspace             the Rust unit tests and allocation
 configurations of the default roster it is **not** running, and its last line
 is `GREEN, PARTIAL — …` rather than `ALL GREEN`. `SEL_EXTRA_IMPLS` adds to the
 roster instead of replacing it. Two slow lanes have opt-outs, which the last
-line also names: `SEL_SKIP_SANITIZERS=1` (the C++ TSan and ASan builds) and
-`SEL_SKIP_SQL_BUDGETS=1` (the translator budget lane); so do
+line also names: `SEL_SKIP_SANITIZERS=1` (the C++ TSan and ASan builds),
+`SEL_SKIP_SQL_BUDGETS=1` (the translator budget lane) and
+`SEL_SKIP_DECIMAL_MUTATIONS=1` (the decimal mutation lane); so do
 `SEL_SKIP_DB_TESTS=1` and `SEL_SKIP_PYTHON_UNIT=1`.
 
 What the gate runs per host beyond the shared layers, and why a host is exempt
@@ -1007,10 +1008,31 @@ tools/check-docs.sh                   the => examples in the docs
 tools/check-examples.sh               examples/, every host, byte-identical, = output.txt
 tools/check-usage.sh                  the database examples, every host, real servers (Docker)
 node tools/build-docs.mjs --check     every link and anchor in the docs
-tools/check-decimal.sh 20000          decimal vs Python's decimal
+tools/check-decimal.sh 20000          decimal vs Python's decimal and the exact oracle
+tools/mutate-decimal.sh               break every decimal core on purpose; the checks must notice
 tools/e2e.sh                          one rule set through every host API
 tools/fuzz.sh 4000 12345              differential fuzz, count and seed
 ```
+
+The numbers have three lanes of their own. `tools/check-decimal.sh` holds every
+core to two oracles: Python's `decimal` module on narrow operands, and
+`tools/decimal-oracle-exact.py`, exact rationals written from §4 at the widths
+the cores hold. `conformance/24-decimal-boundaries.selt` and
+`32-numeric-plans.selt` are generated from the exact oracle by
+`tools/gen-decimal-cases.py` (never edit them by hand). And
+`tools/mutate-decimal.sh` breaks each core on purpose -- the mutants are
+`tools/decimal-mutations.json` -- and requires one of those checks to notice.
+
+That last lane exists because an oracle only covers the inputs it generates. At
+0.9.2 the C++ multiply rounded both operands to 18 fractional digits whenever
+both had more, and every lane was green: the oracle of the day generated at most
+12 integer and 6 fractional digits, so no product reached the broken path, and
+"0 mismatches" said nothing about the inputs it never made. A mutant proves the
+coverage instead of assuming it. When one survives, the fix is a generator
+(`decimal-oracle-exact.py` for one operation, `gen-decimal-cases.py` for an
+expression) and a regeneration, not a hand-written case; when you add a fast
+path to a core, add its mutant. `tools/mutate-decimal.sh --weak` replays the
+0.9.2-era checks and shows the bug class surviving them.
 
 Narrow any of them to a subset with `SEL_IMPLS`, which is useful when you have
 changed one host and want the loop tight:
