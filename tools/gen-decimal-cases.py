@@ -281,6 +281,34 @@ for tag, a, n in [
     emit(f'dec.pow.{tag}', pow_note, f'POWER({a}, {n})', num('pow', a, S(n)))
 emit('dec.pow.variable-base', pow_note, 'POWER(A, 30)', num('pow', '1.05', '30'), setup='A = 1.05')
 
+# --- CANON on magnitudes past a machine word ------------------------------------------------
+# CANON strips the fraction's trailing zeros (spec 7.6). Past 2^64 the zeros are counted on the binary
+# magnitude rather than the digits in some hosts (Go lifts them in doubling strides, C++ divides by powers of
+# five), and a stride one short left a zero behind: CANON(123456789012345678901.00) was ...901.0, caught only
+# by Go's unit tests until tools/mutate-decimal.sh asked. The oracle has no CANON record, so the cases are here.
+def canon_text(text):
+    v, sc = O.parse(text)
+    while sc > 0 and (v * 10 ** (sc - 1)).denominator == 1:
+        sc -= 1
+    return O.fmt(v, sc)
+
+
+for tag, a in [
+    ('past-uint64-two-zeros', '123456789012345678901.00'),
+    ('past-uint64-four-zeros', '123456789012345678901.0000'),
+    ('below-uint64-four-zeros', '12345678901234567890.0000'),
+    ('uint64-boundary-zeros', S(P64) + '.000'),
+    ('int128-boundary-zeros', S(P127) + '.00000000000000000000'),
+    ('past-int128-keeps-a-digit', S(P128) + '.50000000000000000000'),
+    ('nines-38-many-zeros', N38 + '.' + '0' * 40),
+    ('ten-to-42-zeros', S(10 ** 42) + '.' + '0' * 25),
+    ('negative-past-uint64', '-123456789012345678901.000'),
+    ('fraction-of-a-wide-magnitude', '0.' + '1' * 45 + '0' * 30),
+]:
+    emit(f'dec.canon.{tag}', 'CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), '
+         'whatever the width of the magnitude.', 'CANON(A)', 'num ' + canon_text(a), setup=f'A = {a}')
+
+
 # --- comparison across widths (same value at different scales / widths) ---------------------
 for tag, a, op, b, want in [
     ('int128-boundary-gt', S(P127), '>', S(P127 - 1), 'TRUE'),
@@ -328,6 +356,23 @@ emit('dec.floor.positive-at-the-digit-cap-does-not-carry', cap + ' Control: FLOO
      'LEN(FLOOR(REPEAT("9", 1000000) & ".5"))', 'num 1000000')
 emit('dec.ceil.negative-at-the-digit-cap-does-not-carry', cap + ' Control: CEIL of a negative never carries.',
      'LEN(CEIL("-" & REPEAT("9", 1000000) & ".5")) - 1', 'num 1000000')
+
+# A product at the cap whose operands' bit lengths overstate it: 10^999999 has 3321925 bits and 9 has 4, so
+# the bit lengths allow 1 000 001 digits, and the product 9 * 10^999999 has 1 000 000. A refusal decided before
+# the multiplication (the product cannot fit) has to come from a LOWER bound on its digits; with an upper
+# bound it refuses a legal value. tools/mutate-decimal.sh found that swap surviving every check: the suite's
+# products at the cap were powers of ten, whose bit lengths are exact enough to hide it.
+emit('dec.mul.at-the-digit-cap-with-a-long-bit-length',
+     'A product at the integer-digit cap must be built (spec 6.4): an early refusal of a product past the cap has '
+     'to be decided from a lower bound on its digits, and 9 * 10^999999 has 1 000 000 of them where the '
+     "operands' bit lengths allow 1 000 001.",
+     'A = POWER(10, 100000); B = A*A*A*A*A*A*A*A*A; LEN(B * POWER(10, 99999) * 9)', 'num 1000000')
+emit('dec.mul.at-the-digit-cap-with-an-exact-digit-bound',
+     'A product at the integer-digit cap must be built (spec 6.4), and the early refusal of a product past it '
+     'must not count the cap itself as past it: a million nines times 1.0 has exactly 1 000 000 integer digits, '
+     'and its digit bounds are exact, so a refusal on `>=` instead of `>` refuses it. `* 1.0`, not `* 1`: a '
+     'math plan may fold `x * 1` away (it may not fold `* 1.0`, whose scale it must add).',
+     'LEN(TRUNC(REPEAT("9", 1000000) * 1.0))', 'num 1000000')
 
 
 # --- conformance/32-numeric-plans.selt: numbers around the math plans -----------------------------
@@ -421,12 +466,37 @@ zero = O.sub(ab, ab)
 emit32('plan.own.zero-with-scale-survives', own + ' A zero keeps its scale.',
        'Z = A * B - A * B; W = A + B; Z', 'num ' + T(zero), ABC)
 emit32('plan.own.zero-with-scale-adds', own, 'Z = A * B - A * B; Z + C', 'num ' + T(O.add(zero, c)), ABC)
+# A sum a later step consumes: the sum is kept in a register while the product reads it, and the operand with
+# the wider scale (C * B: 15 places against A's 7) is the one aligning the other. Go's plan once passed the sum's
+# own register as the alignment scratch, which wrote the scaled narrower operand over the wider one; nothing here
+# read a sum back in a later step until tools/mutate-decimal.sh showed that surviving.
+emit32('plan.own.sum-read-by-a-later-product', own + ' A sum held for a later product keeps both operands.',
+       '(C * B + A) * B', 'num ' + T(O.mul(O.add(bc, a), b)), ABC)
+emit32('plan.own.sum-read-by-a-later-product-right', own + ' The same with the wider operand on the right.',
+       '(A + C * B) * B', 'num ' + T(O.mul(O.add(a, bc), b)), ABC)
 chain11 = ' * '.join(['X'] * 11)
 col = [i for i, ch in enumerate(chain11) if ch == '*'][9] + 1
 emit32('plan.own.range-error-at-an-intermediate-product', 'X has mantissa 1 and scale 100000, so each product '
        'adds 100000 fractional digits and the tenth `*` is the first past MAX_FRAC_DIGITS (spec §6.4): E_RANGE '
        'at that operator, wherever the host keeps the intermediate products.', chain11, f'error E_RANGE at 1:{col}',
        'X = POWER(0.1, 100000)')
+
+fold = ('A plan may fold x + 0, 0 + x, x - 0, x * 1 and 1 * x to x only when the constant is the integer 0 or 1 '
+        '(scale 0): a sum takes scale max(sa, sb) and a product sa + sb (spec §4.2), so x + 0.00 and x * 1.00 '
+        'widen x, and 0.1 is not 1. tools/mutate-decimal.sh found the scale test removable with nothing failing.')
+FA, FB = '12.5', '4'
+fab = O.mul(V(FA), V(FB))
+for tag, src, want in [
+    ('plus-zero-widens', 'A * B + 0.00', O.add(fab, V('0.00'))),
+    ('zero-plus-widens', '0.00 + A * B', O.add(V('0.00'), fab)),
+    ('minus-zero-widens', 'A * B - 0.00', O.sub(fab, V('0.00'))),
+    ('times-one-widens', 'A * B * 1.00', O.mul(fab, V('1.00'))),
+    ('one-times-widens', '1.00 * (A * B)', O.mul(V('1.00'), fab)),
+    ('tenth-is-not-one', 'A * B * 0.1', O.mul(fab, V('0.1'))),
+    ('variable-plus-zero-widens', 'A + 0.00', O.add(V(FA), V('0.00'))),
+    ('integer-zero-keeps-the-scale', 'A * B + 0', O.add(fab, V('0'))),
+]:
+    emit32(f'plan.fold.{tag}', fold, src, 'num ' + T(want), f'A = {FA}; B = {FB}')
 
 chain = ('Multi-operation arithmetic on big operands through the math plans, with run-time operands; the '
          'expectation is composed from tools/decimal-oracle-exact.py one operation at a time.')

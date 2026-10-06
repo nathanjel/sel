@@ -94,6 +94,7 @@ NOT_RUN="${NOT_RUN# }"
 SKIPPED=""
 [ "${SEL_SKIP_SANITIZERS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SANITIZERS"
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SQL_BUDGETS"
+[ "${SEL_SKIP_DECIMAL_MUTATIONS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DECIMAL_MUTATIONS"
 # The database layers and the Python unit lane pass with a printed skip when
 # opted out, so they are named here too: an opted-out run is not the gate.
 [ "${SEL_SKIP_DB_TESTS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DB_TESTS"
@@ -261,6 +262,14 @@ db_step() { local name="$1"; shift; step "$name" flock "$LOGS/db.lock" "$@"; }
 export SEL_DB_LOCK="$LOGS/db.lock"
 export SEL_MUTATE_JOBS="${SEL_MUTATE_JOBS:-$(( (SEL_JOBS * 2 + 2) / 3 ))}"
 step "sql mutations" ./tools/mutate-sql.sh
+# Every decimal core broken on purpose (tools/decimal-mutations.json), and the
+# decimal checks -- the two oracles, the numeric conformance files, the numeric
+# unit tests -- required to notice: an oracle only covers the inputs it
+# generates, which is how 0.9.2 shipped a wrong C++ multiply with every lane
+# green. Started this early because it is long: a copy of the tree per host
+# (three for C++, whose sel.cpp is a minute's rebuild per mutant), each leaf
+# under a slot. SEL_SKIP_DECIMAL_MUTATIONS=1 opts out.
+[ "${SEL_SKIP_DECIMAL_MUTATIONS:-0}" = 1 ] || step "decimal mutations" ./tools/mutate-decimal.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions and descriptions" sel_slot ./tools/check-version.sh
 # No sentence counts the hosts and no documented host list leaves one out: the

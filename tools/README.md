@@ -35,6 +35,8 @@ tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
 tools/check-sql-docs.sh     the design document quotes cases that run
 tools/mutate-sql.sh         break the SQL layer on purpose; the checks must notice
+tools/mutate-decimal.sh     break every decimal core on purpose; the decimal checks must notice
+                            (--weak: only the checks 0.9.2 had, the red run; --list)
 tools/check-sql-oracle.sh   translated SQL against a real database
 tools/oracle-db.sh          starts pinned throwaway servers, runs the above, removes them
 tools/fuzz-sql.sh           seeded SQL differential fuzzing against a database
@@ -308,3 +310,64 @@ Produced by `tools/decimal-oracle.py <count> <seed>`. Python's `decimal` shares
 no code with any SEL implementation, which is the point: the SEL cores were
 written from one spec by one hand, so they would agree with each other while
 being wrong. This is the third opinion.
+
+`tools/decimal-oracle-exact.py <count> <seed>` writes the same format from
+exact rationals, at the widths the cores hold: the int64/int128 boundaries in
+every spelling, scales 18/19/38 and past every host's power-of-ten table (to
+130, with scale gaps past 64), half-way ties at the tenth quotient digit through
+short and wide divisors, products long enough for every host's Karatsuba, and
+random pairs of up to 45 integer and 25 fractional digits. `check-decimal.sh`
+feeds every host both files.
+
+---
+
+## The decimal mutation table
+
+`tools/mutate-decimal.sh` asks whether those oracles, and the numeric
+conformance files, would notice a wrong core. At 0.9.2 the C++ multiply rounded
+both operands to 18 fractional digits whenever both had more, and every lane was
+green: the only decimal oracle then generated operands of at most 12 integer and
+6 fractional digits, so no product reached the broken path. An oracle covers the
+inputs it generates and nothing else; a mutant that survives names an input
+nobody generates.
+
+`tools/decimal-mutations.json` holds the mutants, a dozen or so per host in
+every decimal core and the numeric paths that bypass it (math-plan folds and
+registers, packed value cells, PHP's lazy digits):
+
+| Key | Meaning |
+|---|---|
+| `name` | unique; prefixed by the host |
+| `host` | `js` `php` `python` `cpp` `lisp` `go` `rust` (`SEL_IMPLS` narrows a run to some) |
+| `file` | the source file, relative to the repository root |
+| `from` | text that must occur **exactly once** in `file`; anything else is a suite error, never a pass |
+| `to` | its replacement: the defect |
+| `class` | the bug class: `0.9.2-scale-18`, `carry-borrow`, `word-boundary`, `native-fast-path`, `karatsuba`, `scale-alignment`, `limit-off-by-one`, `rounding-tie`, `minimal-scale`, `floor-ceil`, `negative-zero`, `digit-count-estimate`, `pow10-cache`, `cache-staleness`, `lazy-digits`, `register-aliasing`, `register-staleness`, `math-plan-bypass` |
+| `note` | what the defect is |
+| `equivalent` | optional: why the mutant cannot change an observable result. Reported apart; an error if a check catches it. Only for a mutant that is provably equivalent -- otherwise replace it |
+
+Every host gets a copy of the tree (C++ three, the mutants dealt round-robin: a
+C++ mutant recompiles `sel.cpp` twice), built and checked once unmutated (a
+check already failing would report every mutant caught). Then, per copy and
+one mutant at a time: the edit, the rebuild (C++ `make build/check-decimal
+build/conformance`; Rust `cargo build` with incremental release and LTO off,
+in one target directory per run; Go `go build`), the checks in this order
+until one fails, and the file restored:
+
+1. `oracle narrow`: the host's `check-decimal` on `decimal-oracle.py 2000`
+2. `oracle wide`: the same on `decimal-oracle-exact.py 1500`
+3. `conformance` 02-numbers, 03-operators, 22-canon, 32-numeric-plans, 24-decimal-boundaries, 10-limits, each a check of its own
+4. `unit`: the numeric unit tests -- `tools/check-js-decimal-guard.mjs`, `python/tests/test_decimal_native.py`, C++ `build/unit` (built only when reached), the Lisp decimal and math-plan tests, `go test ./internal/decimal/` and the plan-register tests, `cargo test --lib`; PHP has none
+
+The output is `caught <name> by <check> (<host>)` or `SURVIVED <name>`, then a
+count per check and per host; exit 1 if anything survives or fails to apply or
+build. `--weak` keeps only the checks 0.9.2 had (the narrow oracle and
+conformance 02, 03, 22 and 10): the red run, in which the `0.9.2-scale-18`
+mutant of every host survives. `SEL_MUTATE_DECIMAL_SEED` moves the oracle seed,
+`SEL_MUTATE_DECIMAL_TABLE` grades a draft table, `SEL_MUTATE_DECIMAL_KEEP=1`
+keeps the work directory (a log per copy) under `$TMPDIR`.
+
+A survivor is a coverage hole until shown otherwise: add the input that tells it
+apart to a generator (`decimal-oracle-exact.py` for a single operation,
+`gen-decimal-cases.py` for an expression), regenerate, and run the lane again.
+Adding a fast path to a core means adding its mutant here.

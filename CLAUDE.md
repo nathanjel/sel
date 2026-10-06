@@ -82,6 +82,8 @@ tools/check-docs.sh                  every `=>` example in docs runs on every ho
 tools/check-decimal.sh 20000         decimal cores vs Python's decimal module
 tools/e2e.sh / tools/check-api.sh    host API parity
 tools/mutate-sql.sh                  breaks the SQL layer ~160 ways; checks must notice
+tools/mutate-decimal.sh              breaks every decimal core 98 ways (tools/decimal-mutations.json); the decimal
+                                     checks must notice; --weak replays the 0.9.2-era checks (the 0.9.2 class survives)
 tools/check-sql-oracle.sh            translated SQL vs a real DB (skips without a DSN; the gate provides one)
 tools/oracle-db.sh                   spins up throwaway MySQL/Postgres containers for the above
 tools/check-examples.sh [cat…]       examples/<cat>/ in every host: byte-identical output, equal to output.txt

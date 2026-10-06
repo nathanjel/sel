@@ -2840,6 +2840,116 @@ POWER(A, 30)
 num 4.321942375150662009157288198886473341473378241062164306640625
 ===
 
+### name: dec.canon.past-uint64-two-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 123456789012345678901.00
+--- source
+CANON(A)
+--- expect
+num 123456789012345678901
+===
+
+### name: dec.canon.past-uint64-four-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 123456789012345678901.0000
+--- source
+CANON(A)
+--- expect
+num 123456789012345678901
+===
+
+### name: dec.canon.below-uint64-four-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 12345678901234567890.0000
+--- source
+CANON(A)
+--- expect
+num 12345678901234567890
+===
+
+### name: dec.canon.uint64-boundary-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 18446744073709551616.000
+--- source
+CANON(A)
+--- expect
+num 18446744073709551616
+===
+
+### name: dec.canon.int128-boundary-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 170141183460469231731687303715884105728.00000000000000000000
+--- source
+CANON(A)
+--- expect
+num 170141183460469231731687303715884105728
+===
+
+### name: dec.canon.past-int128-keeps-a-digit
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 340282366920938463463374607431768211456.50000000000000000000
+--- source
+CANON(A)
+--- expect
+num 340282366920938463463374607431768211456.5
+===
+
+### name: dec.canon.nines-38-many-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 99999999999999999999999999999999999999.0000000000000000000000000000000000000000
+--- source
+CANON(A)
+--- expect
+num 99999999999999999999999999999999999999
+===
+
+### name: dec.canon.ten-to-42-zeros
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 1000000000000000000000000000000000000000000.0000000000000000000000000
+--- source
+CANON(A)
+--- expect
+num 1000000000000000000000000000000000000000000
+===
+
+### name: dec.canon.negative-past-uint64
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = -123456789012345678901.000
+--- source
+CANON(A)
+--- expect
+num -123456789012345678901
+===
+
+### name: dec.canon.fraction-of-a-wide-magnitude
+--- note
+CANON removes every trailing zero of the fraction and then a bare point (spec 7.6), whatever the width of the magnitude.
+--- setup
+A = 0.111111111111111111111111111111111111111111111000000000000000000000000000000
+--- source
+CANON(A)
+--- expect
+num 0.111111111111111111111111111111111111111111111
+===
+
 ### name: dec.cmp.int128-boundary-gt
 --- note
 Numeric comparison aligns scales and is exact at any width; `$==` is text.
@@ -3106,6 +3216,24 @@ num 1000000
 CEIL/FLOOR of a number at the integer-digit cap can carry into a 1,000,001st digit; that is E_RANGE at the call, as ROUND already is (spec 6.4). Position 1:1 is the call, the innermost failing node. Observed when written: JS, PHP, Python and Lisp raise E_RANGE but report 0:0 (no position); C++ and Go raise nothing and return a 1,000,001-digit value. Control: CEIL of a negative never carries.
 --- source
 LEN(CEIL("-" & REPEAT("9", 1000000) & ".5")) - 1
+--- expect
+num 1000000
+===
+
+### name: dec.mul.at-the-digit-cap-with-a-long-bit-length
+--- note
+A product at the integer-digit cap must be built (spec 6.4): an early refusal of a product past the cap has to be decided from a lower bound on its digits, and 9 * 10^999999 has 1 000 000 of them where the operands' bit lengths allow 1 000 001.
+--- source
+A = POWER(10, 100000); B = A*A*A*A*A*A*A*A*A; LEN(B * POWER(10, 99999) * 9)
+--- expect
+num 1000000
+===
+
+### name: dec.mul.at-the-digit-cap-with-an-exact-digit-bound
+--- note
+A product at the integer-digit cap must be built (spec 6.4), and the early refusal of a product past it must not count the cap itself as past it: a million nines times 1.0 has exactly 1 000 000 integer digits, and its digit bounds are exact, so a refusal on `>=` instead of `>` refuses it. `* 1.0`, not `* 1`: a math plan may fold `x * 1` away (it may not fold `* 1.0`, whose scale it must add).
+--- source
+LEN(TRUNC(REPEAT("9", 1000000) * 1.0))
 --- expect
 num 1000000
 ===

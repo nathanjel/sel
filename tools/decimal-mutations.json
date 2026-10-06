@@ -1,0 +1,903 @@
+{
+  "note": [
+    "Defects in the decimal cores, written back into the code on purpose.",
+    "tools/mutate-decimal.sh applies each one to a copy of its host's tree and",
+    "requires some check to notice (tools/README.md, 'tools/mutate-decimal.sh').",
+    "",
+    "Why: at 0.9.2 the C++ multiply rounded both operands to 18 fractional digits",
+    "whenever both had more, and every lane was green -- the only decimal oracle",
+    "then generated operands of at most 12 integer and 6 fractional digits, so no",
+    "product ever reached the broken path. An oracle only covers the inputs it",
+    "generates; a mutant that survives names the input it never generates.",
+    "",
+    "Each entry: name (unique), host (js php python cpp lisp go rust), file",
+    "(relative to the repository root), from (must occur EXACTLY once in file:",
+    "a stale pattern is a suite error, never a pass), to, class (the bug class),",
+    "note (what the defect is). Optional: equivalent (a reason the mutant cannot",
+    "change any observable result; reported apart, and an error if it is caught)."
+  ],
+  "mutations": [
+    {
+      "name": "js-mul-rounds-operands-at-18",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "export function mul(a, b, pos) {\n  return guard(",
+      "to": "export function mul(a, b, pos) {\n  if (a.scale > 18 && b.scale > 18 && a.digits !== 1n && b.digits !== 1n\n      && a.digits < 2n ** 127n && b.digits < 2n ** 127n) {\n    const ra = round(a, 18, pos), rb = round(b, 18, pos);\n    if (ra.digits * rb.digits < 2n ** 127n) return guard(make(a.neg !== b.neg, ra.digits * rb.digits, 36), pos);\n  }\n  return guard(",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "js-cmp-same-scale-shortcut-misaligned",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (a.scale === b.scale) {             // same scale",
+      "to": "if (a.scale >= b.scale) {             // same scale",
+      "class": "scale-alignment",
+      "note": "The same-scale shortcut taken for any wider left scale: digits compared unaligned."
+    },
+    {
+      "name": "js-div-tie-rounds-down",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (2n * r >= D) q += 1n;",
+      "to": "if (2n * r > D) q += 1n;",
+      "class": "rounding-tie",
+      "note": "Division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "js-round-tie-rounds-down",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (2n * r >= p) q += 1n;",
+      "to": "if (2n * r > p) q += 1n;",
+      "class": "rounding-tie",
+      "note": "ROUND rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "js-negative-zero-kept",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "const actualNeg = d === 0n ? false : !!neg;",
+      "to": "const actualNeg = !!neg;",
+      "class": "negative-zero",
+      "note": "A zero result keeps the sign of its operands (-0.0)."
+    },
+    {
+      "name": "js-div-exact-quotient-keeps-a-zero",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "while (scale > 0 && digits % 10n === 0n && digits !== 0n) {",
+      "to": "while (scale > 1 && digits % 10n === 0n && digits !== 0n) {",
+      "class": "minimal-scale",
+      "note": "An exact quotient stops one short of its minimal scale (4/2 is 2.0)."
+    },
+    {
+      "name": "js-guard-frac-cap-inclusive",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (d.scale > MAX_FRAC_DIGITS) {",
+      "to": "if (d.scale >= MAX_FRAC_DIGITS) {",
+      "class": "limit-off-by-one",
+      "note": "A value with exactly MAX_FRAC_DIGITS fractional digits refused."
+    },
+    {
+      "name": "js-parse-int-cap-inclusive",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (stripped.length - fracPart.length > MAX_INT_DIGITS) {",
+      "to": "if (stripped.length - fracPart.length >= MAX_INT_DIGITS) {",
+      "class": "limit-off-by-one",
+      "note": "A numeral with exactly MAX_INT_DIGITS integer digits refused."
+    },
+    {
+      "name": "js-parse-short-past-2-53",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (text.length <= 15) {",
+      "to": "if (text.length <= 17) {",
+      "class": "native-fast-path",
+      "note": "The double-accumulator numeral fast path taken for 16 and 17 digits, past 2^53."
+    },
+    {
+      "name": "js-guard-lower-bound-uses-upper",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (Math.floor(((b - 1) * LOG10_2_LO) / LOG10_2_DEN) + 1 - d.scale > MAX_INT_DIGITS) {",
+      "to": "if (Math.floor((b * LOG10_2_HI) / LOG10_2_DEN) + 1 - d.scale > MAX_INT_DIGITS) {",
+      "class": "digit-count-estimate",
+      "note": "The guard refuses on the upper digit bound, so a value at the cap with a long bit length is refused."
+    },
+    {
+      "name": "js-pow10-cache-key-off-by-one",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "POW10_CACHE.set(k, v);",
+      "to": "POW10_CACHE.set(k + 1, v);",
+      "class": "pow10-cache",
+      "note": "A computed power of ten past the 64-entry table is cached under the next exponent."
+    },
+    {
+      "name": "js-floor-negative-integer-steps-down",
+      "host": "js",
+      "file": "js/src/decimal.mjs",
+      "from": "if (d.neg && r !== 0n) q += 1n;",
+      "to": "if (d.neg) q += 1n;",
+      "class": "floor-ceil",
+      "note": "FLOOR of a negative whole number with a scale (-2.0) steps down a unit."
+    },
+    {
+      "name": "js-plan-x-plus-zero-ignores-scale",
+      "host": "js",
+      "file": "js/src/math_plan.mjs",
+      "from": "if (op === '+' && propagate(resL) && resR.constVal && D.isZero(resR.constVal) && resR.constVal.scale === 0) {",
+      "to": "if (op === '+' && propagate(resL) && resR.constVal && D.isZero(resR.constVal)) {",
+      "class": "math-plan-bypass",
+      "note": "The plan folds x + 0.00 to x, which drops the scale the addition must widen to."
+    },
+    {
+      "name": "py-mul-rounds-operands-at-18",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:\n    scale = a.scale + b.scale",
+      "to": "def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:\n    if (a.scale > 18 and b.scale > 18 and a.digits != 1 and b.digits != 1\n            and a.digits < 2 ** 127 and b.digits < 2 ** 127):\n        ra, rb = round(a, 18, pos), round(b, 18, pos)\n        if ra.digits * rb.digits < 2 ** 127:\n            return guard(make(a.neg != b.neg, ra.digits * rb.digits, 36), pos)\n    scale = a.scale + b.scale",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "py-cmp-same-scale-shortcut-misaligned",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "if a.scale == b.scale:\n        A, B = a.digits, b.digits\n    else:",
+      "to": "if a.scale >= b.scale:\n        A, B = a.digits, b.digits\n    else:",
+      "class": "scale-alignment",
+      "note": "cmp takes the same-scale path for any wider left scale: digits compared unaligned."
+    },
+    {
+      "name": "py-cmp-magnitude-bound-off-by-one",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "if lo_a - 1 - sa >= hi_b - sb:",
+      "to": "if lo_a - 1 - sa >= hi_b - sb - 1:",
+      "class": "digit-count-estimate",
+      "note": "The bit-length shortcut for a scale gap past 64 decides a pair its bounds do not separate."
+    },
+    {
+      "name": "py-div-tie-rounds-down",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "q + 1 if 2 * r >= D else q",
+      "to": "q + 1 if 2 * r > D else q",
+      "class": "rounding-tie",
+      "note": "Division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "py-round-tie-rounds-down",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "q + 1 if 2 * r >= p else q",
+      "to": "q + 1 if 2 * r > p else q",
+      "class": "rounding-tie",
+      "note": "ROUND rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "py-negative-zero-kept",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "return Dec(bool(neg and digits), digits, scale)",
+      "to": "return Dec(bool(neg), digits, scale)",
+      "class": "negative-zero",
+      "note": "A zero result keeps the sign of its operands (-0.0)."
+    },
+    {
+      "name": "py-guard-int-bits-gate-strict",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "if (d.digits.bit_length() >= MAX_INT_BITS",
+      "to": "if (d.digits.bit_length() > MAX_INT_BITS",
+      "class": "limit-off-by-one",
+      "note": "The cap gate skips magnitudes whose bit length equals that of 10^MAX_INT_DIGITS."
+    },
+    {
+      "name": "py-guard-frac-cap-inclusive",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "if d.scale > MAX_FRAC_DIGITS:",
+      "to": "if d.scale >= MAX_FRAC_DIGITS:",
+      "class": "limit-off-by-one",
+      "note": "A value with exactly MAX_FRAC_DIGITS fractional digits refused."
+    },
+    {
+      "name": "py-num-digits-exact-power-short",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "while n < pow10(d - 1):",
+      "to": "while n <= pow10(d - 1):",
+      "class": "digit-count-estimate",
+      "note": "An exact power of ten is counted one digit short."
+    },
+    {
+      "name": "py-pow10-cache-key-off-by-one",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "_POW10[k] = v",
+      "to": "_POW10[k + 1] = v",
+      "class": "pow10-cache",
+      "note": "A computed power of ten past the 18-entry table is cached under the next exponent."
+    },
+    {
+      "name": "py-mul-precheck-overestimates",
+      "host": "python",
+      "file": "python/sel/decimal.py",
+      "from": "if ((pb - 1) * LOG10_2_LO) // LOG10_2_DEN + 1 - scale > MAX_INT_DIGITS:",
+      "to": "if ((pb + 1) * LOG10_2_HI) // LOG10_2_DEN + 1 - scale > MAX_INT_DIGITS:",
+      "class": "digit-count-estimate",
+      "note": "mul's early refusal uses an upper digit bound, refusing a product that fits."
+    },
+    {
+      "name": "py-plan-x-plus-zero-ignores-scale",
+      "host": "python",
+      "file": "python/sel/math_plan.py",
+      "from": "if op == '+' and const_r is not None and D.is_zero(const_r) and const_r.scale == 0:",
+      "to": "if op == '+' and const_r is not None and D.is_zero(const_r):",
+      "class": "math-plan-bypass",
+      "note": "The plan folds x + 0.00 to x, which drops the scale the addition must widen to."
+    },
+    {
+      "name": "cpp-mul-rounds-operands-at-18",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {\n  if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {\n    const long long prod_scale",
+      "to": "Dec dec_round(const Dec& d, long long n, Pos pos);\n\nDec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {\n  if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {\n    if (a.scale > 18 && b.scale > 18 &&\n        !(a.mantissa == 1 || a.mantissa == -1) &&\n        !(b.mantissa == 1 || b.mantissa == -1)) {\n      Dec a_norm = dec_round(a, 18, pos);\n      Dec b_norm = dec_round(b, 18, pos);\n      if (a_norm.small && b_norm.small) {\n        __int128_t prod;\n        if (!__builtin_mul_overflow(a_norm.mantissa, b_norm.mantissa, &prod)) {\n          return dec_guard(dec_from_mantissa(prod, static_cast<long long>(a_norm.scale) + b_norm.scale), pos);\n        }\n      }\n    }\n    const long long prod_scale",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's dec_mul (faff480), put back verbatim: two small operands both past scale 18 are rounded to 18 fractional digits and multiplied."
+    },
+    {
+      "name": "cpp-add-in-carry-ripple-stops",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "carry = acc[i] == 0;",
+      "to": "carry = 0;",
+      "class": "carry-borrow",
+      "note": "bn::add_in's carry ripples into one word past the shorter operand and no further."
+    },
+    {
+      "name": "cpp-sub-in-borrow-ripple-stops",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "    borrow = acc[i] == 0;\n    acc[i] -= 1;",
+      "to": "    acc[i] -= 1;\n    borrow = 0;",
+      "class": "carry-borrow",
+      "note": "bn::sub_in's borrow ripples into one word past the shorter operand and no further."
+    },
+    {
+      "name": "cpp-addmul-portable-drops-carry-in",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "const u128 t = static_cast<u128>(a[i]) * m + acc[i] + carry;",
+      "to": "const u128 t = static_cast<u128>(a[i]) * m + acc[i];",
+      "class": "carry-borrow",
+      "note": "The portable multiply row (addmul_1's loop: every row on a CPU without ADX, the tail words with it) drops the carry from the word below."
+    },
+    {
+      "name": "cpp-adx8-drops-of-chain-carry",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "      \"adoxq %[z], %[c]\\n\\t\"\n      : [l0] \"=&r\"(l0), [h0] \"=&r\"(h0), [l1] \"=&r\"(l1), [h1] \"=&r\"(h1), [z] \"=&r\"(z), [c] \"+&r\"(carry),\n        \"+m\"(*reinterpret_cast<std::uint64_t(*)[8]>(acc))",
+      "to": "      : [l0] \"=&r\"(l0), [h0] \"=&r\"(h0), [l1] \"=&r\"(l1), [h1] \"=&r\"(h1), [z] \"=&r\"(z), [c] \"+&r\"(carry),\n        \"+m\"(*reinterpret_cast<std::uint64_t(*)[8]>(acc))",
+      "class": "carry-borrow",
+      "note": "The 8-word MULX/ADX kernel loses the OF chain (acc) carry out of its last word."
+    },
+    {
+      "name": "cpp-karatsuba-recombine-sign",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "  if (sx == sy) {\n    sub_in(out.subspan(h), trimmed(p));",
+      "to": "  if (sx != sy) {\n    sub_in(out.subspan(h), trimmed(p));",
+      "class": "karatsuba",
+      "note": "Karatsuba's middle term (x1 - x0)(y1 - y0) added where it is subtracted and the reverse."
+    },
+    {
+      "name": "cpp-karatsuba-sqr-drops-low-square",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "  add_in(out.subspan(h), s0);\n  add_in(out.subspan(h), s2);\n  const Out d = rest.first(a1.size());",
+      "to": "  add_in(out.subspan(h), s2);\n  const Out d = rest.first(a1.size());",
+      "class": "karatsuba",
+      "note": "Karatsuba squaring's recombination leaves out a0^2 B^h."
+    },
+    {
+      "name": "cpp-sqr-memo-ignores-top-word",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "std::equal(a.begin(), a.end(), m.operand.begin())) return m.square;",
+      "to": "std::equal(a.begin(), a.end() - 1, m.operand.begin())) return m.square;",
+      "class": "cache-staleness",
+      "note": "The square memo recognises an operand by all but its top word: a different value of the same length and low words gets a stale square."
+    },
+    {
+      "name": "cpp-from-words-small-boundary",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "(words.size() < 2 || words[1] < (std::uint64_t{1} << 63))",
+      "to": "(words.size() < 2 || words[1] <= (std::uint64_t{1} << 63))",
+      "class": "word-boundary",
+      "note": "A two-word magnitude from 2^127 up is taken for a small (signed 128-bit) mantissa."
+    },
+    {
+      "name": "cpp-add-aligns-b-to-wrong-scale",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "dec_words_scaled(b, s - b.scale, keep_b);\n  if (a.neg == b_neg) {",
+      "to": "dec_words_scaled(b, s - a.scale, keep_b);\n  if (a.neg == b_neg) {",
+      "class": "scale-alignment",
+      "note": "The binary path of + and - scales the right operand by the left operand's gap."
+    },
+    {
+      "name": "cpp-cmp-digit-bounds-off-by-one",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "if (ahi - a.scale <= blo - 1 - b.scale) {",
+      "to": "if (ahi - a.scale <= blo - b.scale) {",
+      "class": "digit-count-estimate",
+      "note": "dec_cmp decides a < b from digit bounds that only put both in the same decade."
+    },
+    {
+      "name": "cpp-div-small-tie-rounds-down",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "if (r >= den - r) q++;  // 2*r overflows past 2^126",
+      "to": "if (r > den - r) q++;  // 2*r overflows past 2^126",
+      "class": "rounding-tie",
+      "note": "The 128-bit division path rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "cpp-from-words-negative-zero",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "if (words.empty()) return dec_from_mantissa(0, scale);",
+      "to": "if (words.empty()) { Dec z = dec_from_mantissa(0, scale); z.neg = neg; return z; }",
+      "class": "negative-zero",
+      "note": "A zero from the binary path keeps the sign it was computed with (-1e42 % 1 is -0)."
+    },
+    {
+      "name": "cpp-guard-int-cap-one-short",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "const long long limit = static_cast<long long>(d.scale) + MAX_INT_DIGITS;",
+      "to": "const long long limit = static_cast<long long>(d.scale) + MAX_INT_DIGITS - 1;",
+      "class": "limit-off-by-one",
+      "note": "The guard refuses a large value with exactly MAX_INT_DIGITS integer digits."
+    },
+    {
+      "name": "cpp-pow5-half-off-by-one",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "const std::shared_ptr<const Power> half = pow5(k / 2);",
+      "to": "const std::shared_ptr<const Power> half = pow5((k + 1) / 2);",
+      "class": "pow10-cache",
+      "note": "A power of five past the word (k > 27) built from the wrong half when k is odd, and cached."
+    },
+    {
+      "name": "cpp-plan-x-plus-zero-ignores-scale",
+      "host": "cpp",
+      "file": "cpp/sel.cpp",
+      "from": "return r.is_const && dec_is_zero(r.const_val) && r.const_val.scale == 0;",
+      "to": "return r.is_const && dec_is_zero(r.const_val);",
+      "class": "math-plan-bypass",
+      "note": "The plan folds x + 0.00 to x, which drops the scale the addition must widen to."
+    },
+    {
+      "name": "php-mul-rounds-operands-at-18",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "public static function mul(array $a, array $b, ?array $pos = null): array\n    {\n",
+      "to": "public static function mul(array $a, array $b, ?array $pos = null): array\n    {\n        if ($a['scale'] > 18 && $b['scale'] > 18) {\n            $small = fn (string $s): bool => strlen($s) < 39\n                || (strlen($s) === 39 && strcmp($s, '170141183460469231731687303715884105728') < 0);\n            $da = self::digits($a);\n            $db = self::digits($b);\n            if ($small($da) && $small($db) && $da !== '1' && $db !== '1') {\n                $ra = self::round($a, 18, $pos);\n                $rb = self::round($b, 18, $pos);\n                $p = self::mul($ra, $rb, $pos);\n                if ($small(self::digits($p))) return $p;\n            }\n        }\n",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "php-subabs-borrow-dropped",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "                $diff += 100000000000000;\n                $borrow = 1;",
+      "to": "                $diff += 100000000000000;\n                $borrow = 0;",
+      "class": "carry-borrow",
+      "note": "The pure-PHP digit-string subtraction forgets the borrow out of a 14-digit chunk."
+    },
+    {
+      "name": "php-addabs-carry-at-exact-base",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if ($sum >= 100000000000000) { // 10^14",
+      "to": "if ($sum > 100000000000000) { // 10^14",
+      "class": "word-boundary",
+      "note": "The pure-PHP addition carries only past 10^14, so a chunk summing to exactly 10^14 is written 15 digits wide."
+    },
+    {
+      "name": "php-parse-fast-path-19-chars",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if ($len <= 18 && self::$fastPaths) {",
+      "to": "if ($len <= 19 && self::$fastPaths) {",
+      "class": "native-fast-path",
+      "note": "The short-numeral fast path taken for 19 characters: a 19-digit numeral's native mantissa saturates at PHP_INT_MAX."
+    },
+    {
+      "name": "php-fast-aligned-same-scale-misaligned",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if ($a['scale'] === $b['scale']) return [$left, $right, $a['scale']];",
+      "to": "if ($a['scale'] >= $b['scale']) return [$left, $right, $a['scale']];",
+      "class": "scale-alignment",
+      "note": "The native alignment skips scaling for any wider left scale: add and cmp see unaligned mantissas."
+    },
+    {
+      "name": "php-guard-int-cap-inclusive",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if (strlen($d['digits']) - $d['scale'] > self::MAX_INT_DIGITS) {",
+      "to": "if (strlen($d['digits']) - $d['scale'] >= self::MAX_INT_DIGITS) {",
+      "class": "limit-off-by-one",
+      "note": "A value with exactly MAX_INT_DIGITS integer digits refused."
+    },
+    {
+      "name": "php-lazy-guard-exact-compare-strict",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "return gmp_cmp($g, self::pow10Gmp($L)) >= 0;",
+      "to": "return gmp_cmp($g, self::pow10Gmp($L)) > 0;",
+      "class": "limit-off-by-one",
+      "note": "The lazy (GMP) guard lets exactly 10^(MAX_INT_DIGITS + scale) through: one digit past the cap."
+    },
+    {
+      "name": "php-lazy-guard-low-bit-bound-off-by-one",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if (gmp_scan1($g, intdiv($L * self::LOG2_10_LO_PPM, 1000000)) === -1) {",
+      "to": "if (gmp_scan1($g, intdiv($L * self::LOG2_10_LO_PPM, 1000000) + 1) === -1) {",
+      "class": "digit-count-estimate",
+      "note": "The lazy guard's bit-length shortcut is one bit too generous: 10^L itself passes as below the cap."
+    },
+    {
+      "name": "php-fastdiv-tie-rounds-down",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "if ($r >= $D - $r) {",
+      "to": "if ($r > $D - $r) {",
+      "class": "rounding-tie",
+      "note": "Native-mantissa division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "php-div-tie-rounds-down",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "$up = self::cmpAbs(self::addAbs($r, $r), $D) >= 0 ? self::addAbs($q, '1') : $q;",
+      "to": "$up = self::cmpAbs(self::addAbs($r, $r), $D) > 0 ? self::addAbs($q, '1') : $q;",
+      "class": "rounding-tie",
+      "note": "The general (digit-string / GMP) division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "php-round-tie-rounds-down",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "$up = self::cmpAbs(self::addAbs($r, $r), $p) >= 0 ? self::addAbs($q, '1') : $q;",
+      "to": "$up = self::cmpAbs(self::addAbs($r, $r), $p) > 0 ? self::addAbs($q, '1') : $q;",
+      "class": "rounding-tie",
+      "note": "ROUND rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "php-negative-zero-kept",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "$neg = $digits === '0' ? false : $neg;",
+      "to": "$neg = (bool) $neg;",
+      "class": "negative-zero",
+      "note": "A zero result keeps the sign of its operands (-0, as `-6 % 3` would print)."
+    },
+    {
+      "name": "php-lazy-negate-keeps-sign",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "$d['neg'] = $d['nativeNeg'] = !$d['neg'];",
+      "to": "$d['nativeNeg'] = !$d['neg'];",
+      "class": "lazy-digits",
+      "note": "negate() of a lazy (GMP) value updates only the cached sign; the value's own sign goes stale."
+    },
+    {
+      "name": "php-value-text-of-lazy-integer",
+      "host": "php",
+      "file": "php/src/Value.php",
+      "from": "if ($this->decVal['scale'] === 0 && $this->decVal['digits'] !== null) {",
+      "to": "if ($this->decVal['scale'] === 0) {",
+      "class": "lazy-digits",
+      "note": "A number's text is built from its digit string even when the value is lazy and has none written yet."
+    },
+    {
+      "name": "php-karatsuba-carry-out-dropped",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "        if ($carry) {\n            $a[] = 1;\n        }\n        return $a;",
+      "to": "        return $a;",
+      "class": "karatsuba",
+      "note": "Karatsuba's limb addition (a0 + a1) drops the carry out of its top limb (pure-PHP path)."
+    },
+    {
+      "name": "php-pow10gmp-cache-key-off-by-one",
+      "host": "php",
+      "file": "php/src/Dec.php",
+      "from": "return self::$pow10Gmp[$k] = $p;",
+      "to": "return self::$pow10Gmp[$k + 1] = $p;",
+      "class": "pow10-cache",
+      "note": "A GMP power of ten is cached under the next exponent: a later alignment by k + 1 scales by 10^k."
+    },
+    {
+      "name": "php-plan-x-times-tenth-folds",
+      "host": "php",
+      "file": "php/src/MathPlan.php",
+      "from": "&& $r['constVal']['digits'] === '1' && $r['constVal']['scale'] === 0;",
+      "to": "&& $r['constVal']['digits'] === '1';",
+      "class": "math-plan-bypass",
+      "note": "The plan folds x * 1 for any constant whose digits are 1: x * 0.1 becomes x."
+    },
+    {
+      "name": "lisp-mul-rounds-operands-at-18",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(defun %dec-mul-general (a b &optional at)\n  (let ((scale",
+      "to": "(defun %dec-mul-general (a b &optional at)\n  (when (and (> (dec-scale a) 18) (> (dec-scale b) 18)\n             (< (dec-digits a) (expt 2 127)) (< (dec-digits b) (expt 2 127))\n             (/= (dec-digits a) 1) (/= (dec-digits b) 1))\n    (let ((ra (dec-round a 18 at)) (rb (dec-round b 18 at)))\n      (when (< (* (dec-digits ra) (dec-digits rb)) (expt 2 127))\n        (return-from %dec-mul-general\n          (dec-guard (dec-make (not (eq (dec-neg a) (dec-neg b))) (* (dec-digits ra) (dec-digits rb)) 36) at)))))\n  (let ((scale",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "lisp-cmp-same-scale-shortcut-misaligned",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(if (= sa sb)",
+      "to": "(if (>= sa sb)",
+      "class": "scale-alignment",
+      "note": "dec-cmp's int-val fast path compares unaligned values whenever the left scale is the wider."
+    },
+    {
+      "name": "lisp-sub-sign-from-unaligned-digits",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "((> mag-a mag-b) (dec-make (dec-neg a) (- mag-a mag-b) s))",
+      "to": "((> (dec-digits a) (dec-digits b)) (dec-make (dec-neg a) (- mag-a mag-b) s))",
+      "class": "scale-alignment",
+      "note": "The general path of a difference picks the larger magnitude from the unaligned digits."
+    },
+    {
+      "name": "lisp-format-small-past-62-bits",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(if (and (typep digits '(unsigned-byte 62)) (typep scale '(integer 0 19)))",
+      "to": "(if (and (typep digits '(unsigned-byte 64)) (typep scale '(integer 0 19)))",
+      "class": "native-fast-path",
+      "note": "The word-sized text fast path (digits declared (unsigned-byte 62)) taken up to 64 bits: every magnitude in [2^62, 2^64) fails to print."
+    },
+    {
+      "name": "lisp-guard-frac-cap-inclusive",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(when (> (dec-scale d) +max-frac-digits+)",
+      "to": "(when (>= (dec-scale d) +max-frac-digits+)",
+      "class": "limit-off-by-one",
+      "note": "A value with exactly MAX_FRAC_DIGITS fractional digits refused."
+    },
+    {
+      "name": "lisp-parse-int-cap-inclusive",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(when (> int-digits +max-int-digits+)",
+      "to": "(when (>= int-digits +max-int-digits+)",
+      "class": "limit-off-by-one",
+      "note": "A numeral with exactly MAX_INT_DIGITS integer digits refused."
+    },
+    {
+      "name": "lisp-div-tie-rounds-down",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(if (>= (* 2 r) d) (1+ q) q)",
+      "to": "(if (> (* 2 r) d) (1+ q) q)",
+      "class": "rounding-tie",
+      "note": "Division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "lisp-round-tie-to-even",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(if (>= (* 2 r) p) (1+ q) q)",
+      "to": "(if r (round (dec-digits d) p) q)",
+      "class": "rounding-tie",
+      "note": "ROUND takes CL's ROUND, which rounds an exact half to even (2.5 to 2) rather than away from zero."
+    },
+    {
+      "name": "lisp-negative-zero-kept",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(actual-neg (if (zerop digits) nil (and neg t)))",
+      "to": "(actual-neg (and neg t))",
+      "class": "negative-zero",
+      "note": "DEC-MAKE keeps the sign of a zero result (-0, -0.00)."
+    },
+    {
+      "name": "lisp-pow10-cache-key-off-by-one",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(setf (gethash k *pow10-cache*) value)",
+      "to": "(setf (gethash (1+ k) *pow10-cache*) value)",
+      "class": "pow10-cache",
+      "note": "A computed power of ten past the 19-entry table is cached under the next exponent."
+    },
+    {
+      "name": "lisp-num-digits-exact-power-short",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(loop while (>= n q)",
+      "to": "(loop while (> n q)",
+      "class": "digit-count-estimate",
+      "note": "NUM-DIGITS (past 63 bits) counts an exact power of ten one digit short, so the cap guard misses 10^MAX_INT_DIGITS."
+    },
+    {
+      "name": "lisp-negate-keeps-stale-int-val",
+      "host": "lisp",
+      "file": "lisp/src/decimal.lisp",
+      "from": "(%make-dec neg (dec-digits d) (dec-scale d) niv)",
+      "to": "(%make-dec neg (dec-digits d) (dec-scale d) iv)",
+      "class": "cache-staleness",
+      "note": "DEC-NEGATE flips the sign but keeps the operand's cached signed int-val, which every fast path reads."
+    },
+    {
+      "name": "lisp-plan-x-times-tenth-folds",
+      "host": "lisp",
+      "file": "lisp/src/math-plan.lisp",
+      "from": "(= (dec-digits const-r) 1)\n                                         (zerop (dec-scale const-r)))",
+      "to": "(= (dec-digits const-r) 1))",
+      "class": "math-plan-bypass",
+      "note": "The plan folds x * 1 for any constant whose digits are 1: x * 0.1 and x * 0.01 become x."
+    },
+    {
+      "name": "go-mul-rounds-operands-at-18",
+      "host": "go",
+      "file": "go/internal/decimal/reg.go",
+      "from": "func MulInto(z *big.Int, a, b Num, pos Pos, fail FailFunc) Num {\n\tz.Mul(a.Mag, b.Mag)",
+      "to": "func MulInto(z *big.Int, a, b Num, pos Pos, fail FailFunc) Num {\n\tif a.Scale > 18 && b.Scale > 18 && a.Mag.BitLen() <= 127 && b.Mag.BitLen() <= 127 &&\n\t\t!(a.Mag.IsInt64() && a.Mag.Int64() == 1) && !(b.Mag.IsInt64() && b.Mag.Int64() == 1) {\n\t\tra, rb := Round(a.Dec(), 18, pos, fail), Round(b.Dec(), 18, pos, fail)\n\t\tif new(big.Int).Mul(ra.Digits, rb.Digits).BitLen() <= 127 {\n\t\t\ta, b = NumOf(ra), NumOf(rb)\n\t\t}\n\t}\n\tz.Mul(a.Mag, b.Mag)",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "go-cmp-fast-path-drops-high-word",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "hi, lo := bits.Mul64(y, pow10U64[a.Scale-b.Scale])\n\t\t\treturn cmp128(0, x, hi, lo)",
+      "to": "hi, lo := bits.Mul64(y, pow10U64[a.Scale-b.Scale])\n\t\t\treturn cmp128(0, x, hi&0, lo)",
+      "class": "native-fast-path",
+      "note": "cmpScaled's word-sized path drops the high word of the aligned 128-bit product, as if it fit a uint64."
+    },
+    {
+      "name": "go-parse-fast-path-20-digits",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "if sig <= 18 {",
+      "to": "if sig <= 20 {",
+      "class": "native-fast-path",
+      "note": "Parse's uint64 accumulator taken for 20 significant digits, where it wraps past 2^64."
+    },
+    {
+      "name": "go-align-equal-scale-shortcut",
+      "host": "go",
+      "file": "go/internal/decimal/reg.go",
+      "from": "if a.Scale == b.Scale {\n\t\treturn a.Mag, b.Mag, a.Scale",
+      "to": "if a.Scale >= b.Scale {\n\t\treturn a.Mag, b.Mag, a.Scale",
+      "class": "scale-alignment",
+      "note": "alignInto skips the alignment whenever the left operand has the wider scale: + and - on unaligned digits."
+    },
+    {
+      "name": "go-plan-add-scratch-aliases-register",
+      "host": "go",
+      "file": "go/sel/eval.go",
+      "from": "slots[step.Dst] = mathSlot{n: decimal.AddInto(rf.reg(step.Reg), scratch, a, b, step.Pos, fail)}",
+      "to": "slots[step.Dst] = mathSlot{n: decimal.AddInto(rf.reg(step.Reg), rf.reg(step.Reg), a, b, step.Pos, fail)}",
+      "class": "register-aliasing",
+      "note": "The plan's ADD aligns an operand into the register it writes the sum to, which is also the register its other operand is read from."
+    },
+    {
+      "name": "go-plan-frees-a-pending-register",
+      "host": "go",
+      "file": "go/sel/plan_regs.go",
+      "from": "if r != 0 && r != st.Reg {",
+      "to": "if r != 0 {",
+      "class": "register-staleness",
+      "note": "assignRegisters frees the register an ADD or SUB just wrote its pending result over, so a later product takes it and overwrites the sum before it is read."
+    },
+    {
+      "name": "go-guard-frac-cap-inclusive",
+      "host": "go",
+      "file": "go/internal/decimal/reg.go",
+      "from": "if int(scale) > MAX_FRAC_DIGITS {",
+      "to": "if int(scale) >= MAX_FRAC_DIGITS {",
+      "class": "limit-off-by-one",
+      "note": "A value with exactly MAX_FRAC_DIGITS fractional digits refused."
+    },
+    {
+      "name": "go-parse-int-cap-inclusive",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "if len(stripped)-len(fracPart) > MAX_INT_DIGITS {",
+      "to": "if len(stripped)-len(fracPart) >= MAX_INT_DIGITS {",
+      "class": "limit-off-by-one",
+      "note": "A numeral with exactly MAX_INT_DIGITS integer digits refused."
+    },
+    {
+      "name": "go-div-tie-rounds-down",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "if twoR.Cmp(D) >= 0 {",
+      "to": "if twoR.Cmp(D) > 0 {",
+      "class": "rounding-tie",
+      "note": "Division rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "go-round-tie-rounds-down",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "if twoR.Cmp(p) >= 0 {",
+      "to": "if twoR.Cmp(p) > 0 {",
+      "class": "rounding-tie",
+      "note": "ROUND rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "go-negative-zero-kept",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "return &Dec{Neg: neg && digits.Sign() != 0, Digits: digits, Scale: scale}",
+      "to": "return &Dec{Neg: neg, Digits: digits, Scale: scale}",
+      "class": "negative-zero",
+      "note": "A zero result built by makeOwned (%, ROUND, TRUNC, /) keeps a minus sign."
+    },
+    {
+      "name": "go-digit-bounds-lo-overestimates",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "lo = int((uint64(bitLen-1)*log10Of2Q32)>>32) + 1",
+      "to": "lo = int((uint64(bitLen)*log10Of2Q32)>>32) + 1",
+      "class": "digit-count-estimate",
+      "note": "digitBounds' lower bound taken from the full bit length, so a value at the integer-digit cap whose bit length overstates its digits is refused."
+    },
+    {
+      "name": "go-pow10-cache-key-off-by-one",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "pow10Cache[k] = v",
+      "to": "pow10Cache[k+1] = v",
+      "class": "pow10-cache",
+      "note": "A computed power of ten past the 18-entry table is cached under the next exponent."
+    },
+    {
+      "name": "go-trimscale-lifting-skips-top-step",
+      "host": "go",
+      "file": "go/internal/decimal/dec.go",
+      "from": "for step*2 <= maxZ {",
+      "to": "for step*2 < maxZ {",
+      "class": "digit-count-estimate",
+      "note": "TrimScale's binary lifting over a wide magnitude's trailing zeros starts one power of two low, so it strips one zero too few when the scale is a power of two and every fraction digit is zero."
+    },
+    {
+      "name": "rust-mul-rounds-operands-at-18",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "    let prod_scale = scale as u32;\n\n    if let (DecRepr::Small(ma), DecRepr::Small(mb)) = (&a.repr, &b.repr) {\n        if let Some(prod) = ma.checked_mul(*mb) {",
+      "to": "    let prod_scale = scale as u32;\n\n    if let (DecRepr::Small(ma), DecRepr::Small(mb)) = (&a.repr, &b.repr) {\n        if a.scale > 18 && b.scale > 18 && *ma != 1 && *mb != 1 {\n            let (ra, rb) = (dec_round(a, 18, pos)?, dec_round(b, 18, pos)?);\n            if let (DecRepr::Small(x), DecRepr::Small(y)) = (&ra.repr, &rb.repr) {\n                if let Some(prod) = x.checked_mul(*y) {\n                    return dec_guard(Dec::from_small(neg, prod, ra.scale + rb.scale), pos);\n                }\n            }\n        }\n        if let Some(prod) = ma.checked_mul(*mb) {",
+      "class": "0.9.2-scale-18",
+      "note": "0.9.2's C++ dec_mul (faff480), transcribed: two operands whose magnitudes fit a signed 128-bit mantissa, both past scale 18 and neither of magnitude 1, are rounded half away from zero to 18 fractional digits and multiplied, whenever that product still fits 128 bits."
+    },
+    {
+      "name": "rust-add-in-carry-stops-after-one-word",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "            let (s, c) = x.overflowing_add(1);\n            *x = s;\n            if !c {",
+      "to": "            let (s, _c) = x.overflowing_add(1);\n            *x = s;\n            if true {",
+      "class": "carry-borrow",
+      "note": "A carry out of the shorter operand moves one word and stops, however many all-ones words it should ripple through."
+    },
+    {
+      "name": "rust-submul-drops-borrow",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "        borrow = (t >> 64) as u64 + under as u64;",
+      "to": "        borrow = (t >> 64) as u64;",
+      "class": "carry-borrow",
+      "note": "Knuth D's multiply-and-subtract row loses the borrow its own low-word subtraction made."
+    },
+    {
+      "name": "rust-karatsuba-recombine-sign",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "    if sx == sy {\n        let borrow = sub_in(&mut out[h..], p);",
+      "to": "    if sx != sy {\n        let borrow = sub_in(&mut out[h..], p);",
+      "class": "karatsuba",
+      "note": "Karatsuba recombination subtracts the middle product when the half differences have opposite signs, and adds it when they agree."
+    },
+    {
+      "name": "rust-cmp-size-bound-off-by-one",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "    if ahi as i64 - sa <= blo as i64 - 1 - sb {",
+      "to": "    if ahi as i64 - sa <= blo as i64 - sb {",
+      "class": "scale-alignment",
+      "note": "The digit-bound shortcut orders two numbers whose leading digits share a decimal position, without aligning them."
+    },
+    {
+      "name": "rust-guard-int-cap-inclusive",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "DecRepr::Large(b) if lo <= limit && hi > limit => b.digits() > limit,",
+      "to": "DecRepr::Large(b) if lo <= limit && hi > limit => b.digits() >= limit,",
+      "class": "limit-off-by-one",
+      "note": "The exact digit count refuses a large mantissa with exactly MAX_INT_DIGITS integer digits."
+    },
+    {
+      "name": "rust-mul-precheck-inclusive",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "            > MAX_INT_DIGITS\n    {",
+      "to": "            >= MAX_INT_DIGITS\n    {",
+      "class": "limit-off-by-one",
+      "note": "dec_mul's early refusal fires when the lower digit bound of the product reaches the cap, refusing a product that fits."
+    },
+    {
+      "name": "rust-div-large-tie-rounds-down",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "        if two_r >= *den {",
+      "to": "        if two_r > *den {",
+      "class": "rounding-tie",
+      "note": "Division on the word path (operands past i128) rounds an exact half towards zero instead of away from it."
+    },
+    {
+      "name": "rust-pow5-cache-key-off-by-one",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "        c.map.insert(k, p.clone());",
+      "to": "        c.map.insert(k + 1, p.clone());",
+      "class": "pow10-cache",
+      "note": "A power of five is cached under the next exponent, so a later 10^(k+1) alignment gets 10^k."
+    },
+    {
+      "name": "rust-divmod-pow5-word-boundary",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "fn divmod_pow5(a: &[u64], k: usize) -> (Vec<u64>, Vec<u64>) {\n    if k <= POW5_WORD_MAX {",
+      "to": "fn divmod_pow5(a: &[u64], k: usize) -> (Vec<u64>, Vec<u64>) {\n    if k <= POW5_WORD_MAX + 1 {",
+      "class": "word-boundary",
+      "note": "Dividing by 5^28 takes the one-word path, where 5^28 does not fit a u64 and wraps."
+    },
+    {
+      "name": "rust-digit-bounds-lower-overstated",
+      "host": "rust",
+      "file": "rust/src/large_dec.rs",
+      "from": "    let (lo, lo_exact) = floor_log10_pow2(b - 1);",
+      "to": "    let (lo, lo_exact) = floor_log10_pow2(b);",
+      "class": "digit-count-estimate",
+      "note": "The lower digit bound is taken from 2^b instead of 2^(b-1), so a magnitude below the power of ten inside its bit length is counted a digit long."
+    },
+    {
+      "name": "rust-mul-small-fast-path-wraps",
+      "host": "rust",
+      "file": "rust/src/dec.rs",
+      "from": "        if let Some(prod) = ma.checked_mul(*mb) {",
+      "to": "        if let Some(prod) = Some(ma.wrapping_mul(*mb)) {",
+      "class": "native-fast-path",
+      "note": "The i128 product fast path no longer detects overflow, so a product past 2^127 wraps."
+    },
+    {
+      "name": "rust-cell-pack-drops-high-bits",
+      "host": "rust",
+      "file": "rust/src/value.rs",
+      "from": "                hi: (m >> 64) as u64,",
+      "to": "                hi: (m >> 64) as u32 as u64,",
+      "class": "word-boundary",
+      "note": "A value cell packs a small mantissa as two u64 halves and keeps only 32 bits of the high one: a stored number past 2^96 loses its top bits."
+    }
+  ]
+}
