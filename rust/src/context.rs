@@ -55,7 +55,7 @@ pub struct Context {
     pub join_prefilter: Option<JoinPrefilter>,
     pub join_prefilter_report: Option<JoinReport>,
     /// A FILTER directly over a LINK_LEFT, opening with
-    /// IS_NULL(_["member"]["field"]), leaves this for the join to take.
+    /// `IS_NULL(_["member"]["field"])`, leaves this for the join to take.
     pub join_right_null: Option<Box<JoinRightNull>>,
 }
 

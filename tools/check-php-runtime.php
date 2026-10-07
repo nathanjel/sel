@@ -1345,13 +1345,15 @@ $expect('LINK_LEFT under a FILTER that opens with IS_NULL never builds the rows 
     $items = array_fill(0, $side, ['id' => 5, 'k' => 1]);
     $program = \Sel\Sel::compile($src);
     $ctx = Value::fromNative(['I' => $items, 'P' => array_fill(0, $side, ['id' => 1])]);
-    memory_reset_peak_usage();
+    // PHP 8.2+ resets the peak; on 8.1 (the oldest supported) the answers alone are checked.
+    $measure = function_exists('memory_reset_peak_usage');
+    if ($measure) memory_reset_peak_usage();
     $before = memory_get_usage();
     $at = $program->run($ctx);
     // As written, the million joined rows took 466 MB; rejected, they are never made.
     $grew = memory_get_peak_usage() - $before;
     if (!$at->isList || $at->size() !== 0) return 'at the limit: ' . $at->dump();
-    if ($grew > 64 << 20) return "the rejected rows were built: the peak grew by {$grew} bytes";
+    if ($measure && $grew > 64 << 20) return "the rejected rows were built: the peak grew by {$grew} bytes";
     try {
         $program->run(['I' => $items, 'P' => array_fill(0, $side + 1, ['id' => 1])]);
         return 'no E_RANGE past the limit';
