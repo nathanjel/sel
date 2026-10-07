@@ -363,7 +363,9 @@ def _filter(args, ctx):
             stages = []
         elif handed is not None:
             stages.extend(handed[0])
-        deep = body.keys_unobserved if handed is None else True
+        # A body that reads _K observes the keys itself, whatever the step
+        # after it does: rows dropped below must keep their positions then.
+        deep = (body.keys_unobserved if handed is None else True) and not node_contains_var(body, '_K')
         if stages:
             ctx.join_prefilter = (stages, deep,
                                   handed[2] if handed is not None else [],

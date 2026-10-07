@@ -249,6 +249,32 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('define API callback: caller context unchanged', ctx.get('A').get('k').asText() === '1');
 }
 
+// 4b. ...lazy, binding or replaced (spec §8.1: however a function was installed,
+// it is not assumed harmless)
+{
+  const pokeA = (ctx) => {
+    const v = ctx.lookup('A');
+    v.set('k', Value.text('888'));
+    return v;
+  };
+  define({ name: 'JS_POKE_LAZY', min: 0, max: 0, lazy: true, fn: (args, ctx) => pokeA(ctx) });
+  // examples/fn-complex's form: a binding function defined in place.
+  define({ name: 'JS_POKE_EACH', min: 2, max: 3, lazy: true, binds: true, fn: (args, ctx) => pokeA(ctx) });
+  registerFunction('JS_POKE_REPLACED', 1, 1, (args) => args.val(0));
+  registerFunction('JS_POKE_REPLACED', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('888'));
+    return v;
+  });
+  for (const src of ['JS_POKE_LAZY()', 'JS_POKE_EACH(LIST(1), _)', 'JS_POKE_REPLACED(A)']) {
+    const ctx = Value.fromNative({ A: { k: '1' } });
+    const plan = sql.planHybrid(compile(src), 'sqlite');
+    const res = sql.executeHybrid(plan, null, ctx);
+    check(`${src}: the callback ran`, res.get('k').asText() === '888');
+    check(`${src}: caller context unchanged`, ctx.get('A').get('k').asText() === '1');
+  }
+}
+
 // 5. SQL prefix followed by a local callback
 {
   registerFunction('JS_POKE_SPLIT', 1, 1, (args) => {
