@@ -978,23 +978,17 @@ struct BucketGroup {
 }
 
 /// Whether evaluating `node` might write: an assignment, or a call of an
-/// application's function (the host may do anything) -- one registered as a
-/// host function or not in the builtin manifest -- anywhere inside it. The one
-/// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
-/// the parse depth cap). Traversal policy: scope-blind, every child.
+/// application's function (the host may do anything) -- anything but a shipped
+/// builtin, however it was installed (crate::builtins::call_may_have_effects)
+/// -- anywhere inside it. The one answer SORT/TOP keys and BUCKET keys both ask
+/// (recursion is bounded by the parse depth cap). Traversal policy:
+/// scope-blind, every child.
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;
     }
-    if node.t == NodeType::Call {
-        let host = match &node.spec {
-            Some(spec) => matches!(spec.func, crate::builtins::SpecFn::Host(_)),
-            None => crate::builtins::lookup_spec(&node.s)
-                .is_some_and(|spec| matches!(spec.func, crate::builtins::SpecFn::Host(_))),
-        };
-        if host || crate::manifest::lookup_builtin(&node.s).is_none() {
-            return true;
-        }
+    if node.t == NodeType::Call && crate::builtins::call_may_have_effects(node) {
+        return true;
     }
     node.children().any(may_write)
 }

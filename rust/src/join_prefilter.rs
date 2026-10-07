@@ -96,15 +96,11 @@ pub fn join_pure_source(node: &Node) -> bool {
         NodeType::Un => node.l.as_ref().is_none_or(|l| join_pure_source(l)),
         NodeType::List => node.items.iter().all(join_pure_source),
         NodeType::Call => {
-            // A host's own function may do anything (JS, Python): only the
-            // shipped builtins are pure.
-            if node.s == "ABORT" {
+            // An application's function may do anything, however it was
+            // installed (a define()d native included): only the shipped
+            // builtins are pure (crate::builtins::call_may_have_effects).
+            if node.s == "ABORT" || crate::builtins::call_may_have_effects(node) {
                 return false;
-            }
-            let spec = node.spec.clone().or_else(|| crate::builtins::lookup_spec(&node.s));
-            match spec {
-                Some(spec) if matches!(spec.func, crate::builtins::SpecFn::Native(_)) => {}
-                _ => return false,
             }
             node.items.iter().all(join_pure_source)
         }
