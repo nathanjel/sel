@@ -591,6 +591,52 @@ check(Binding::raw('x', 'NUM', false, false, false, null, null, true)->spec['pre
 check(Binding::column('c', null, 'NUM', false, false, false, 'binary')->spec['exact'] === true,
     'a collation string still folds into the flags');
 
+// --- A FILTER lends its rows to a next step that copies them (borrowRows) -------------
+// C++'s borrow_rows, Python's adopt_items: where neither the FILTER's body nor the next
+// step can write, and that step copies what it keeps, the FILTER's own copy is one no one
+// can tell from the row -- even in a program that is not write-free.
+$borrows = static function (string $source): array {
+    return array_map(
+        static fn (array $step): ?bool => $step['name'] === 'FILTER' ? ($step['args'][count($step['args']) - 1]['borrowRows'] ?? null) : null,
+        optimized_steps($source));
+};
+foreach ([
+    'a TOP (SORT_BY and TAKE, scale S2)' => ['C .> FILTER(_["c"] $== "DE") .> SORT_BY(_["id"], "ASC") .> TAKE(5) .> MAP(RECORD("id", _["id"]))', [true, null, null]],
+    'a MAP' => ['C .> FILTER(_["c"] $== "DE") .> MAP(RECORD("id", _["id"]))', [true, null]],
+    'a FILTER, which copies what it keeps unless it lends it on too' => ['C .> FILTER(_["c"] $== "DE") .> FILTER(_["d"] > 1)', [true, false]],
+    'nothing (the end of the pipeline)' => ['C .> FILTER(_["c"] $== "DE")', [false]],
+    'a BUCKET, which keeps the rows it groups' => ['C .> FILTER(_["c"] $== "DE") .> BUCKET(_["c"])', [false, null]],
+    'a MAP whose body writes' => ['C .> FILTER(_["c"] $== "DE") .> MAP((C[1]["k"] = 9; _["k"]))', [false, null]],
+    'a MAP, after a FILTER whose body writes' => ['C .> FILTER((C[1]["k"] = 9; TRUE)) .> MAP(_["k"])', [false, null]],
+    'a sort whose key calls an application function' => ['C .> FILTER(_["c"] $== "DE") .> SORT_BY(PHP_POKE_LOW(_["id"]))', [false, null]],
+    'a MAP calling a registered function' => ['C .> FILTER(_["c"] $== "DE") .> MAP(PHP_POKE_ERR(_))', [false, null]],
+] as $why => [$source, $expected]) {
+    check($borrows($source) === $expected, "a FILTER lends its rows to {$why}: " . json_encode($borrows($source)));
+}
+// Lent rows stay the program's: the result of a program that is not write-free (it
+// calls an application's function) holds the TOP's copies, never the context's rows.
+\Sel\Registry::registerFunction('PHP_BORROW_ID', 1, 1, static fn ($args): \Sel\Value => $args->val(0));
+$program = Sel::compile('PHP_BORROW_ID(1); X .> FILTER(_["k"] > 0) .> TOP_BY(_["k"], 2)');
+check($borrows('X .> FILTER(_["k"] > 0) .> TOP_BY(_["k"], 2)') === [true, null], 'the FILTER before a TOP_BY lends its rows');
+$ctx = \Sel\Value::fromNative(['X' => [['k' => 2], ['k' => 1], ['k' => 0]]]);
+$top = $program->run($ctx);
+$first = $ctx->get('X')->get('2');
+check($top->dump() === '-{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}' && $top->get('1') !== $first,
+    'a lent row reaches the result as the next step\'s copy: ' . $top->dump());
+$top->get('1')->set('k', \Sel\Value::text('9'));
+check($first->get('k')->asText() === '1', 'changing the result does not change the context it was filtered from');
+// As written and with every step through a helper variable (no rewrite, no lending), a
+// next step that writes into the rows the FILTER kept reads what it wrote, either way.
+foreach ([
+    'X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> MAP((X[2]["k"] = 9; _["k"]))',
+    'X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> SORT_BY((X[2]["k"] = 9; _["k"]))',
+    'X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER((X[2]["k"] = 9; TRUE)) .> MAP(_["k"])',
+] as $source) {
+    $helper = preg_replace('/^(.*?); X \.> (FILTER\(.*?\)) \.> (.*)$/', '$1; F = X .> $2; F .> $3', $source);
+    check($helper !== $source && Sel::evaluate($source)->dump() === Sel::evaluate($helper)->dump(),
+        "a write after the FILTER reads the same as through a helper: {$source}");
+}
+
 // --- Composer's autoload.files: the SQL layer is loaded on first use, not up front ------
 // What `composer require` gives an application: every file composer.json lists, in a
 // fresh process. Evaluating must not load the translator; naming a Sel\Sql class must.

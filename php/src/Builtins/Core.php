@@ -643,7 +643,11 @@ final class Core
                     }
                 }
                 $pos = $a->pos;
-                $hold = $ctx->writeFree;
+                // Nothing in the program can write, or nothing can between here
+                // and the next step, which copies what it keeps (`borrowRows`,
+                // stamped by the physical optimiser): a kept element is handed
+                // on as it is, after the depth check its copy would have made.
+                $hold = $ctx->writeFree || !empty(self::shape($a)['body']['borrowRows']);
                 self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
                     &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $pos, $hold
                 ): ?Value {

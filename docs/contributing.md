@@ -588,8 +588,11 @@ make the copy's depth check (`Value::checkDepthBelow`,
 `Internals::check_clone_depth`, `Value.check_depth`), because `E_DEPTH` is the
 one thing a copy reports that such a program can see. C++ also lets a `FILTER`
 keep its rows uncopied when the next pipeline step copies what it keeps (a
-`MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`); Python
-does so before a `MAP` (`Node.adopt_items`). Made everywhere, those copies were
+`MAP`, `FILTER`, sort or `TOP`) and neither can write (`borrow_rows`), and so
+does PHP (`borrowRows`, stamped by `Optimizer::borrowsRows`); Python does so
+before a `MAP` (`Node.adopt_items`). In a program that calls an application's
+function, which is not write-free, this is what keeps the other steps'
+copies out. Made everywhere, those copies were
 a fifth to a third of the PHP scale scenarios' time, over a quarter of C++
 scenario 2's and a tenth of Python scenario 1's. The snapshot an aggregate
 visits (§7.3) is left out the same way: C++ walks a write-free program's

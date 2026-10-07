@@ -149,6 +149,7 @@ final class Optimizer
                     if ($step['name'] === 'FILTER') {
                         $last = count($step['args']) - 1;
                         $steps[$index]['args'][$last]['keysUnobserved'] = self::keysRenumberedBy($steps[$index + 1] ?? null);
+                        $steps[$index]['args'][$last]['borrowRows'] = self::borrowsRows($step, $steps[$index + 1] ?? null);
                     }
                 }
             }
@@ -795,6 +796,35 @@ final class Optimizer
             if (self::readsVar($arg, ['_K'])) return true;
         }
         return false;
+    }
+
+    /**
+     * Whether a FILTER may keep its elements uncopied (Core's FILTER reads
+     * `borrowRows`): the step after it is where what it keeps is copied -- a
+     * MAP copies what it collects; a FILTER, a sort or a TOP keeps, and copies,
+     * its elements -- and neither this FILTER's body nor anything that step
+     * evaluates may write, so no kept element can change on the way there and
+     * keeping it is indistinguishable from keeping a copy of it (spec §3.4).
+     * The same rule as C++'s `borrow_rows`; it is what lets a program that
+     * calls an application's function somewhere else -- and so is not
+     * write-free -- leave out the copies no one can tell from the rows.
+     *
+     * @param array<string,mixed> $filter
+     * @param array<string,mixed>|null $after
+     */
+    private static function borrowsRows(array $filter, ?array $after): bool
+    {
+        if ($after === null || ($after['t'] ?? null) !== 'call'
+            || !in_array($after['name'], ['MAP', 'FILTER', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'], true)
+            || Registry::mayHaveEffects($after['name'])) {
+            return false;
+        }
+        foreach ([array_slice($filter['args'], 1), array_slice($after['args'], 1)] as $evaluated) {
+            foreach ($evaluated as $arg) {
+                if (Builtins\Core::mayWrite($arg)) return false;
+            }
+        }
+        return true;
     }
 
     /**
