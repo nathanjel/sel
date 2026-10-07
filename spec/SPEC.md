@@ -1048,6 +1048,10 @@ FILTER(_["status"] $== "A" AND _["orders"]["amount"] > 2)` over an order whose
 status is `"B"` and whose amount is text answers the rows it would answer had
 the join been assigned to a variable first; the same predicate with its
 conjuncts swapped is `E_NOT_NUM` at the amount, in either form.
+An early test also holds only while nothing can change what it read before
+the `FILTER` reads it: where the `FILTER`'s predicate or the `LINK`'s may
+write — an assignment, or a call to a function SEL does not ship (§8.1) —
+every conjunct is tested as written, on the joined rows.
 Nothing else an early test does can be seen either. The `FILTER`'s result
 keeps the keys the joined rows had (§7.3), not the positions of the rows a
 smaller join would have made. Under `LINK_LEFT`, a right element an early test
