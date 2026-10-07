@@ -1705,7 +1705,19 @@ run of the program that built it, not a value set with the caller's string."
                             (with-open-file (in (merge-pathnames "comm" dir))
                               (read-line in nil "")))))
                  (when (equal comm "finalizer")
-                   (return (parse-integer (car (last (pathname-directory dir))))))))))
+                   (return (parse-integer (car (last (pathname-directory dir)))))))))
+           (sbcl-handles-sigterm-p ()
+             ;; SBCL's own SIGTERM handler is installed while bit 14 of SigCgt in
+             ;; /proc/<pid>/status is set. The runtime starts the finalizer thread
+             ;; before boot.lisp has given SIGTERM its default action back, and a
+             ;; loaded machine can take seconds to get there: a signal sent in
+             ;; that window meets the handler this test is about and parks the
+             ;; CLI for good -- SBCL's startup, which no code of ours runs before.
+             (ignore-errors
+              (with-open-file (in (format nil "/proc/~d/status" pid))
+                (loop for line = (read-line in nil) while line
+                      when (and (>= (length line) 7) (string= "SigCgt:" line :end2 7))
+                        return (logbitp 14 (parse-integer line :start 7 :radix 16)))))))
       (unwind-protect
            (let ((tid (loop repeat 600
                             for tid = (finalizer-tid)
@@ -1715,7 +1727,10 @@ run of the program that built it, not a value set with the caller's string."
              (if (null tid)
                  (skip "no finalizer thread appeared in the CLI process")
                  (progn
-                   (sleep 0.5)          ; past startup, into the program
+                   ;; Past startup -- boot.lisp has run -- and into the program.
+                   (loop repeat 600 while (and (sb-ext:process-alive-p p) (sbcl-handles-sigterm-p))
+                         do (sleep 0.1))
+                   (sleep 0.2)
                    ;; tgkill(2): a SIGTERM for that one thread
                    (sb-alien:alien-funcall
                     (sb-alien:extern-alien "syscall"
