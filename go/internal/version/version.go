@@ -3,4 +3,4 @@
 package version
 
 // Version is the SEL release, without the leading v of the go/vX.Y.Z tag.
-const Version = "0.10.2"
+const Version = "0.10.3"

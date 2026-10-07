@@ -368,7 +368,7 @@ The project's own command-line tools — `node js/bin/sel.mjs`, `php php/bin/sel
 `go/build/sel` — are **not** the loop above. They are one program written seven
 times, held to the contract below by `tools/check-cli-source.sh`; the last two
 install as `cargo install sel-lang` and
-`go install github.com/nathanjel/sel/go/bin/sel@v0.10.2`. Where the loop above
+`go install github.com/nathanjel/sel/go/bin/sel@v0.10.3`. Where the loop above
 is an example of the host API, the CLI is a tool, and the two differ on
 purpose: the CLI has no `:deps` or `:reset` commands, prints `NULL` as `-` and
 BIN as `bin:<hex>`, and writes errors with their message to standard error.
@@ -380,7 +380,7 @@ sel --deps -e EXPR   print the variables EXPR reads, one per line, sorted
 sel --deps FILE      the same for a file
 sel --functions      print the function table, one name per line
 sel --help, sel -h   print the usage text
-sel --version        print "sel <version>", e.g. sel 0.10.2
+sel --version        print "sel <version>", e.g. sel 0.10.3
 sel                  read programs from standard input, one per line
 ```
 

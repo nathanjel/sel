@@ -11,6 +11,43 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.10.3 — 2026-10-07
+
+A Rust performance fix, found by a new benchmark: a ray tracer written in SEL.
+Published to crates.io only; the other packages stay at 0.10.2 until their next
+release.
+
+**Rust:**
+
+  - `MAP`, `ALL`, `ANY`, `SUM` and `BUCKET` copied their body's syntax tree on
+    every call and ran the copy: `Args::node_at` tied the node it returned to a
+    borrow of the call's accessor, and the copy was what let the loop evaluate
+    it. The node now lives as long as the call, the bodies run from the
+    program's own tree, and their field caches outlive the call. The ray
+    tracer's 64 × 36 frame, which copied some 16 million nodes, takes 290 ms
+    instead of 4.9 s (C++ takes 295); Mandelbrot 42.6 → 33.1 ms. A regression
+    test runs one program's collection bodies over rows whose values change,
+    whose fields come in another order across runs and within one list, and
+    a row without the field.
+
+**Examples and tools:**
+
+  - `examples/raytrace`: the SEL mark in glass, ray-traced in SEL — exact
+    decimals kept to six digits, loops as `MAP`s, refraction, Fresnel
+    reflections, absorption, tinted shadows, supersampling — with `SQRT`
+    registered as a host function in every host: an exact root at its minimal
+    scale, found from x itself so that its cost does not depend on n, any other
+    rounded half away from zero, no floating point. `--ppm` renders any size,
+    `--bench` times the benchmark frame.
+  - `tools/commit-benchmark/snapshot.py` runs it as the `raytrace` workload
+    (`--workloads` picks scale, Mandelbrot and ray tracer) and fails a frame
+    whose CRC32 is not the recorded one; `tools/ppm-to-png.py` turns a frame
+    into a PNG.
+
+Lanes: 2317 conformance cases in every host; 1392 SQL translation cases in every
+host; 222 SQL mutations caught, none surviving; 98 decimal mutations caught, none
+surviving.
+
 ## 0.10.2 — 2026-10-07
 
 The 0.10.0 consolidated review (158 issues, SEL-R001–SEL-R158), resolved in

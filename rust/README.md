@@ -24,7 +24,7 @@ cargo install sel-lang        # the `sel` command: a REPL, `sel -e 'expr'`, `sel
 
 Rust 1.85 or later. The core language depends on the `regex` crate; the SQL layer
 (`sel_lang::sql`, the default `sql` feature) adds `serde` and `serde_json`.
-Without it: `sel-lang = { version = "0.10.2", default-features = false }`.
+Without it: `sel-lang = { version = "0.10.3", default-features = false }`.
 
 ## Use
 

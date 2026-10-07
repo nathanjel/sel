@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sel-lang"
-version = "0.10.2"
+version = "0.10.3"
 description = "A small expression language for business rules: one rule gives the same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go, or in your database as SQL. Exact decimal arithmetic, no floating point, no truthiness."
 readme = "README.md"
 license = "MIT"

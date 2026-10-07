@@ -411,7 +411,7 @@ final class Program
 final class Sel
 {
     /** The package version (the CHANGELOG's top heading; tools/check-version.sh). */
-    public const VERSION = '0.10.2';
+    public const VERSION = '0.10.3';
 
     /** @param mixed $source anything but a string is E_BAD_ARG (spec/SPEC.md §8) */
     public static function compile($source): Program
