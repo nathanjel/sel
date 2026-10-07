@@ -67,7 +67,7 @@ SCALETOOLS := scale-bench
 # the C++ member of a set whose whole promise is that every host prints the
 # same thing, so they sit beside their siblings rather than under bin/.
 # In the default target for the same reason `unit` is, below.
-EXAMPLES := plain complex repl validation scripting
+EXAMPLES := plain complex repl validation scripting raytrace
 # The same, for an example that also uses the SEL->SQL layer and so needs
 # $(SQL_OBJS) on the link line. A second list rather than a longer $(EXAMPLES),
 # for the reason LINKED and INTERNAL are two lists: the plain example rule links

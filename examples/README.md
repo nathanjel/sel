@@ -12,6 +12,7 @@ so the code the documentation quotes is code that runs.
 | [`repl/`](repl/) | a read-eval-print loop; fed `session.txt` | [A REPL in thirty lines](../docs/usage/repl.md) |
 | [`validation/`](validation/) | a form's rule set: compiled once, `E_ABORT` versus a broken rule, re-check on change | [Validation](../docs/usage/validation.md) |
 | [`scripting/`](scripting/) | host functions, and `fulfil.sel`, a script that decides what happens to an order | [Scripting](../docs/usage/scripting.md) |
+| [`raytrace/`](raytrace/) | a ray tracer written in SEL, the mark in glass, with `SQRT` as a host function; the benchmark frame | [its README](raytrace/README.md) |
 | [`sql/`](sql/) | a rule pushed down: bindings, params mode, every dialect, refusal, caveats | [SQL reference](../docs/sql.md) |
 | [`dialect/`](dialect/) | a dialect of your own: placeholders, respelling, withdrawing, builders | [Extending SEL](../docs/extending.md#extending-the-sql-layer) |
 | [`sql-conditions/`](sql-conditions/) | rules as `WHERE` clauses on SQLite, MariaDB and PostgreSQL — naive and described bindings | [SQL conditions](../docs/usage/sql-conditions.md) |

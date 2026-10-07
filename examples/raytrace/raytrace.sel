@@ -1,0 +1,310 @@
+# The SEL mark, •>, in glass: a ray tracer written in SEL.
+#
+# Reads W and H, the image size in pixels, and SS, the samples per pixel along
+# each axis (1 is one ray per pixel, 3 is nine), from the context. Needs one
+# host function, SQRT(x, n): the square root of x to n fractional digits.
+# Yields the image as plain-text PPM (P3).
+#
+# SEL has no user functions and no recursion, so every loop is a MAP over a
+# list of the right length, and a ray's path through the glass is a fixed number
+# of bounces. The rays that leave the glass are collected and shaded at the end,
+# which is how the floor and the sky are written once.
+#
+# There are no floats either: every number is an exact decimal, and the scene
+# keeps P fractional digits between steps (ROUND) so that the digits of a
+# product do not pile up the way they do in examples/mandelbrot.sel.
+
+P = 6;                          # fractional digits kept between steps
+EPS = 0.0005;                   # how far along a ray a new hit must be
+FAR = 1000000;
+
+RANGE_X = MAP(SPLIT(REPEAT(",", W - 1), ","), _K - 1);
+RANGE_Y = MAP(SPLIT(REPEAT(",", H - 1), ","), _K - 1);
+SUB = MAP(SPLIT(REPEAT(",", SS - 1), ","), (_K - 0.5) / SS);   # sample offsets in a pixel
+BOUNCES = (1, 2, 3, 4, 5, 6, 7, 8);
+
+# --- the sun: the direction toward it --------------------------------------------
+LX = -0.55; LY = 0.6; LZ = -0.5;
+INV = 1 / SQRT(LX * LX + LY * LY + LZ * LZ, P);
+LX = ROUND(LX * INV, P); LY = ROUND(LY * INV, P); LZ = ROUND(LZ * INV, P);
+
+# --- the camera ------------------------------------------------------------------
+EX = 0.55; EY = 1.0; EZ = 4.5;                      # the eye
+FX = 0.05 - EX; FY = 0.9 - EY; FZ = 0 - EZ;         # toward the point looked at
+INV = 1 / SQRT(FX * FX + FY * FY + FZ * FZ, P);
+FX = ROUND(FX * INV, P); FY = ROUND(FY * INV, P); FZ = ROUND(FZ * INV, P);
+RX = -FZ; RZ = FX;                                  # right = forward x up
+INV = 1 / SQRT(RX * RX + RZ * RZ, P);
+RX = ROUND(RX * INV, P); RZ = ROUND(RZ * INV, P);
+UX = ROUND(-RZ * FY, P);                            # up = right x forward
+UY = ROUND(RZ * FX - RX * FZ, P);
+UZ = ROUND(RX * FY, P);
+PIXEL = ROUND(0.72 / H, 8);                         # the view is 0.72 high at distance 1
+
+# --- the glass -------------------------------------------------------------------
+# docs/assets/logo-mark.svg is 128 x 128: a dot of radius 11 at (40, 80), and a
+# chevron stroked 13 wide with round caps and joins through (62, 38), (92, 64)
+# and (62, 90). Here one SVG unit is 1/32, and the mark stands upright in the
+# plane z = 0 with the chevron's lowest point on the floor; the dot is lowered
+# to rest on the floor too.
+#
+# Every piece is a capsule, and a sphere is a capsule whose ends coincide. The
+# pieces of one group are a single solid: a surface inside another piece of the
+# group is not a surface. KR, KG and KB are how strongly the glass absorbs red,
+# green and blue over distance.
+MARK = LIST(
+    RECORD("ax", 40, "ay", 85.5, "bx", 40, "by", 85.5, "w", 11, "grp", 1, "kr", 0.9, "kg", 0.25, "kb", 0.3),
+    RECORD("ax", 62, "ay", 38, "bx", 92, "by", 64, "w", 6.5, "grp", 2, "kr", 0.5, "kg", 0.65, "kb", 0.08),
+    RECORD("ax", 92, "ay", 64, "bx", 62, "by", 90, "w", 6.5, "grp", 2, "kr", 0.5, "kg", 0.65, "kb", 0.08)
+);
+OBJS = MAP(MARK, M, (
+    gax = (M["ax"] - 64) / 32; gay = (96.5 - M["ay"]) / 32;
+    gbx = (M["bx"] - 64) / 32; gby = (96.5 - M["by"]) / 32;
+    gr = M["w"] / 32;
+    gbaba = (gbx - gax) * (gbx - gax) + (gby - gay) * (gby - gay);
+    RECORD(
+        "ax", gax, "ay", gay, "az", 0,
+        "bax", gbx - gax, "bay", gby - gay, "baz", 0,
+        "baba", gbaba, "ibaba", IF(gbaba > 0, ROUND(1 / gbaba, 8), 0),
+        "sph", gbaba == 0, "rr", gr * gr, "ir", ROUND(1 / gr, 8), "grp", M["grp"],
+        "kr", M["kr"], "kg", M["kg"], "kb", M["kb"],
+        # what a shadow keeps of each channel where the sunlight crossed this piece
+        "sr", ROUND(1 / (1 + M["kr"] / 2), 3),
+        "sg", ROUND(1 / (1 + M["kg"] / 2), 3),
+        "sb", ROUND(1 / (1 + M["kb"] / 2), 3)
+    )
+));
+
+# --- the floor -------------------------------------------------------------------
+# The mark's tile, the rounded square with its purple-to-teal gradient, lies on a
+# checkered floor under the glass: 3.5 x 3.5, corner radius 28/128 of that.
+TCX = 0.05; TCZ = 0.25; THALF = 1.75; TRAD = 0.765625;
+TIN = THALF - TRAD; TRR = TRAD * TRAD;
+PUR_R = 0.127; PUR_G = 0.086; PUR_B = 0.738;        # #5b4bdb, linear
+TEA_R = 0.003; TEA_G = 0.389; TEA_B = 0.310;        # #0e9f8e, linear
+AMB = 0.32;                                         # light that is not the sun's
+
+ROWS = MAP(RANGE_Y, PY, JOIN(MAP(RANGE_X, PX, (
+    pixr = 0; pixg = 0; pixb = 0;
+    MAP(SUB, SY0, MAP(SUB, SX0, (
+        # --- the ray from the eye through this sample -----------------------------
+        sx = ROUND((PX + SX0 - W / 2) * PIXEL, P);
+        sy = ROUND((H / 2 - PY - SY0) * PIXEL, P);
+        dx = FX + sx * RX + sy * UX;
+        dy = FY + sy * UY;
+        dz = FZ + sx * RZ + sy * UZ;
+        INV = 1 / SQRT(dx * dx + dy * dy + dz * dz, P);
+        dx = ROUND(dx * INV, P); dy = ROUND(dy * INV, P); dz = ROUND(dz * INV, P);
+        ox = EX; oy = EY; oz = EZ;
+        wr = 1; wg = 1; wb = 1;                     # what the path still carries
+        RAYS = LIST();                              # the rays that left the glass
+        alive = TRUE;
+
+        MAP(BOUNCES, IF(alive, (
+            # the nearest glass surface ahead
+            best = FAR; besti = 0;
+            MAP(OBJS, O, (
+                oi = _K;
+                oax = ox - O["ax"]; oay = oy - O["ay"]; oaz = oz - O["az"];
+                hit = FALSE;
+                IF(O["sph"],
+                    (
+                        cb = ROUND(oax * dx + oay * dy + oaz * dz, P);
+                        ch = cb * cb - (oax * oax + oay * oay + oaz * oaz) + O["rr"];
+                        IF(ch >= 0, (sh = SQRT(ch, P); t0 = 0 - cb - sh; t1 = sh - cb; hit = TRUE))
+                    ),
+                    (
+                        bard = ROUND(O["bax"] * dx + O["bay"] * dy + O["baz"] * dz, P);
+                        baoa = ROUND(O["bax"] * oax + O["bay"] * oay + O["baz"] * oaz, P);
+                        rdoa = ROUND(dx * oax + dy * oay + dz * oaz, P);
+                        oaoa = ROUND(oax * oax + oay * oay + oaz * oaz, P);
+                        qa = ROUND(O["baba"] - bard * bard, P);
+                        qb = ROUND(O["baba"] * rdoa - baoa * bard, P);
+                        qc = ROUND(O["baba"] * oaoa - baoa * baoa - O["rr"] * O["baba"], P);
+                        qh = qb * qb - qa * qc;
+                        IF(qh >= 0 AND qa > 0, (
+                            sh = SQRT(qh, P);
+                            # the way in: the side of the tube, or the cap at that end
+                            tn = ROUND((0 - qb - sh) / qa, P);
+                            yn = baoa + tn * bard;
+                            IF(yn > 0 AND yn < O["baba"],
+                                (t0 = tn; hit = TRUE),
+                                (
+                                    cx = IF(yn <= 0, oax, oax - O["bax"]);
+                                    cy = IF(yn <= 0, oay, oay - O["bay"]);
+                                    cz = IF(yn <= 0, oaz, oaz - O["baz"]);
+                                    cb = ROUND(cx * dx + cy * dy + cz * dz, P);
+                                    ch = cb * cb - (cx * cx + cy * cy + cz * cz) + O["rr"];
+                                    IF(ch >= 0, (t0 = 0 - cb - SQRT(ch, P); hit = TRUE))
+                                ));
+                            # the way out, the same way
+                            IF(hit, (
+                                tf = ROUND((sh - qb) / qa, P);
+                                yf = baoa + tf * bard;
+                                IF(yf > 0 AND yf < O["baba"],
+                                    t1 = tf,
+                                    (
+                                        cx = IF(yf <= 0, oax, oax - O["bax"]);
+                                        cy = IF(yf <= 0, oay, oay - O["bay"]);
+                                        cz = IF(yf <= 0, oaz, oaz - O["baz"]);
+                                        cb = ROUND(cx * dx + cy * dy + cz * dz, P);
+                                        ch = cb * cb - (cx * cx + cy * cy + cz * cz) + O["rr"];
+                                        t1 = SQRT(MAX(ch, 0), P) - cb
+                                    ))
+                            ))
+                        ))
+                    ));
+                # the first of the two that is ahead and not inside another piece
+                IF(hit, MAP(LIST(t0, t1), TT, IF(TT > EPS AND TT < best, (
+                    hx = ROUND(ox + TT * dx, P); hy = ROUND(oy + TT * dy, P); hz = ROUND(oz + TT * dz, P);
+                    IF(ALL(OBJS, Q, Q["grp"] != O["grp"] OR _K == oi OR (
+                            qx = hx - Q["ax"]; qy = hy - Q["ay"]; qz = hz - Q["az"];
+                            hq = ROUND(MIN(MAX((qx * Q["bax"] + qy * Q["bay"] + qz * Q["baz"]) * Q["ibaba"], 0), 1), P);
+                            qx = qx - Q["bax"] * hq; qy = qy - Q["bay"] * hq; qz = qz - Q["baz"] * hq;
+                            qx * qx + qy * qy + qz * qz >= Q["rr"] - 0.000001
+                        )),
+                        (best = TT; besti = oi))
+                ))))
+            ));
+
+            tfloor = IF(dy < 0, (0 - oy) / dy, FAR);
+            IF(besti == 0 OR best > tfloor,
+                alive = FALSE,
+                (
+                    # refraction at the surface hit, and the reflection it leaves
+                    HO = OBJS[besti];
+                    hx = ROUND(ox + best * dx, P); hy = ROUND(oy + best * dy, P); hz = ROUND(oz + best * dz, P);
+                    qx = hx - HO["ax"]; qy = hy - HO["ay"]; qz = hz - HO["az"];
+                    hq = ROUND(MIN(MAX((qx * HO["bax"] + qy * HO["bay"] + qz * HO["baz"]) * HO["ibaba"], 0), 1), P);
+                    nx = ROUND((qx - HO["bax"] * hq) * HO["ir"], P);
+                    ny = ROUND((qy - HO["bay"] * hq) * HO["ir"], P);
+                    nz = ROUND((qz - HO["baz"] * hq) * HO["ir"], P);
+                    cosi = ROUND(0 - dx * nx - dy * ny - dz * nz, P);
+                    inside = cosi < 0;
+                    IF(inside,
+                        (
+                            nx = 0 - nx; ny = 0 - ny; nz = 0 - nz; cosi = 0 - cosi;
+                            eta = 1.5;
+                            # what the glass absorbed on the way through
+                            ar = HO["kr"] * best; ag = HO["kg"] * best; ab = HO["kb"] * best;
+                            wr = ROUND(wr / (1 + ar + ar * ar / 2), P);
+                            wg = ROUND(wg / (1 + ag + ag * ag / 2), P);
+                            wb = ROUND(wb / (1 + ab + ab * ab / 2), P)
+                        ),
+                        eta = 0.666667);
+                    k = ROUND(1 - eta * eta * (1 - cosi * cosi), P);
+                    IF(k < 0,
+                        (
+                            # total internal reflection
+                            dx = ROUND(dx + 2 * cosi * nx, P);
+                            dy = ROUND(dy + 2 * cosi * ny, P);
+                            dz = ROUND(dz + 2 * cosi * nz, P)
+                        ),
+                        (
+                            # Schlick's Fresnel term, on the side the light is in air
+                            ct = SQRT(k, P);
+                            fr = ROUND(0.04 + 0.96 * POWER(1 - IF(inside, ct, cosi), 5), P);
+                            IF(NOT inside, RAYS[COUNT(RAYS) + 1] = RECORD(
+                                "ox", hx, "oy", hy, "oz", hz,
+                                "dx", ROUND(dx + 2 * cosi * nx, P),
+                                "dy", ROUND(dy + 2 * cosi * ny, P),
+                                "dz", ROUND(dz + 2 * cosi * nz, P),
+                                "wr", ROUND(wr * fr, P), "wg", ROUND(wg * fr, P), "wb", ROUND(wb * fr, P)));
+                            wr = ROUND(wr * (1 - fr), P); wg = ROUND(wg * (1 - fr), P); wb = ROUND(wb * (1 - fr), P);
+                            ek = ROUND(eta * cosi - ct, P);
+                            dx = ROUND(eta * dx + ek * nx, P);
+                            dy = ROUND(eta * dy + ek * ny, P);
+                            dz = ROUND(eta * dz + ek * nz, P)
+                        ));
+                    ox = hx; oy = hy; oz = hz
+                ))
+        )));
+        RAYS[COUNT(RAYS) + 1] = RECORD("ox", ox, "oy", oy, "oz", oz, "dx", dx, "dy", dy, "dz", dz,
+                                       "wr", wr, "wg", wg, "wb", wb);
+
+        # --- the floor and the sky, for every ray that left the glass -------------
+        MAP(RAYS, R, IF(R["dy"] < 0,
+            (
+                tf = ROUND((0 - R["oy"]) / R["dy"], P);
+                gx = ROUND(R["ox"] + tf * R["dx"], P);
+                gz = ROUND(R["oz"] + tf * R["dz"], P);
+                kx = MAX(ABS(gx - TCX) - TIN, 0); kz = MAX(ABS(gz - TCZ) - TIN, 0);
+                IF(kx * kx + kz * kz <= TRR,
+                    (
+                        gs = ROUND(MIN(MAX((gx - TCX + gz - TCZ + 2 * THALF) / (4 * THALF), 0), 1), P);
+                        ar = PUR_R + (TEA_R - PUR_R) * gs;
+                        ag = PUR_G + (TEA_G - PUR_G) * gs;
+                        ab = PUR_B + (TEA_B - PUR_B) * gs
+                    ),
+                    (
+                        chk = IF((FLOOR(gx) + FLOOR(gz)) % 2 == 0, 0.62, 0.16);
+                        chk = chk + (0.39 - chk) * MIN(tf / 16, 1);
+                        ar = chk; ag = chk; ab = chk
+                    ));
+                # the shadow: what the glass between here and the sun lets through
+                shr = 1; shg = 1; shb = 1;
+                MAP(OBJS, O, (
+                    oax = gx - O["ax"]; oay = 0 - O["ay"]; oaz = gz - O["az"];
+                    blocked = FALSE;
+                    IF(O["sph"],
+                        (
+                            cb = oax * LX + oay * LY + oaz * LZ;
+                            blocked = cb < 0 AND cb * cb - (oax * oax + oay * oay + oaz * oaz) + O["rr"] >= 0
+                        ),
+                        (
+                            bard = ROUND(O["bax"] * LX + O["bay"] * LY + O["baz"] * LZ, P);
+                            baoa = ROUND(O["bax"] * oax + O["bay"] * oay + O["baz"] * oaz, P);
+                            rdoa = ROUND(LX * oax + LY * oay + LZ * oaz, P);
+                            oaoa = ROUND(oax * oax + oay * oay + oaz * oaz, P);
+                            qa = ROUND(O["baba"] - bard * bard, P);
+                            qb = ROUND(O["baba"] * rdoa - baoa * bard, P);
+                            qc = ROUND(O["baba"] * oaoa - baoa * baoa - O["rr"] * O["baba"], P);
+                            qh = qb * qb - qa * qc;
+                            IF(qh >= 0 AND qa > 0, (
+                                tn = ROUND((0 - qb - SQRT(qh, P)) / qa, P);
+                                yn = baoa + tn * bard;
+                                IF(yn > 0 AND yn < O["baba"],
+                                    blocked = tn > 0,
+                                    (
+                                        cx = IF(yn <= 0, oax, oax - O["bax"]);
+                                        cy = IF(yn <= 0, oay, oay - O["bay"]);
+                                        cz = IF(yn <= 0, oaz, oaz - O["baz"]);
+                                        cb = cx * LX + cy * LY + cz * LZ;
+                                        blocked = cb < 0 AND cb * cb - (cx * cx + cy * cy + cz * cz) + O["rr"] >= 0
+                                    ))
+                            ))
+                        ));
+                    IF(blocked, (shr = shr * O["sr"]; shg = shg * O["sg"]; shb = shb * O["sb"]))
+                ));
+                # lit by the sun and the room, fading into the haze far away
+                fog = ROUND(MIN(tf / 40, 1), P);
+                ar = ROUND(ar * (AMB + LY * shr), P);
+                ag = ROUND(ag * (AMB + LY * shg), P);
+                ab = ROUND(ab * (AMB + LY * shb), P);
+                pixr += ROUND(R["wr"] * (ar + (0.30 - ar) * fog), P);
+                pixg += ROUND(R["wg"] * (ag + (0.32 - ag) * fog), P);
+                pixb += ROUND(R["wb"] * (ab + (0.42 - ab) * fog), P)
+            ),
+            (
+                # the sky: a dark studio, lit by three softboxes out of the picture
+                sdx = R["dx"]; sdy = R["dy"]; sdz = R["dz"];
+                hor = MIN(sdy / 0.3, 1);
+                hor = ROUND(hor * hor * (3 - 2 * hor), P);       # smoothstep, no edge
+                lit = COND(
+                    sdx < -0.2 AND sdx > -0.8 AND sdy > 0.45 AND sdy < 0.85 AND sdz < 0, 4,
+                    sdx > 0.75 AND sdy > 0.05 AND sdy < 0.4, 1.6,
+                    sdz > 0.55 AND sdy > 0.3 AND sdy < 0.75 AND ABS(sdx) < 0.35, 2.5,
+                    0);
+                pixr += ROUND(R["wr"] * (0.30 - 0.27 * hor + lit), P);
+                pixg += ROUND(R["wg"] * (0.32 - 0.28 * hor + lit), P);
+                pixb += ROUND(R["wb"] * (0.42 - 0.32 * hor + lit), P)
+            )))
+    )));
+
+    # the mean of the samples, gamma 2, eight bits
+    ROUND(255 * SQRT(MIN(ROUND(pixr / (SS * SS), 4), 1), 4), 0) & " " &
+    ROUND(255 * SQRT(MIN(ROUND(pixg / (SS * SS), 4), 1), 4), 0) & " " &
+    ROUND(255 * SQRT(MIN(ROUND(pixb / (SS * SS), 4), 1), 4), 0)
+)), " "));
+
+"P3\n" & W & " " & H & "\n255\n" & JOIN(ROWS, "\n") & "\n"

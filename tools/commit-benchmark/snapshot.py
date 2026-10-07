@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
-"""One benchmark snapshot of the current working tree: the six scale scenarios
-and Mandelbrot, in every host, one host at a time.
+"""One benchmark snapshot of the current working tree: the six scale scenarios,
+Mandelbrot and the ray tracer, in every host, one host at a time.
 
     python3 tools/commit-benchmark/snapshot.py                 # all seven hosts
     python3 tools/commit-benchmark/snapshot.py --lanes cpp,js  # a subset
+    python3 tools/commit-benchmark/snapshot.py --workloads raytrace       # some workloads
     python3 tools/commit-benchmark/snapshot.py --compare OLD/summary.json
     python3 tools/commit-benchmark/snapshot.py --summary-only --out DIR [--compare ...]
 
 Each lane runs the host's own scale harness (tools/scale-test/sel_benchmarks.*,
 Go's go/build/scale-bench) over the 10x dataset, then the host's Mandelbrot timer
-(tools/commit-benchmark/mandelbrot.*), with 2 warmups and 5 measured runs by
-default. Lanes run strictly one after another, so a host never competes with
+(tools/commit-benchmark/mandelbrot.*), then the ray tracer (examples/raytrace,
+the worked example's --bench mode: one 64 x 36 frame), with 2 warmups and 5
+measured runs by default. Lanes run strictly one after another, so a host never competes with
 another host for the CPU; run it on an otherwise idle machine. PHP runs with
 OPcache and the tracing JIT, as the other harnesses here do.
 
 It measures the binaries already built in this tree and builds nothing: run
-`cd cpp && make build/scale-bench`, the mandelbrot compile below, `make -C go`,
-`bash rust/build.sh` first. A missing binary is refused with the command that
+`cd cpp && make build/scale-bench build/example-raytrace`, the mandelbrot compile
+below, `make -C go`, `bash rust/build.sh` first. A missing binary is refused with the command that
 builds it.
 
 Results go to --out (default tools/commit-benchmark/results/snapshot-<commit>/,
 which is ignored): one JSON report and log per lane and per Mandelbrot run, and
 summary.json with the median prepared_total_ms per scenario and the median
-Mandelbrot frame time per host. --compare prints a second table against an
-earlier summary.json: old, new and the change in percent. Every Mandelbrot frame
-must be byte-identical across hosts, and every scenario must pass its parity
-check against tools/scale-test/benchmark_results.json; a run that does not is
-reported under "problems" and exits 1.
+Mandelbrot and ray-traced frame times per host. --compare prints a second table
+against an earlier summary.json: old, new and the change in percent. Every
+Mandelbrot frame must be byte-identical across hosts, every ray-traced frame must
+have the CRC32 examples/raytrace/output.txt records, and every scenario must pass
+its parity check against tools/scale-test/benchmark_results.json; a run that does
+not is reported under "problems" and exits 1.
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -43,18 +47,23 @@ TOOL = ROOT / 'tools/commit-benchmark'
 DATASET = ROOT / 'tools/scale-test/dataset-10x.json'
 REFERENCE = ROOT / 'tools/scale-test/benchmark_results.json'
 LANES = ['cpp', 'rust', 'go', 'js', 'lisp', 'php', 'python']
-WORKLOADS = [f'scenario{i}' for i in range(1, 7)] + ['mandelbrot']
+WORKLOADS = [f'scenario{i}' for i in range(1, 7)] + ['mandelbrot', 'raytrace']
 PHP = ['php', '-d', 'memory_limit=-1', '-d', 'opcache.enable_cli=1',
        '-d', 'opcache.jit_buffer_size=128M', '-d', 'opcache.jit=1255']
 SBCL = ['sbcl', '--dynamic-space-size', '4096', '--noinform', '--disable-debugger', '--non-interactive']
 BINARIES = {  # lane -> [(binary, the command that builds it)]
     'cpp': [('cpp/build/scale-bench', 'cd cpp && make build/scale-bench'),
             ('cpp/build/mandelbrot', 'c++ -std=c++23 -O2 -Icpp tools/commit-benchmark/mandelbrot.cpp '
-                                     'cpp/build/sel.o -o cpp/build/mandelbrot')],
-    'go': [('go/build/scale-bench', 'make -C go'), ('go/build/mandelbrot', 'make -C go')],
+                                     'cpp/build/sel.o -o cpp/build/mandelbrot'),
+            ('cpp/build/example-raytrace', 'cd cpp && make build/example-raytrace')],
+    'go': [('go/build/scale-bench', 'make -C go'), ('go/build/mandelbrot', 'make -C go'),
+           ('go/build/example-raytrace', 'make -C go')],
     'rust': [('rust/target/release/examples/scale-bench', 'bash rust/build.sh'),
-             ('rust/target/release/examples/mandelbrot', 'bash rust/build.sh')],
+             ('rust/target/release/examples/mandelbrot', 'bash rust/build.sh'),
+             ('rust/build/example-raytrace', 'bash rust/build.sh')],
 }
+# The CRC32 of the 64 x 36 frame, as the worked example's transcript records it.
+RAYTRACE_CRC = re.search(r'CRC32 ([0-9a-f]{8})', (ROOT / 'examples/raytrace/output.txt').read_text()).group(1)
 
 
 def scale_command(lane, out, runs, warmups):
@@ -85,6 +94,20 @@ def mandelbrot_command(lane, out, runs, warmups):
            'lisp': SBCL + ['--load', str(TOOL / 'mandelbrot.lisp')],
            'php': PHP + [str(TOOL / 'mandelbrot.php'), str(out)],
            'python': [sys.executable, str(TOOL / 'mandelbrot.py'), str(out)]}[lane]
+    return cmd, env
+
+
+def raytrace_command(lane, out, runs, warmups):
+    env = dict(RAYTRACE_RUNS=str(runs), RAYTRACE_WARMUPS=str(warmups))
+    bench = ['--bench', str(out)]
+    cmd = {'cpp': ['cpp/build/example-raytrace'] + bench,
+           'rust': ['rust/build/example-raytrace'] + bench,
+           'go': ['go/build/example-raytrace'] + bench,
+           'js': ['node', 'examples/raytrace/js.mjs'] + bench,
+           'lisp': SBCL + ['--load', 'lisp/bin/boot.lisp', '--load', 'examples/raytrace/lisp.lisp',
+                           '--eval', '(sel-example:main)', '--end-toplevel-options'] + bench,
+           'php': PHP + ['examples/raytrace/php.php'] + bench,
+           'python': [sys.executable, 'examples/raytrace/python.py'] + bench}[lane]
     return cmd, env
 
 
@@ -122,6 +145,13 @@ def summarize(out_dir, lanes):
             table.setdefault(lane, {})['mandelbrot'] = statistics.median(report['samples_ms'])
             for text in report['outputs']:
                 frames.setdefault(hashlib.sha256(text.encode()).hexdigest()[:12], set()).add(lane)
+        path = out_dir / f'{lane}-raytrace.json'
+        if path.exists():
+            report = json.loads(path.read_text())
+            table.setdefault(lane, {})['raytrace'] = statistics.median(report['samples_ms'])
+            wrong = sorted(set(report['outputs']) - {RAYTRACE_CRC})
+            if wrong or not report['outputs']:
+                problems.append(f'{lane}/raytrace: frame CRC32 {wrong or "missing"}, expected {RAYTRACE_CRC}')
     if len(frames) > 1:
         problems.append('Mandelbrot frames differ: ' + ', '.join(f'{h}: {sorted(v)}' for h, v in frames.items()))
     return table, problems
@@ -137,6 +167,8 @@ def print_table(title, lanes, cell, width=10):
 def main():
     parser = argparse.ArgumentParser(description='One benchmark snapshot of this tree, every host in turn.')
     parser.add_argument('--lanes', default=','.join(LANES))
+    parser.add_argument('--workloads', default='scale,mandelbrot,raytrace',
+                        help='a comma-separated subset of scale, mandelbrot, raytrace')
     parser.add_argument('--runs', type=int, default=5)
     parser.add_argument('--warmups', type=int, default=2)
     parser.add_argument('--out', type=Path, default=None)
@@ -147,6 +179,9 @@ def main():
     unknown = [lane for lane in lanes if lane not in LANES]
     if unknown:
         parser.error(f'unknown lane(s) {unknown}; known: {LANES}')
+    workloads = [w for w in a.workloads.split(',') if w]
+    if not workloads or set(workloads) - {'scale', 'mandelbrot', 'raytrace'}:
+        parser.error(f'--workloads takes scale, mandelbrot and raytrace, not {a.workloads!r}')
     commit = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', '--short', 'HEAD'],
                             capture_output=True, text=True).stdout.strip() or 'unknown'
     out_dir = a.out or TOOL / 'results' / f'snapshot-{commit}'
@@ -154,16 +189,21 @@ def main():
 
     failed = []
     if not a.summary_only:
-        missing = [(b, how) for lane in lanes for b, how in BINARIES.get(lane, []) if not (ROOT / b).exists()]
+        wanted = {'scale': 'scale-bench', 'mandelbrot': 'mandelbrot', 'raytrace': 'example-raytrace'}
+        missing = [(b, how) for lane in lanes for b, how in BINARIES.get(lane, [])
+                   if not (ROOT / b).exists() and any(b.endswith(wanted[w]) for w in workloads)]
         if missing:
             sys.exit('missing binaries; build them first:\n' + '\n'.join(f'  {b}: {how}' for b, how in missing))
         for lane in lanes:
-            cmd, env = scale_command(lane, out_dir / f'{lane}.json', a.runs, a.warmups)
-            if run(cmd, env, out_dir / f'{lane}.log'):
-                failed.append(lane)
-            cmd, env = mandelbrot_command(lane, out_dir / f'{lane}-mandelbrot.json', a.runs, a.warmups)
-            if run(cmd, env, out_dir / f'{lane}-mandelbrot.log'):
-                failed.append(f'{lane}-mandelbrot')
+            if 'scale' in workloads:
+                cmd, env = scale_command(lane, out_dir / f'{lane}.json', a.runs, a.warmups)
+                if run(cmd, env, out_dir / f'{lane}.log'):
+                    failed.append(lane)
+            for workload, command in (('mandelbrot', mandelbrot_command), ('raytrace', raytrace_command)):
+                if workload in workloads:
+                    cmd, env = command(lane, out_dir / f'{lane}-{workload}.json', a.runs, a.warmups)
+                    if run(cmd, env, out_dir / f'{lane}-{workload}.log'):
+                        failed.append(f'{lane}-{workload}')
 
     table, problems = summarize(out_dir, lanes)
     problems += [f'{label}: non-zero exit (see its log)' for label in failed]

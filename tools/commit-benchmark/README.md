@@ -5,25 +5,37 @@
 ```sh
 python3 tools/commit-benchmark/snapshot.py                       # every host
 python3 tools/commit-benchmark/snapshot.py --lanes cpp,rust,go   # some hosts
+python3 tools/commit-benchmark/snapshot.py --workloads raytrace  # some workloads (scale, mandelbrot, raytrace)
 python3 tools/commit-benchmark/snapshot.py --compare tools/commit-benchmark/results/snapshot-<commit>/summary.json
 ```
 
 Runs the six scale scenarios (each host's `tools/scale-test/sel_benchmarks.*`,
-Go's `go/build/scale-bench`, over the 10× dataset) and the Mandelbrot timer
-below, host after host, with 2 warmups and 5 measured runs (`--runs`,
-`--warmups`). Nothing runs in parallel, so use an otherwise idle machine. It
-builds nothing: build first (`cd cpp && make build/scale-bench`, the Mandelbrot
-compile `c++ -std=c++23 -O2 -Icpp tools/commit-benchmark/mandelbrot.cpp
-cpp/build/sel.o -o cpp/build/mandelbrot`, `make -C go`, `bash rust/build.sh`);
-a missing binary is refused with its build command.
+Go's `go/build/scale-bench`, over the 10× dataset), the Mandelbrot timer below
+and the ray tracer, host after host, with 2 warmups and 5 measured runs
+(`--runs`, `--warmups`). Nothing runs in parallel, so use an otherwise idle
+machine. It builds nothing: build first (`cd cpp && make build/scale-bench
+build/example-raytrace`, the Mandelbrot compile `c++ -std=c++23 -O2 -Icpp
+tools/commit-benchmark/mandelbrot.cpp cpp/build/sel.o -o cpp/build/mandelbrot`,
+`make -C go`, `bash rust/build.sh`); a missing binary is refused with its build
+command.
+
+The ray tracer is [`examples/raytrace`](../../examples/raytrace/), the worked
+example's `--bench` mode: one 64 × 36 frame of the SEL mark in glass, a few
+hundred exact-decimal operations and about five square roots per pixel (10 969
+in the frame) on numbers kept to six fractional digits, where Mandelbrot is a
+few multiplications of ever-longer numbers. The square root is a
+host function (`SQRT`), so the frame also measures each host's function-call
+boundary.
 
 Results go to `tools/commit-benchmark/results/snapshot-<commit>/` (ignored), or
 `--out DIR`: each host's reports and logs plus `summary.json`, the median
-`prepared_total_ms` per scenario and the median Mandelbrot frame per host.
+`prepared_total_ms` per scenario and the median Mandelbrot and ray-traced frames
+per host.
 `--compare OLD/summary.json` adds an old → new table with the change in
 percent; `--summary-only --out DIR` re-summarizes a finished run. Every scenario
-must pass its parity check and every host must render the same Mandelbrot
-frame, or the run is reported under "problems" and exits 1.
+must pass its parity check, every host must render the same Mandelbrot frame,
+and every ray-traced frame must have the CRC32 `examples/raytrace/output.txt`
+records, or the run is reported under "problems" and exits 1.
 
 ## Four-commit application comparison
 

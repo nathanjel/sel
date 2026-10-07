@@ -111,6 +111,10 @@ name = "scripting"
 path = "../../examples/scripting/rust.rs"
 
 [[example]]
+name = "raytrace"
+path = "../../examples/raytrace/rust.rs"
+
+[[example]]
 name = "sql"
 path = "../../examples/sql/rust.rs"
 
