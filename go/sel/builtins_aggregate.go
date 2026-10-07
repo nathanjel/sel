@@ -1878,11 +1878,10 @@ func init() {
 					pre.Above = handed.Above
 					pre.Obligations = handed.Obligations
 				}
-				if handed != nil {
-					pre.Deep = true
-				} else {
-					pre.Deep = written.keysUnobserved
-				}
+				// A body that reads _K observes the joined rows' keys itself,
+				// whatever the step after it does: rows dropped below must keep
+				// their positions then.
+				pre.Deep = (handed != nil || written.keysUnobserved) && !nodeContainsVar(written, "_K")
 				if len(pre.Stages) > 0 {
 					ctx.joinPrefilter = &pre
 				} else if handed == nil && src.S == "LINK_LEFT" && len(own) > 0 {
@@ -1891,11 +1890,8 @@ func init() {
 					// is FALSE on before building their joined rows. Nothing is
 					// reported back -- the null-extended rows were never tested --
 					// so the whole predicate still runs over every row the join builds.
-					// The keys the join numbers are the ones this FILTER's own _K
-					// reads, observed there whatever the next step does.
 					if member, field, ok := rightNullTest(own[0].Node, binder); ok {
-						ctx.joinRightNull = &joinRightNull{Member: member, Field: field,
-							Deep: pre.Deep && !nodeContainsVar(written, "_K")}
+						ctx.joinRightNull = &joinRightNull{Member: member, Field: field, Deep: pre.Deep}
 					}
 				}
 			}
