@@ -36,8 +36,8 @@ constexpr std::string_view SQL_SPECIAL_CALLS[] = {
 // `A[k] = x` which write into A), and whether it calls an application's own
 // function (may_have_effects: one registered or define()d outside the
 // manifest alike), which is handed values and may change them through its
-// argument -- directly, inside IF, inside an aggregate body. Iterative: a flat chain of 400k
-// operators is one tree as deep as the source is long.
+// argument -- directly, inside IF, inside an aggregate body. Iterative: a flat
+// chain of 400k operators is one tree as deep as the source is long.
 struct ContinuationEffects {
   std::set<std::string> assigned_roots;
   bool calls_application_function = false;

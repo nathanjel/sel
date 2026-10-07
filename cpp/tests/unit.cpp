@@ -2588,6 +2588,77 @@ void test_left_join_right_null() {
 #endif
 }
 
+// The left key runs after the right rows were tested; a function SEL does
+// not ship may change a right row there (spec §7.4, §8.1), which the FILTER
+// then reads -- the item under `_2` is the element itself. Compared with the
+// same predicate behind a leading TRUE, which no join tests early.
+void test_a_join_whose_key_may_write_tests_nothing_early() {
+  selt::section("a join whose key may write tests nothing early");
+  const auto run = [](const std::string& src, const std::optional<std::string>& value) {
+    Value ctx = Value::none();
+    compile("P = LIST(RECORD(\"id\", 1), RECORD(\"id\", 2)); "
+            "I = LIST(RECORD(\"id\", 10, \"product_id\", 1), RECORD(\"id\", 11, \"product_id\", 2))").run(ctx);
+    Value item = *ctx.get("I")->get("2");
+    register_function("T_MUT", 1, 1, [item, value](HostArgs& args) {
+      Value target = item;   // a handle: set() writes the context's own element
+      target.set("id", value ? Value::text(*value) : Value::none());
+      return args.val(0);
+    });
+    return compile(src).run(ctx).dump();
+  };
+  for (const auto& [pipeline, value] : std::vector<std::pair<std::string, std::optional<std::string>>>{
+           {"LINK_LEFT(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"_2\"][\"id\"]))",
+            std::nullopt},
+           {"LINK(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"]) .> FILTER(_[\"_2\"][\"id\"] < 8)",
+            std::string("5")}}) {
+    const std::string as_written = run(pipeline + " .> MAP(_[\"_1\"][\"id\"])", value);
+    const std::size_t cut = pipeline.find(" .> FILTER(");
+    const std::string untested = pipeline.substr(0, cut) + " .> FILTER(TRUE AND " +
+                                 pipeline.substr(cut + std::string(" .> FILTER(").size()) + " .> MAP(_[\"_1\"][\"id\"])";
+    selt::eq(as_written, run(untested, value), pipeline + ": as the predicate no join tests early");
+    selt::eq(as_written, std::string("-{\"1\"=t\"2\"}"), pipeline);
+  }
+}
+
+// What an aggregate keeps of a source nothing else holds (a MAP's fresh
+// records) it may keep uncopied -- but not once a function SEL does not ship
+// has seen it: T_GRAB keeps its argument and, called again, changes the one
+// it kept. The element FILTER, SORT_BY, TOP_BY or BUCKET kept is a copy.
+void test_an_element_a_function_kept_is_copied() {
+  selt::section("an element a function SEL does not ship has kept is copied");
+  static std::optional<Value> grabbed;
+  register_function("T_GRAB", 1, 1, [](HostArgs& args) {
+    if (grabbed) grabbed->set("k", Value::integer(9));
+    grabbed = args.val(0);
+    return Value::boolean(true);
+  });
+  define(Spec{"T_GRAB_LOW", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                if (grabbed) grabbed->set("k", Value::integer(9));
+                grabbed = a.val(0);
+                return Value::boolean(true);
+              }});
+  for (const char* fn : {"T_GRAB", "T_GRAB_LOW"}) {
+    for (const std::string& shape : {std::string("FILTER(MAP(X, RECORD(\"k\", _)), %(_))[1]"),
+                                     std::string("SORT_BY(MAP(X, RECORD(\"k\", _)), %(_))[1]"),
+                                     std::string("TOP_BY(MAP(X, RECORD(\"k\", _)), %(_), 2)[1]"),
+                                     std::string("BUCKET(MAP(X, RECORD(\"k\", _)), %(_), _)[1][1]"),
+                                     std::string("(X .> MAP(RECORD(\"k\", _)) .> FILTER(%(_)) .> MAP(_))[1]")}) {
+      // X comes from the context: a program with an assignment would make
+      // every copy whatever it calls.
+      std::string src = shape + "[\"k\"]";
+      src.replace(src.find('%'), 1, fn);
+      Value ctx = Value::none();
+      ctx.set("X", Value::list({Value::integer(1), Value::integer(2)}));
+      grabbed.reset();
+      std::string got;
+      try { got = compile(src).run(ctx).dump(); } catch (const SelError& e) { got = e.code(); }
+      grabbed.reset();
+      selt::eq(got, std::string("t\"1\""), src);
+    }
+  }
+  table().erase("T_GRAB_LOW");
+}
+
 void test_regex_shapes() {
   selt::section("regex shape rules");
   for (const char* bad : {"^*", "$+", "^{2}", "^+?", "a$+", "$?", "${0}", "^{2}a", "a**", "a{2}{3}", "*a", "(a", "a)",
@@ -2907,6 +2978,8 @@ int main() {
   test_snapshots_and_order();
   test_join_keys();
   test_left_join_right_null();
+  test_a_join_whose_key_may_write_tests_nothing_early();
+  test_an_element_a_function_kept_is_copied();
   test_regex_shapes();
   test_regex_ambiguity();
   test_records_sort_by_first_field();

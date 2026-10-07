@@ -6702,6 +6702,13 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   ctx.join_right_null.reset();
   const int count = a.count();
   if (count != 3 && count != 5) unreachable_arity(a.name());
+  // A predicate that may write can change a row between an early test and
+  // the FILTER's read of it (spec §7.4): then nothing is tested early here,
+  // and nothing is handed down.
+  if ((prefilter || right_null) && !ctx.write_free && !writes_nothing(a.node(count == 5 ? 4 : 2))) {
+    prefilter.reset();
+    right_null.reset();
+  }
   const Node& left_node = a.node(0);
   const Node& right_node = a.node(1);
   const std::vector<JoinStage> no_stages;
@@ -7927,7 +7934,13 @@ void register_aggregates() {
                 const Node& src = a.node(0);
                 std::vector<const Node*> own_nodes;
                 bool over_join = false;
-                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
+                // An early test holds only while nothing can change what it
+                // read before this FILTER reads it (spec §7.4): a predicate
+                // that may write -- an assignment, or a call SEL does not ship
+                // -- is offered to no join, and the conjuncts handed from
+                // above stop here too.
+                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT") &&
+                    (ctx.write_free || writes_nothing(written))) {
                   over_join = true;
                   const bool three = a.count() == 3;
                   const std::string binder = three ? a.symbol(1) : std::string("_");
