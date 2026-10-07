@@ -1249,6 +1249,35 @@ $expect('collectors copy only where a write could tell (Context::$writeFree): a 
     }
     return true;
 });
+$expect('a function outside the manifest may write however it was installed (SPEC 8.1, Registry::mayHaveEffects): define()d strict, lazy or binding, or a replaced registration, brings the copies back', function () {
+    $ctx = Value::fromNative(['X' => [['k' => 1], ['k' => 2]]]);
+    $x1 = $ctx->get('X')->get('1');
+    $poke = static function () use ($x1): Value { $x1->set('k', Value::int(9)); return Value::text('1'); };
+    $through = static function (string $src) use ($ctx, $x1): string {
+        try { return \Sel\Sel::compile($src)->run($ctx)->asText(); } finally { $x1->set('k', Value::int(1)); }
+    };
+    // Defining a function below the public API is not a declaration that it is pure.
+    \Sel\Registry::define(['name' => 'T_POKE_LOW', 'min' => 0, 'max' => 0, 'fn' => $poke]);
+    \Sel\Registry::define(['name' => 'T_POKE_LAZY', 'min' => 0, 'max' => 0, 'lazy' => true, 'fn' => $poke]);
+    \Sel\Registry::define(['name' => 'T_POKE_EACH', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true, 'fn' => $poke]);
+    \Sel\Sel::registerFunction('T_POKE_AGAIN', 0, 0, static fn (): Value => Value::text('1'));
+    \Sel\Sel::registerFunction('T_POKE_AGAIN', 0, 0, $poke);
+    $reached = [];
+    foreach (['T_POKE_LOW()', 'T_POKE_LAZY()', 'T_POKE_EACH(LIST(1), _)', 'T_POKE_AGAIN()'] as $call) {
+        $got = $through("FILTER(X, TRUE)[{$call}][\"k\"]");
+        if ($got !== '1') $reached[] = "{$call} ({$got})";
+    }
+    if ($reached !== []) return "a write reached FILTER's result through " . implode(', ', $reached);
+    // Only a shipped builtin is assumed to have none: a program calling one alone stays write-free.
+    if (\Sel\Sel::compile('FILTER(X, TRUE)[ABS(1)]')->run($ctx) !== $x1) return 'a shipped builtin brought the copies back';
+    foreach (['FILTER' => false, 'is_null' => false, 'T_POKE_LOW' => true, 't_poke_each' => true, 'T_POKE_AGAIN' => true,
+              'T_NOT_DEFINED_ANYWHERE' => true] as $name => $effects) {
+        if (\Sel\Registry::mayHaveEffects($name) !== $effects) return "mayHaveEffects($name)";
+    }
+    // Registration stays its own question: a define()d function has no SQL arity, a registered one has.
+    if (\Sel\Registry::hostArity('T_POKE_LOW') !== null || \Sel\Registry::hostArity('T_POKE_AGAIN') !== [0, 0]) return 'hostArity';
+    return true;
+});
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

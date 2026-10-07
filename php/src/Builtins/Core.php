@@ -460,10 +460,11 @@ final class Core
 
     /**
      * Whether evaluating $node might write into a value: it holds an assignment or
-     * calls a host function. A collector copies an element when it collects it
-     * (spec §3.4); while nothing below the body can write, deferring the copy to
-     * the end is unobservable, so only a body that might write copies at
-     * collection. Iterative: a body can be a flat chain as long as the source.
+     * calls an application's function (Registry::mayHaveEffects: anything outside
+     * the manifest, however installed). A collector copies an element when it
+     * collects it (spec §3.4); while nothing below the body can write, deferring
+     * the copy to the end is unobservable, so only a body that might write copies
+     * at collection. Iterative: a body can be a flat chain as long as the source.
      *
      * @param array<string,mixed>|null $node
      */
@@ -475,7 +476,7 @@ final class Core
             if (!is_array($n)) continue;
             $t = $n['t'] ?? null;
             if ($t === 'assign') return true;
-            if ($t === 'call' && Registry::isHostFunction((string) ($n['name'] ?? ''))) return true;
+            if ($t === 'call' && Registry::mayHaveEffects((string) ($n['name'] ?? ''))) return true;
             foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;

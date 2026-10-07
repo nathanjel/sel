@@ -8,7 +8,6 @@ namespace Sel\Builtins;
 use Sel\Args;
 use Sel\Ast;
 use Sel\Budget;
-use Sel\BuiltinManifest;
 use Sel\Context;
 use Sel\Dec;
 use Sel\Limits;
@@ -990,7 +989,7 @@ final class Structure
         return $out;
     }
 
-    /** Whether evaluating NODE can be observed only through its value (no assignment, sequence, host function or ABORT), so it may run out of order. */
+    /** Whether evaluating NODE can be observed only through its value (no assignment, sequence, application function -- Registry::mayHaveEffects -- or ABORT), so it may run out of order. */
     private static function pureSource(?array $node): bool
     {
         if ($node === null) return true;
@@ -1003,7 +1002,7 @@ final class Structure
                 foreach ($node['items'] as $item) if (!self::pureSource($item)) return false;
                 return true;
             case 'call':
-                if (!isset(BuiltinManifest::BUILTINS[$node['name']]) || $node['name'] === 'ABORT') return false;
+                if (Registry::mayHaveEffects($node['name']) || $node['name'] === 'ABORT') return false;
                 foreach ($node['args'] as $arg) if (!self::pureSource($arg)) return false;
                 return true;
             default: return false;
