@@ -18,8 +18,8 @@ whole `SELECT` for MariaDB, MySQL, PostgreSQL and SQLite.
 ## Install
 
 ```sh
-go get github.com/nathanjel/sel/go@v0.10.0                 # the library
-go install github.com/nathanjel/sel/go/bin/sel@v0.10.0     # the `sel` REPL: sel -e 'expr', sel --deps -e 'expr'
+go get github.com/nathanjel/sel/go@v0.10.2                 # the library
+go install github.com/nathanjel/sel/go/bin/sel@v0.10.2     # the `sel` REPL: sel -e 'expr', sel --deps -e 'expr'
 ```
 
 Go 1.22 or later, and no dependencies outside the standard library. Two

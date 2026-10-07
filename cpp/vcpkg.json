@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "sel-lang",
-  "version-semver": "0.10.0",
+  "version-semver": "0.10.2",
   "description": [
     "A small expression language for business rules: one rule gives the same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go, or in your database as SQL. Exact decimal arithmetic, no floating point, no truthiness.",
     "Held to a normative spec by a conformance suite and a differential fuzzer that runs every host and compares them byte for byte; code-point-accurate text and a regex subset every host's engine agrees on."

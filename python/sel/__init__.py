@@ -36,7 +36,7 @@ __all__ = [
     'function_names', 'register_function', 'NONE', 'TEXT', 'BIN', 'BOOL', '__version__',
 ]
 
-__version__ = '0.10.0'
+__version__ = '0.10.2'
 
 
 class Program:

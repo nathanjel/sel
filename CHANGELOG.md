@@ -11,10 +11,12 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
-## Unreleased
+## 0.10.2 — 2026-10-07
 
 The 0.10.0 consolidated review (158 issues, SEL-R001–SEL-R158), resolved in
-every host. Behaviour changes are listed first; most of the rest is shared
+every host, and its follow-ups: one effects rule for every function SEL does
+not ship, and a `LINK_LEFT` that skips the rows a FILTER's leading `IS_NULL`
+drops. Behaviour changes are listed first; most of the rest is shared
 definitions, generated tables, gate lanes and documentation.
 
 **Language and evaluator fixes:**
