@@ -586,8 +586,9 @@ function flatRow(row, binderNames) {
 // the rows, at run time, so the physical tree stays a function of the AST.
 
 // Whether evaluating NODE can be observed only through its value: no
-// assignment, no sequence, no call outside the shipped builtins (a host's own
-// function may do anything), no ABORT. Such a node may be evaluated out of
+// assignment, no sequence, no call outside the shipped builtins (an
+// application's function, however it was defined, may do anything:
+// registry.mayHaveEffects), no ABORT. Such a node may be evaluated out of
 // order -- the right source of a join before the left -- which is what lets a
 // FILTER's conjuncts travel down a chain of joins.
 function pureSource(root) {
@@ -1203,8 +1204,8 @@ function nestedLoopJoin(call, predicate, leftItems, rightItems, hasRight, projec
     [b2, null], [b2Lower, null], ['_2', null],
   ]);
   ctx.pushFrame(frame);
-  // A predicate that can change no value (no assignment, no host function) sees the
-  // same right rows for every left row, so they are aliased once, at the first left
+  // A predicate that can change no value (no assignment, no application function:
+  // ast.mayWrite) sees the same right rows for every left row, so they are aliased once, at the first left
   // row, not once per pair. Anything else re-aliases per pair as before: a
   // predicate's writes are visible to the pairs still to come.
   const stable = !mayWrite(predicate);

@@ -847,6 +847,80 @@ a*a*$
   }
 }
 
+// --- an application's function is never assumed harmless (spec/SPEC.md §8.1):
+// however it was installed, a call to it may write, so no copy is put off past
+// it and no aliasing outlives it (registry.mayHaveEffects) -----------------
+{
+  const { registerFunction } = await import('../js/src/sel.mjs');
+  const { define, mayHaveEffects, hostArity } = await import('../js/src/registry.mjs');
+  const { mayWrite } = await import('../js/src/ast.mjs');
+  let installs = 0;
+  // POKE rewrites X[1]["k"] from 1 to 9 -- from its FROM-th call on -- and
+  // answers ANSWER. INSTALL defines it under a fresh name (the table cannot
+  // drop one) and answers the call as a program spells it.
+  const poke = (install, src, { from = 1, answer = Value.text('1') } = {}) => {
+    const ctx = Value.fromNative({ X: [{ k: 1 }, { k: 2 }], L: [{ a: 1 }, { a: 2 }] });
+    const x1 = ctx.get('X').get('1');
+    let calls = 0;
+    const fn = () => {
+      calls += 1;
+      if (calls >= from) x1.set('k', Value.int(9));
+      return answer;
+    };
+    installs += 1;
+    return compile(src.replaceAll('POKE', install(`T13_POKE_${installs}`, fn))).run(ctx).scalar;
+  };
+  const installers = {
+    'a registered function': (name, fn) => { registerFunction(name, 0, 0, fn); return `${name}()`; },
+    'a replaced registration': (name, fn) => {
+      registerFunction(name, 0, 0, () => Value.text('1'));
+      registerFunction(name, 0, 0, fn);
+      return `${name}()`;
+    },
+    'a define()d strict function': (name, fn) => { define({ name, min: 0, max: 0, fn }); return `${name}()`; },
+    'a define()d lazy function': (name, fn) => {
+      define({ name, min: 0, max: 0, lazy: true, fn });
+      return `${name}()`;
+    },
+    // examples/fn-complex's form: a binding function defined in place.
+    'a define()d binding function': (name, fn) => {
+      define({ name, min: 2, max: 3, lazy: true, binds: true, fn });
+      return `${name}(LIST(1), _)`;
+    },
+  };
+  for (const [what, install] of Object.entries(installers)) {
+    // FILTER collected X[1] before POKE ran: the write must not reach it (SPEC 3.4).
+    expectOk(`${what}: FILTER(X, TRUE)[POKE]["k"] is 1`, () =>
+      assert.equal(poke(install, 'FILTER(X, TRUE)[POKE]["k"]'), '1'));
+    // A key that may write copies each element once its key is computed: the
+    // second key's write must not reach the first element.
+    for (const src of ['SORT_BY(X, POKE)[1]["k"]', 'TOP_BY(X, POKE, 2)[1]["k"]', 'BUCKET(X, POKE)["1"][1]["k"]']) {
+      expectOk(`${what}: ${src} is 1`, () => assert.equal(poke(install, src, { from: 2 }), '1'));
+    }
+    // A predicate that may write re-aliases the right rows per pair: the second
+    // left row meets X[1] as the first pair's predicate left it.
+    expectOk(`${what}: LINK(L, X, A, B, POKE)[3]["k"] is 9`, () =>
+      assert.equal(poke(install, 'LINK(L, X, A, B, POKE)[3]["k"]', { answer: Value.bool(true) }), '9'));
+  }
+  expectOk('only a shipped builtin is assumed to have no effects', () => {
+    assert.equal(mayHaveEffects('FILTER'), false);
+    assert.equal(mayHaveEffects('is_null'), false);
+    assert.equal(mayHaveEffects('T13_NOT_DEFINED_ANYWHERE'), true);
+    registerFunction('T13_HOST_FN', 0, 0, () => Value.text('1'));
+    assert.equal(mayHaveEffects('T13_HOST_FN'), true);
+    assert.deepEqual(hostArity('T13_HOST_FN'), [0, 0]);
+    define({ name: 'T13_LOW_FN', min: 0, max: 0, fn: () => Value.text('1') });
+    // Not the application's registration (no SQL arity), but no less able to write.
+    assert.equal(mayHaveEffects('T13_LOW_FN'), true);
+    assert.equal(hostArity('T13_LOW_FN'), null);
+    // A body of shipped calls stays write-free: its copies are still put off
+    // to the end, and the right rows still aliased once.
+    assert.equal(mayWrite(parse('SORT_BY(X, LOWER(_["k"]))')), false);
+    assert.equal(mayWrite(parse('LINK(L, X, A, B, IS_NULL(B["k"]))')), false);
+    assert.equal(mayWrite(parse('SORT_BY(X, T13_LOW_FN())')), true);
+  });
+}
+
 // --- performance work, part 2: the optimisations are invisible ---------
 {
   const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
