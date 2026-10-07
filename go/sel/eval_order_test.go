@@ -351,3 +351,52 @@ func TestProbesSwallowOnlySelErrors(t *testing.T) {
 	}()
 	tryDec(func() *decimal.Dec { panic("boom") })
 }
+
+// SPEC §7.4: a join evaluates its left source first. Its prefilter evaluates the
+// right one first only where nothing can tell (joinPureSource), and a function
+// SEL does not ship can (§8.1): this one rewrites a row the left source's FILTER
+// reads. Whether it was registered or defined, the pipeline answers what the
+// join bound to a helper variable first answers.
+func TestJoinSourcesStayInOrderAroundAFunctionSELDoesNotShip(t *testing.T) {
+	ctx := ctxWith("X", newListOwned([]*Value{rec("k", 1), rec("k", 2)}))
+	x1 := ctx.Get("X").Get("1")
+	source := func() *Value {
+		x1.Set("k", NewInt(0))
+		return newListOwned([]*Value{rec("k", 1)})
+	}
+	const join = `X .> FILTER(_["k"] > 0) .> LINK(T_SRC(), _1["k"] == _2["k"])`
+	const rest = `FILTER(_["x"]["k"] > 0) .> MAP(_["x"]["k"])`
+	for how, install := range map[string]func(){
+		"registered": func() { RegisterFunction("T_SRC", 0, 0, func(*Args) *Value { return source() }) },
+		"defined": func() {
+			Define(&Spec{Name: "T_SRC", Min: 0, Max: 0, Fn: func(*Args, *Context) *Value { return source() }})
+		},
+		"defined lazy": func() {
+			Define(&Spec{Name: "T_SRC", Min: 0, Max: 0, Lazy: true, Fn: func(*Args, *Context) *Value { return source() }})
+		},
+	} {
+		install()
+		x1.Set("k", NewInt(1))
+		got := runOnce(join+` .> `+rest, ctx)
+		x1.Set("k", NewInt(1))
+		want := runOnce(`J = `+join+`; J .> `+rest, ctx)
+		forgetFunction("T_SRC")
+		if got != want || got != `-{"1"=t"1"}` {
+			t.Errorf("%s: the pipeline gives %s, through a variable %s", how, got, want)
+		}
+	}
+	// The shipped builtins leave a source free to go first.
+	for src, want := range map[string]bool{
+		`LIST(RECORD("k", 1), UPPER("a"))`: true,
+		`ABORT("no")`:                      false,
+	} {
+		if got := joinPureSource(parse(src)); got != want {
+			t.Errorf("joinPureSource(%s) = %v, want %v", src, got, want)
+		}
+	}
+	call := NewNode(NodeCall, Pos{Line: 1, Col: 1})
+	call.S = "T_SRC"
+	if joinPureSource(call) {
+		t.Error("joinPureSource takes a call to a function SEL does not ship for pure")
+	}
+}

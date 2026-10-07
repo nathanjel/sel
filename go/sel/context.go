@@ -11,6 +11,13 @@ type Context struct {
 	depth               int
 	joinPrefilter       *joinPrefilter
 	joinPrefilterReport *joinReport
+	// joinRightNull is what a FILTER directly over a LINK_LEFT whose predicate
+	// opens with IS_NULL(_["member"]["field"]) hands its join: the join may skip
+	// building the joined rows of the right rows that conjunct is FALSE on
+	// (rightNullRejects). Set just before the FILTER evaluates its source, taken by
+	// the join before it evaluates either of its own, and cleared like the
+	// prefilter state when evaluation unwinds.
+	joinRightNull *joinRightNull
 	// noCopy names the one FILTER call whose kept rows may stay aliased to the
 	// source, because its parent is about to read or copy them itself. It
 	// is set by the parent just before it evaluates that argument and consumed by the

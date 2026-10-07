@@ -23,7 +23,9 @@ var (
 
 // Define adds a builtin to the function table, as the shipped builtins are
 // added (examples/fn-simple and examples/fn-complex show both kinds). An
-// application's own functions are registered with RegisterFunction instead.
+// application's own functions are registered with RegisterFunction instead. A
+// name outside spec/builtins.json defined here is no builtin to the analyses,
+// though: it counts as able to change any value it reaches (MayHaveEffects).
 func Define(spec *Spec) {
 	key := utf8.AsciiUpper(spec.Name)
 	registryMu.Lock()
@@ -212,14 +214,23 @@ func HostArity(name string) (int, int, bool) {
 	return spec.Min, spec.Max, true
 }
 
-// outsideManifest reports a function that is not one of SEL's shipped builtins
-// (spec/builtins.json): an application's (RegisterFunction) or one Define added.
-// Either may have effects, so it is what every "can this subtree change
-// anything?" question asks (subtreeIsPure). hostFuncs answers a narrower one,
-// "was this registered by the application?", for HostArity and RegisterFunction.
-func outsideManifest(name string) bool {
-	_, inManifest := manifest.Builtins[utf8.AsciiUpper(name)]
-	return !inManifest
+// MayHaveEffects is the effects classification every analysis asks (SPEC §8.1):
+// whether a call to name may keep, read or change values beyond its result, so
+// that no copy may be left out around it and nothing may be evaluated out of
+// order across it. Only a shipped builtin -- a name in spec/builtins.json -- is
+// assumed not to. Every other function is the application's, however it was
+// installed: RegisterFunction, or a Define outside the manifest, strict, lazy or
+// binding. Defining a function below the public API is not a declaration that it
+// is pure. The name is enough: Define refuses a second definition and
+// RegisterFunction a builtin's name, so a manifest name is always the definition
+// the library made at startup.
+//
+// Registration is a separate question -- HostArity and RegisterFunction's
+// replacement rule -- answered by hostFuncs alone.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
+func MayHaveEffects(name string) bool {
+	_, shipped := manifest.Builtins[utf8.AsciiUpper(name)]
+	return !shipped
 }
 
 // subtreeIsPure reports that evaluating the subtree twice, or not at all, cannot
@@ -240,7 +251,7 @@ func subtreeIsPure(root *Node) bool {
 		case NodeAssign:
 			return false
 		case NodeCall:
-			if outsideManifest(n.S) {
+			if MayHaveEffects(n.S) {
 				return false
 			}
 		}

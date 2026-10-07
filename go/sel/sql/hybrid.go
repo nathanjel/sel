@@ -1270,11 +1270,8 @@ func continuationEffectsOf(ast *sel.Node) continuationEffects {
 			}
 			continue
 		}
-		if n.T == sel.NodeCall {
-			upper := utf8.AsciiUpper(n.S)
-			if _, ok := manifest.Builtins[upper]; !ok {
-				effects.callsApplicationFunction = true
-			}
+		if n.T == sel.NodeCall && sel.MayHaveEffects(n.S) {
+			effects.callsApplicationFunction = true
 		}
 		if n.L != nil {
 			stack = append(stack, n.L)
@@ -1293,9 +1290,10 @@ func continuationEffectsOf(ast *sel.Node) continuationEffects {
 
 // privateContext is the context a continuation runs in: the caller's variables,
 // copied only as far as the program can change them, so the caller's context is
-// never written. A continuation that calls an application-defined function gets
-// a full private copy: the function may change any value it is handed. One that
-// calls builtins only gets a new root holding the caller's own children, each
+// never written. A continuation that calls a function SEL does not ship
+// (sel.MayHaveEffects: registered, or defined below the public API) gets a full
+// private copy: the function may change any value it is handed. One that calls
+// shipped builtins only gets a new root holding the caller's own children, each
 // root it assigns (A = …, A["k"] = …) deep-copied and every other one shared --
 // a builtin never changes its arguments, and assignment copies -- so a large
 // variable the continuation only reads is not copied.

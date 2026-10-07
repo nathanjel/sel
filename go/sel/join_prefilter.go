@@ -1,6 +1,8 @@
 package sel
 
 import (
+	"slices"
+
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/internal/vocab"
 )
@@ -53,6 +55,62 @@ type joinReport struct {
 	Dropped bool
 }
 
+// joinRightNull is what a FILTER that opens with IS_NULL(_["Member"]["Field"])
+// hands the LINK_LEFT it runs over (Context.joinRightNull): the member and the
+// field, read exactly as written, and whether nothing observes the join's keys
+// -- neither the step after the FILTER nor the FILTER's own _K.
+type joinRightNull struct {
+	Member string
+	Field  string
+	Deep   bool
+}
+
+// rightNullTest is (member, field, true) when conjunct is
+// `IS_NULL(binder["member"]["field"])` -- the shipped IS_NULL of a literal field
+// of a literal member of the FILTER's element. Over a LINK_LEFT, a member that is
+// one of the join's right binder keys is the right row (spec §7.4), and the join
+// may skip building the joined rows of the right rows the conjunct is FALSE on
+// (rightNullRejects).
+func rightNullTest(conjunct *Node, binder string) (string, string, bool) {
+	if conjunct == nil || conjunct.T != NodeCall || conjunct.S != "IS_NULL" ||
+		len(conjunct.Items) != 1 || MayHaveEffects("IS_NULL") {
+		return "", "", false
+	}
+	field := conjunct.Items[0]
+	if field == nil || field.T != NodeIndex || field.R == nil || field.R.T != NodeText {
+		return "", "", false
+	}
+	member := field.L
+	if member == nil || member.T != NodeIndex || member.R == nil || member.R.T != NodeText ||
+		member.L == nil || member.L.T != NodeVar || member.L.S != binder {
+		return "", "", false
+	}
+	return member.R.S, field.R.S, true
+}
+
+// rightNullRejects marks in rejected the right rows of an equi-LINK_LEFT -- of
+// bucketed, every row its buckets hold -- that a FILTER opening with
+// IS_NULL(_["member"]["field"]) drops wherever they are joined, and reports
+// false, marking nothing, when the join cannot tell. The member must be one of
+// this join's right binder keys -- the binder, its lower case or `_2`, each bound
+// in every joined row to the right row as bucketed (makeJoinedRow,
+// compileJoinPlan) -- and the two binders must not be spelled alike. A row is
+// rejected only when the read certainly yields a value that is not NULL: one
+// without the field (E_NO_KEY in the FILTER) or with a NULL there is kept, for
+// the FILTER to decide. Its joined rows are then never built; its left row stays
+// matched, so it gets no null-extended row in their place.
+func rightNullRejects(hint *joinRightNull, b1, b2 string, bucketed []*Value, rejected map[*Value]bool) bool {
+	if utf8.AsciiUpper(b1) == utf8.AsciiUpper(b2) || !slices.Contains(binderKeys(b2, "_2"), hint.Member) {
+		return false
+	}
+	for _, right := range bucketed {
+		if v := right.Get(hint.Field); v != nil && !v.IsNull() {
+			rejected[right] = true
+		}
+	}
+	return true
+}
+
 type stageStop struct {
 	Stage    int
 	Conjunct int
@@ -64,6 +122,11 @@ type joinApplied struct {
 	Right    bool
 }
 
+// joinPureSource reports that evaluating node can be observed only through its
+// value: no assignment, no sequence, no call to a function SEL does not ship, no
+// ABORT. Such a source may be evaluated out of order -- the right source of a
+// join before the left -- which is what lets a FILTER's conjuncts travel down a
+// chain of joins.
 func joinPureSource(node *Node) bool {
 	if node == nil {
 		return true
@@ -83,7 +146,9 @@ func joinPureSource(node *Node) bool {
 		}
 		return true
 	case NodeCall:
-		if node.S == "ABORT" {
+		// A function SEL does not ship may change what the other source reads,
+		// or see it changed (MayHaveEffects); ABORT's error is an effect too.
+		if node.S == "ABORT" || MayHaveEffects(node.S) {
 			return false
 		}
 		for _, item := range node.Items {
