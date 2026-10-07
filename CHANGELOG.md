@@ -239,9 +239,14 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     Rust's hybrid planner could hand one the caller's context, and Lisp kept a
     FILTER's or SORT's rows uncopied over a source a MAP built whatever the
     body called. The PHP and C++ scale benchmarks `define()` their scorers, so
-    those programs make their copies again: PHP S2 25.5 → 44.7 ms, S3
-    821 → 963 ms; C++ S2 4.2 → 4.7 ms, S3 139 → 151 ms. Nothing was
+    those programs are no longer write-free and make their copies again: PHP
+    S3 821 → 963 ms; C++ S2 4.2 → 4.7 ms, S3 139 → 151 ms. Nothing was
     whitelisted to win them back.
+  - PHP: a FILTER lends its rows to a next step that copies them — a MAP,
+    FILTER, sort or TOP — where neither can write, as C++ (`borrow_rows`) and
+    Python (`adopt_items`) already did, so a program that is not write-free
+    leaves out the copies no one can tell from the rows. PHP S2, which the
+    effects rule had taken from 25.5 to 45.4 ms, is back at 25.7 ms.
   - A `FILTER` directly over a `LINK_LEFT` whose predicate opens with
     `IS_NULL(_["right"]["field"])` lets the join skip the joined rows of the
     right rows whose field is there and not NULL: scale S6's unsold products,
@@ -265,7 +270,7 @@ within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
 largest gains Go S4 −20%, Lisp S1 −16%, JS S3 −9%; the largest change the other
 way Go S2 +2.6%).
 
-Lanes: 2313 conformance cases in every host; 1392 SQL translation cases in every
+Lanes: 2317 conformance cases in every host; 1392 SQL translation cases in every
 host; 222 SQL mutations caught, none surviving; 98 decimal mutations caught, none
 surviving.
 
