@@ -65,6 +65,7 @@ map; keep it true when you move code.
 | Exact decimal | `js/src/decimal.mjs` | `php/src/Dec.php` | `--- decimal` | `lisp/src/decimal.lisp` | `python/sel/decimal.py` | `go/internal/decimal/` | `rust/src/dec.rs`, `rust/src/large_dec.rs` |
 | The value | `js/src/value.mjs` | `php/src/Value.php` | `--- value` | `lisp/src/value.lisp` | `python/sel/value.py` | `go/sel/value.go`, `go/sel/shape.go` | `rust/src/value.rs`, `rust/src/shape.rs` |
 | Function table | `js/src/registry.mjs` | `php/src/Registry.php` | `--- registry` | `lisp/src/registry.lisp` | `python/sel/registry.py` | `go/sel/registry.go` | `rust/src/builtins/mod.rs` (`registry()`: one central table of `register_native` calls) |
+| Effects classifier (§8.1) | `js/src/registry.mjs` (`mayHaveEffects`) | `php/src/Registry.php` (`mayHaveEffects`) | `cpp/sel_ast.hpp` (`may_have_effects`, `Spec::shipped`) | `lisp/src/parser.lisp` (`shipped-call-p`) | `python/sel/registry.py` (`may_have_effects`) | `go/sel/registry.go` (`MayHaveEffects`) | `rust/src/builtins/mod.rs` (`call_may_have_effects`) |
 | Tokeniser | `js/src/lexer.mjs` | `php/src/Lexer.php` | `--- lexer` | `lisp/src/lexer.lisp` | `python/sel/lexer.py` | `go/sel/lexer.go` | `rust/src/parser.rs` (the lexer half) |
 | Parser | `js/src/parser.mjs` | `php/src/Parser.php` | `--- parser` | `lisp/src/parser.lisp` | `python/sel/parser.py` | `go/sel/parser.go` | `rust/src/parser.rs` |
 | Evaluator | `js/src/eval.mjs` | `php/src/Evaluator.php` | `--- eval` | `lisp/src/eval.lisp` | `python/sel/eval.py` | `go/sel/eval.go`, `go/sel/context.go` | `rust/src/eval.rs`, `rust/src/context.rs` |
@@ -508,6 +509,25 @@ regex quantifiers and `$1` replacement references are all ASCII by specification
 nothing may use `DIGIT-CHAR-P`. It is the same trap as `\d` under UCP, wearing a
 different hat.
 
+**Never take a lower-level definition for a pure one.** Every analysis that
+asks "can this call change a value?" — the write-free decision, a collector
+keeping its rows uncopied, a join evaluating its right source first, the
+hybrid planner isolating the caller's context — asks one classifier per host,
+and it answers yes for every function outside the shipped manifest, however it
+was installed (SPEC §8.1): Python's `registry.may_have_effects`, JS's
+`registry.mayHaveEffects`, PHP's `Registry::mayHaveEffects`, C++'s
+`may_have_effects` (`Spec::shipped`), Lisp's `shipped-call-p`, Go's
+`sel.MayHaveEffects`, Rust's `builtins::call_may_have_effects`. Most hosts had
+a consumer that asked something narrower: PHP's and C++'s write-free decisions
+keyed on public registration, Go's and Rust's join source order on ABORT or on
+the callback's kind, and Lisp's copies over a source a MAP built asked
+nothing. A callback installed with `define()` (strict, lazy or binding) then
+changed a row a FILTER had already collected, or saw the join's sources run
+out of order. Registration is a separate question (the SQL arity,
+replacement) and keeps its own helper. The probes are host tests, since a
+`.selt` file cannot install a callback: `python/tests/test_value_ownership.py`
+and its twins.
+
 **Never introduce a float.** Not for rounding, not for a quick length ratio, not
 anywhere. Use `Dec`. PHP `Value::fromNative` rejects floats on purpose.
 
@@ -559,10 +579,9 @@ invented a divergence.
 
 Leaving a copy out is allowed exactly where §3.4 allows it, where nothing can
 tell. PHP, C++ and Python make none in a program whose evaluated tree holds no
-assignment and no host-function call (`Context::$writeFree`,
+assignment and no call that may have effects (`Context::$writeFree`,
 `Context::write_free`, Python's `Context.write_free`, decided once with the
-physical tree; Python counts a function `define()`d outside the manifest as the
-application's too, `registry.may_have_effects`), and none of a value the body
+physical tree), and none of a value the body
 built itself (PHP's `Core::buildsItsResult`; C++'s `adopt_or_clone` keeps any
 value nothing else holds; Python's `aggregate.collected`); either way they still
 make the copy's depth check (`Value::checkDepthBelow`,
@@ -903,6 +922,24 @@ while all 801 language cases were green. So, for any change to either:
   and answered rows for a program that raises, while the same
   pipeline through a helper never took the rewrite. The translators keep the
   same scope: only `_` (and a step's own binder) after the join.
+- **Early tests under a FILTER.** A join tests a FILTER's conjuncts on its
+  sides' rows before it builds the joined rows (the pre-filter, SPEC §7.4),
+  and every host keeps the same four rules, each found by
+  `tools/join-filter-oracle/run.sh`: the FILTER's keys are the joined rows'
+  — rows dropped early keep their positions unless nothing reads them, and a
+  body that reads `_K` reads them itself, whatever the step after it does;
+  a FILTER or a `LINK` whose predicate may write (an assignment, or a call
+  the effects classifier flags) has nothing tested early, since a row tested
+  before the join can change before the FILTER reads it; under `LINK_LEFT`,
+  a FILTER that opens with `IS_NULL(_["m"]["f"])` of a right binder key lets
+  the join skip the joined rows of the right rows whose `f` is there and not
+  NULL (S6's anti-join), but a left row whose matches were all skipped is
+  still matched — it gets no null-extended row — and the collection limit
+  counts the rows as written; and nothing tested on a right row is reported
+  as applied under `LINK_LEFT`, whose null-extended rows were never tested.
+  The oracle compares each program with the same join bound to a helper
+  variable, which no join pre-filter reaches; its `leftnull` pass generates
+  the `LINK_LEFT` shape.
 - **Fuzz.** `tools/gen-programs.mjs` emits pipelines — `.>` chains of every
   step, the sorts' forms, `_K` after a renumbering step, bare and projected
   buckets, joins with and without named binders, helpers as sources — and
