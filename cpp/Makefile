@@ -120,6 +120,9 @@ $(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp bin/read_fil
 # tools/check-version.sh holds to the other manifests).
 SEL_VERSION := $(shell grep -m1 -o 'sel-lang VERSION [0-9.]*' CMakeLists.txt | cut -d' ' -f3)
 $(BUILD)/sel: private CXXFLAGS += -DSEL_VERSION='"$(SEL_VERSION)"'
+# The version is a flag, which make does not track: a bump rebuilds the CLI
+# only because it names the file the flag is read from.
+$(BUILD)/sel: CMakeLists.txt
 
 $(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp bin/read_file.hpp $(CORE_DEPS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -o $@ $<
