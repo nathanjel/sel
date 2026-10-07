@@ -242,8 +242,8 @@ pub fn fn_distinct(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
     let (binder, body_idx) = binder_and_body(args, MAP_FORMS)?;
-    let body_node = args.node_at(body_idx).clone();
-    let needs_k = node_contains_var(&body_node, "_K");
+    let body_node = args.node_at(body_idx);
+    let needs_k = node_contains_var(body_node, "_K");
     // RECORD returns a fresh container with independently copied fields. It
     // cannot publish that container before returning it to this collector.
     let fresh_record = body_node.t == NodeType::Call
@@ -276,7 +276,7 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = args.eval_node(&body_node)?;
+        let res = args.eval_node(body_node)?;
         let collected = if fresh_record {
             // MAP adds a copy-depth level even when its allocation is elided.
             res.check_copy_depth(2, args.pos()).map(|()| res)
@@ -473,9 +473,9 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
 
 pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
     let (binder, body_idx) = binder_and_body(args, ALL_FORMS)?;
-    let body_node = args.node_at(body_idx).clone();
+    let body_node = args.node_at(body_idx);
     let body_pos = body_node.pos;
-    let needs_k = node_contains_var(&body_node, "_K");
+    let needs_k = node_contains_var(body_node, "_K");
 
     let val = args.val(0)?;
     if val.is_null() {
@@ -497,7 +497,7 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = args.eval_node(&body_node)?;
+        let res = args.eval_node(body_node)?;
         if !res.as_bool(body_pos)? {
             return Ok(Value::bool(false));
         }
@@ -508,9 +508,9 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
     let (binder, body_idx) = binder_and_body(args, ANY_FORMS)?;
-    let body_node = args.node_at(body_idx).clone();
+    let body_node = args.node_at(body_idx);
     let body_pos = body_node.pos;
-    let needs_k = node_contains_var(&body_node, "_K");
+    let needs_k = node_contains_var(body_node, "_K");
 
     let val = args.val(0)?;
     if val.is_null() {
@@ -532,7 +532,7 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = args.eval_node(&body_node)?;
+        let res = args.eval_node(body_node)?;
         if res.as_bool(body_pos)? {
             return Ok(Value::bool(true));
         }
@@ -543,9 +543,9 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
     let (binder, body_idx) = binder_and_body(args, SUM_FORMS)?;
-    let body_node = args.node_at(body_idx).clone();
+    let body_node = args.node_at(body_idx);
     let body_pos = body_node.pos;
-    let needs_k = node_contains_var(&body_node, "_K");
+    let needs_k = node_contains_var(body_node, "_K");
 
     let val = args.val(0)?;
     if val.is_null() {
@@ -568,7 +568,7 @@ pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let v = args.eval_node(&body_node)?;
+        let v = args.eval_node(body_node)?;
         let d = v.as_decimal(body_pos)?;
         total = dec_add(&total, &d, args.pos())?;
     }
@@ -1027,10 +1027,10 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
         Some(i) => args.symbol(i)?,
         None => "_".to_string(),
     };
-    let key_node: Node = args.node_at(roles.body.expect("a BUCKET form has a key")).clone();
-    let agg_node_opt: Option<Node> = roles.extra.map(|i| args.node_at(i).clone());
+    let key_node: &Node = args.node_at(roles.body.expect("a BUCKET form has a key"));
+    let agg_node_opt: Option<&Node> = roles.extra.map(|i| args.node_at(i));
 
-    let needs_k = node_contains_var(&key_node, "_K");
+    let needs_k = node_contains_var(key_node, "_K");
     let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
@@ -1044,7 +1044,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     // §3.4): when the key or the projection might write, it is copied then, so
     // neither a later key nor the projection can change a row already grouped.
     // Otherwise nothing can, and the copy waits for the result.
-    let eager = may_write(&key_node) || agg_node_opt.as_ref().is_some_and(may_write);
+    let eager = may_write(key_node) || agg_node_opt.is_some_and(may_write);
     // Bare: record -> group list -> row (3 levels); projected: group list -> row (2).
     let row_depth = if agg_node_opt.is_none() { 3 } else { 2 };
 
@@ -1056,7 +1056,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let group_key = args.eval_node(&key_node)?;
+        let group_key = args.eval_node(key_node)?;
         let key_str = if agg_node_opt.is_none() {
             if group_key.kind() == Kind::None {
                 if group_key.is_null() {
@@ -1142,7 +1142,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
             f.set(&binder, Value::list(g.rows));
             f.set("_K", g.key);
         }
-        out.push(args.eval_node(&agg_node)?.deep_copy(2, args.pos())?);
+        out.push(args.eval_node(agg_node)?.deep_copy(2, args.pos())?);
     }
     args.ctx.pop_frame();
 

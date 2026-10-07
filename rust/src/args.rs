@@ -72,7 +72,10 @@ impl<'a> Args<'a> {
     }
 
     // Built-ins index only arguments their arity check has already admitted.
-    pub(crate) fn node_at(&self, i: usize) -> &Node {
+    /// Argument `i`'s node, for as long as the call lives ('a) rather than for
+    /// this borrow of the accessor: a builtin can hold a body while it runs it
+    /// (`eval_node` takes `&mut self`) without copying the tree.
+    pub(crate) fn node_at(&self, i: usize) -> &'a Node {
         &self.nodes[i]
     }
 
