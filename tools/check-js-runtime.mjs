@@ -1174,6 +1174,8 @@ a*a*$
     `${left} .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["id"])`,
     `${left} .> FILTER(IS_NULL(_["i"]["product_id"]))`,
     `${left} .> FILTER(IS_NULL(_["i"]["sku"]))`,
+    // the body reads the keys the skipped rows leave gaps in, a step after it renumbers
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]) AND _K $!= "3") .> TAKE(5)`,
     // not the right row, binders alike, not the shape: nothing is skipped
     `${left} .> FILTER(IS_NULL(_["p"]["id"]))`,
     `${left} .> FILTER(IS_NULL(_["iI"]["id"]))`,
@@ -1217,6 +1219,21 @@ a*a*$
   ]) {
     expectOk(`LINK_LEFT right-null rejection is not taken: ${src}`, () => assert.ok(!skips(src)));
   }
+  // A FILTER whose own body reads `_K` observes the keys its join gives the
+  // rows: nothing below it may renumber them, whatever step follows it -- an
+  // inner join's left-row drop and a drop for a FILTER further up included.
+  expectOk('a FILTER that reads _K keeps the keys of the rows a join drops for it', () => {
+    const data = {
+      A: [{ id: 1, x: 0 }, { id: 2, x: 5 }, { id: 3, x: 5 }],
+      B: [{ aid: 1 }, { aid: 2 }, { aid: 3 }],
+      C: [{ cid: 1 }, { cid: 2 }, { cid: 3 }],
+    };
+    const ids = (src) => compile(src).run(Value.fromNative(data)).dump();
+    const joined = 'A .> LINK(B, _1["id"] == _2["aid"]) .> FILTER(_["a"]["x"] > 1 AND _K $!= "2")';
+    assert.equal(ids(`${joined} .> TAKE(2) .> MAP(_["a"]["id"])`), '-{"1"=t"3"}');
+    assert.equal(ids(`${joined} .> LINK(C, L, R, L["a"]["id"] == R["cid"]) .> FILTER(_["R"]["cid"] > 0)`
+      + ' .> MAP(_["L"]["a"]["id"])'), '-{"1"=t"3"}');
+  });
   // The join as written builds every matched row before the FILTER drops it,
   // and raises E_RANGE, at the call, when they are more than MAX_COLLECTION
   // (spec §6.4): a row the rejection never builds still counts, at the same place.

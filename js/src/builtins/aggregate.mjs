@@ -239,8 +239,9 @@ define({
     // can on the rows it joins (SEL-0052, SEL-0054): this FILTER's first --
     // it runs before the FILTER that handed the rest down -- then the handed
     // ones. Deep drops, below the join directly under this FILTER, change its
-    // keys, so they are allowed only where nothing observes them
-    // (`keysUnobserved`, stamped by the physical optimiser).
+    // keys, so they are allowed only where nothing observes them: no step
+    // after it (`keysUnobserved`, stamped by the physical optimiser), and not
+    // its own body, which reads them as `_K`.
     const src = args.node(0);
     const handed = ctx.joinPrefilter;
     ctx.joinPrefilter = null;
@@ -253,7 +254,7 @@ define({
       const blocked = own.length > 0 && own[0].fields === null && own[0].total === null;
       const stages = blocked ? [] : [{ binder, conjuncts: own, above: 0 }];
       if (handed !== null && !blocked) stages.push(...handed.stages);
-      const deep = handed === null ? Boolean(body.keysUnobserved) : true;
+      const deep = (handed === null ? Boolean(body.keysUnobserved) : true) && !mentionsKey(body);
       if (stages.length) {
         ctx.joinPrefilter = { stages, deep, above: handed === null ? [] : handed.above,
           obligations: handed === null ? [] : handed.obligations };
