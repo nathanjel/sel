@@ -20,7 +20,7 @@
 // assignment's target is not evaluated as an expression; its index
 // expressions are reached through the evaluator's own path).
 
-import { BUILTIN_MANIFEST } from './_builtin_manifest.mjs';
+import { mayHaveEffects } from './registry.mjs';
 
 // The children of `node`, in source order.
 export function childNodes(node, target = true) {
@@ -112,11 +112,12 @@ export function mapChildren(node, fn) {
   return copy;
 }
 
-// Whether a call names an application's code rather than a shipped builtin:
-// a host function, or any other function not in spec/builtins.json. Such a
-// call is handed values and may do anything with them.
+// Whether a call names an application's code rather than a shipped builtin
+// (registry.mayHaveEffects): a host function, or any other function not in
+// spec/builtins.json, however it was defined. Such a call is handed values and
+// may do anything with them.
 export function callsApplication(node) {
-  return node.t === 'call' && !Object.hasOwn(BUILTIN_MANIFEST, node.name);
+  return node.t === 'call' && mayHaveEffects(node.name);
 }
 
 const WRITES = new WeakMap();
