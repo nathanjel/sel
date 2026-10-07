@@ -56,9 +56,24 @@ struct Spec {
   // count is wrong and an empty string when it is fine.
   std::string (*arity_error)(int) = nullptr;
   Value (*fn)(Args&, Context&) = nullptr;
-  // Set instead of `fn` for an application's own function (spec §8.1).
+  // Set instead of `fn` for a function registered through register_function
+  // (spec §8.1).
   std::shared_ptr<const HostFunction> host = nullptr;
+  // Set by define() alone, for a name spec/builtins.json lists: a builtin the
+  // library itself defines at startup. Whatever the caller passes is replaced.
+  bool shipped = false;
 };
+
+// The effects classification every analysis asks (spec §8.1): whether a call
+// may keep, read or change values beyond its result, so that no copy may be
+// left out around it and nothing may be evaluated out of order across it.
+// Only a shipped builtin is assumed not to. Every other function is the
+// application's, however it was installed: register_function (`host`), or a
+// define() outside the manifest, strict, lazy or binding (`fn`) -- defining a
+// function below the public API is not a declaration that it is pure.
+// Registration is a separate question (replacement, the SQL host-function
+// arity), which `host` alone answers.
+inline bool may_have_effects(const Spec* spec) { return spec == nullptr || !spec->shipped; }
 
 enum class NT { Num, Text, Bool, Null, Var, Index, Seq, List, Un, Bin, Assign, Call };
 

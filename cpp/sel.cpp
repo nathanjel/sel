@@ -2503,7 +2503,8 @@ Value keep_element(const Value& coll, std::size_t index, const Value& item, std:
 // Whether evaluating `root` can change a value that existed before it ran. SEL
 // has exactly two ways to do that: an assignment (anywhere below `root`,
 // including inside a nested aggregate's body) and a call to an application's own
-// function, which is handed values and may keep or change them. A body with
+// function (may_have_effects: anything SEL does not ship, however it was
+// installed), which is handed values and may keep or change them. A body with
 // neither leaves every value it reads as it found it.
 bool writes_nothing(const Node& root) {
   std::vector<const Node*> stack{&root};
@@ -2511,7 +2512,7 @@ bool writes_nothing(const Node& root) {
     const Node* n = stack.back();
     stack.pop_back();
     if (n->t == NT::Assign) return false;
-    if (n->t == NT::Call && n->spec && n->spec->host) return false;
+    if (n->t == NT::Call && may_have_effects(n->spec)) return false;
     if (n->l) stack.push_back(n->l.get());
     if (n->r) stack.push_back(n->r.get());
     for (const NodePtr& c : n->items) {
@@ -3324,7 +3325,12 @@ void define(Spec spec) {
   if (table().count(spec.name)) {
     throw std::runtime_error("SEL function " + spec.name + " defined twice");
   }
-  if (const auto* m = manifest_entry(spec.name)) {
+  // The manifest's name is enough to say the library defined it: no name is
+  // defined twice, so a manifest name defined before register_builtins() makes
+  // the library's own definition refuse, and no program ever compiles.
+  const auto* m = manifest_entry(spec.name);
+  spec.shipped = m != nullptr;
+  if (m) {
     const int m_max = m->max < 0 ? VARIADIC : m->max;
     std::string wrong;
     auto note = [&](const std::string& s) { wrong += (wrong.empty() ? "" : "; ") + s; };
@@ -4605,11 +4611,12 @@ struct Context {
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
   // Nothing in the tree being evaluated can write: it holds no assignment and
-  // no call to a host function (Program::run decides it once per program,
-  // writes_nothing). Assignment is the one way a program changes a value, so
-  // no copy a collector or a constructor makes (spec §3.4) can be told from
-  // the value it copies: they keep what they collect as it is, after the depth
-  // check the copy would have made. Off unless the Program proved it.
+  // no call to an application's function (may_have_effects; Program::run
+  // decides it once per program, writes_nothing). Assignment is the one way a
+  // program changes a value, so no copy a collector or a constructor makes
+  // (spec §3.4) can be told from the value it copies: they keep what they
+  // collect as it is, after the depth check the copy would have made. Off
+  // unless the Program proved it.
   bool write_free = false;
   // The frames of the math plans running now, one after another. A plan's slots
   // are addressed by index, never by pointer or reference held across a step
@@ -6396,19 +6403,11 @@ std::string single_relation_name(const Node& node) {
 // Decided here from the rows, at run time, so the physical tree stays a
 // function of the AST. See docs/contributing.md for the rule in every host.
 
-bool shipped_builtin(const std::string& name) {
-  static const std::unordered_set<std::string> names = [] {
-    std::unordered_set<std::string> out;
-    for (const auto& entry : sel_builtin_manifest::ENTRIES) out.insert(entry.name);
-    return out;
-  }();
-  return names.count(name) > 0;
-}
-
 // Whether evaluating NODE can be observed only through its value: no
-// assignment, no sequence, no call outside the shipped builtins (a host's own
-// function may do anything), no ABORT. Such a node may run out of order --
-// the right source of a join before the left.
+// assignment, no sequence, no call outside the shipped builtins (an
+// application's own function may do anything, may_have_effects), no ABORT.
+// Such a node may run out of order -- the right source of a join before the
+// left.
 bool join_pure_source(const Node* node) {
   if (!node) return true;
   switch (node->t) {
@@ -6419,7 +6418,7 @@ bool join_pure_source(const Node* node) {
       for (const NodePtr& item : node->items) if (!join_pure_source(item.get())) return false;
       return true;
     case NT::Call:
-      if (!shipped_builtin(node->s) || node->s == "ABORT") return false;
+      if (may_have_effects(node->spec) || node->s == "ABORT") return false;
       for (const NodePtr& item : node->items) if (!join_pure_source(item.get())) return false;
       return true;
     default: return false;
@@ -7707,7 +7706,7 @@ Value do_bucket(Args& a, Context& ctx) {
   // no row reaches the result uncopied. When neither the key nor the projection
   // writes anything, no row can change while the BUCKET runs either, and the
   // copy spec §3.4 asks for is one nobody could tell from the row itself.
-  const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && agg_node->spec && !agg_node->spec->host &&
+  const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && !may_have_effects(agg_node->spec) &&
                           (agg_node->spec->name == "RECORD" || agg_node->spec->name == "LIST") &&
                           writes_nothing(*key_node) && writes_nothing(*agg_node);
   const auto keep = [&](std::size_t i, const Value& item) {
@@ -10844,7 +10843,7 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
         for (std::size_t k = 1; k < after.items.size(); ++k) {
           after_writes = after_writes || (after.items[k] && !writes_nothing(*after.items[k]));
         }
-        body->borrow_rows = after.t == NT::Call && after.spec && !after.spec->host && copies_its_elements &&
+        body->borrow_rows = after.t == NT::Call && !may_have_effects(after.spec) && copies_its_elements &&
                             writes_nothing(*body) && !after_writes;
       }
       copy->items.back() = std::move(body);
@@ -11202,8 +11201,9 @@ NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true);
 struct Program::Physical {
   std::once_flag once;
   NodePtr tree;
-  // No assignment and no host function anywhere in `tree` (Context::write_free),
-  // decided with it: such a program makes none of the copies spec §3.4 names.
+  // No assignment and no application's function anywhere in `tree`
+  // (Context::write_free), decided with it: such a program makes none of the
+  // copies spec §3.4 names.
   bool write_free = false;
 };
 

@@ -1,6 +1,7 @@
 // Focused C++ SQL tests for the advanced relational-plan paths.
 
 #include "../sel.hpp"
+#include "../sel_ast.hpp"
 #include "../sel_sql.hpp"
 #include "../sel_sql_map.hpp"
 
@@ -591,6 +592,33 @@ int main() {
         check(std::string("a host function cannot write the caller's context: ") + source,
               context.get("A")->get("k")->scalar(), "1");
       }
+    }
+    // The same isolation for a function defined below the public API (a native
+    // `fn` outside the manifest, as define() makes one): it is no less able to
+    // write (spec §8.1, may_have_effects). define() is the evaluator's own, so
+    // the call is compiled under a registered name and pointed at such a Spec.
+    {
+      static const sel::Spec low{"REVIEW_POKE_LOW", 1, 1, false, false, nullptr,
+                                 [](sel::Args& args, sel::Context&) -> sel::Value {
+                                   sel::HostArgs host(args);
+                                   sel::Value target = host.val(0);
+                                   target.set("k", sel::Value::text("888"));
+                                   return target;
+                                 }};
+      sel::register_function("REVIEW_POKE_LOW", 1, 1, [](sel::HostArgs& args) { return args.val(0); });
+      auto call = std::make_shared<sel::Node>(*sel::compile("REVIEW_POKE_LOW(A)").ast());
+      call->spec = &low;
+      const auto plan = Sql::plan_hybrid(sel::Program("", call), "sqlite");
+      sel::Value context = sel::Value::none();
+      sel::Value a = sel::Value::none();
+      a.set("k", sel::Value::text("1"));
+      context.set("A", a);
+      const sel::Value result = Sql::execute_hybrid(plan, [](const std::string&, const std::vector<sel::Value>&) {
+        return sel::Value::list({});
+      }, context);
+      check("a lower-level definition plans in memory", plan.pure_memory ? "memory" : "sql", "memory");
+      check("it runs", result.get("k")->scalar(), "888");
+      check("and cannot write the caller's context", context.get("A")->get("k")->scalar(), "1");
     }
     // A continuation that reads the reassigned source as a value sees the
     // reassigned value, as run() does: n is 4 (six rows, two dropped), three rows,

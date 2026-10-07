@@ -890,6 +890,97 @@ void test_write_free_programs_hold() {
   }
 }
 
+// What the effects probes below write through: X[1] of the context being run.
+std::optional<Value> effects_target;
+
+Value effects_poke() {
+  if (effects_target) effects_target->set("k", Value::integer(9));
+  return Value::text("1");
+}
+
+// `FILTER(X, TRUE)[CALL]["k"]`, where CALL rewrites X[1]["k"] from 1 to 9 after
+// FILTER collected X[1] and answers 1: the copy FILTER made still says 1 (spec
+// §3.4); a FILTER that kept X[1] itself says 9.
+std::string poke_through_filters_result(const std::string& call) {
+  Value ctx = Value::none();
+  compile("X = LIST(RECORD(\"k\", 1), RECORD(\"k\", 2))").run(ctx);
+  effects_target = *ctx.get("X")->get("1");
+  std::string got;
+  try {
+    got = compile("FILTER(X, TRUE)[" + call + "][\"k\"]").run(ctx).dump();
+  } catch (const SelError& e) {
+    got = e.code();
+  }
+  effects_target.reset();
+  return got;
+}
+
+// Only a shipped builtin is assumed to have no effects (spec §8.1,
+// may_have_effects). Every other function brings the copies back however it
+// was installed: registered, or define()d outside the manifest -- strict,
+// lazy or binding (examples/fn-complex's form) -- or a registration replaced.
+void test_only_shipped_builtins_are_assumed_harmless() {
+  selt::section("only a shipped builtin is assumed to have no effects");
+  register_function("T_POKE_REG", 0, 0, [](HostArgs&) { return effects_poke(); });
+  define(Spec{"T_POKE_STRICT", 0, 0, false, false, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  define(Spec{"T_POKE_LAZY", 0, 0, true, false, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  define(Spec{"T_POKE_EACH", 2, 3, true, true, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  register_function("T_POKE_REPL", 0, 0, [](HostArgs&) { return Value::text("1"); });
+  register_function("T_POKE_REPL", 0, 0, [](HostArgs&) { return effects_poke(); });
+  selt::eq(poke_through_filters_result("T_POKE_REG()"), std::string("t\"1\""), "a registered function");
+  selt::eq(poke_through_filters_result("T_POKE_STRICT()"), std::string("t\"1\""), "a strict define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_LAZY()"), std::string("t\"1\""), "a lazy define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_EACH(LIST(1), _)"), std::string("t\"1\""),
+           "a binding define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_REPL()"), std::string("t\"1\""), "a replaced registration");
+  // A shipped builtin in the same place leaves the program write-free: FILTER
+  // keeps the context's own element, uncopied.
+  {
+    Value ctx = Value::none();
+    compile("X = LIST(RECORD(\"k\", 1), RECORD(\"k\", 2))").run(ctx);
+    const Value got = compile("FILTER(X, TRUE)[ABS(-1)]").run(ctx);
+    selt::ok(Internals::identity(got) == Internals::identity(*ctx.get("X")->get("1")),
+             "a shipped builtin's call: the copy is still left out");
+  }
+
+  // The classification, and what it leaves alone: registration (the SQL
+  // host-function arity, replacement) is still `host`'s.
+  selt::ok(!may_have_effects(lookup_builtin("FILTER")) && !may_have_effects(lookup_builtin("IS_NULL")),
+           "FILTER and IS_NULL are shipped");
+  selt::ok(may_have_effects(lookup_builtin("T_POKE_REG")) && lookup_builtin("T_POKE_REG")->host != nullptr,
+           "a registered function may have effects, and is registered");
+  selt::ok(may_have_effects(lookup_builtin("T_POKE_STRICT")) && lookup_builtin("T_POKE_STRICT")->host == nullptr,
+           "a define()d one may have effects, and is not registered");
+  Spec claimed{"T_CLAIMS_SHIPPED", 0, 0, false, false, nullptr, [](Args&, Context&) -> Value { return Value::none(); }};
+  claimed.shipped = true;
+  define(claimed);
+  selt::ok(may_have_effects(lookup_builtin("T_CLAIMS_SHIPPED")), "define() decides `shipped`, not its caller");
+  selt::ok(may_have_effects(nullptr), "a call with no definition is not assumed harmless");
+  selt::ok(!writes_nothing(*compile("MAP(L, T_POKE_LAZY())").ast()), "writes_nothing asks the same question");
+  {
+    const NodePtr p = compile("L .> FILTER(_[\"v\"] > 0) .> MAP(T_POKE_STRICT())").physical_ast();
+    selt::ok(p->t == NT::Call && p->s == "MAP" && !p->items.front()->items.back()->borrow_rows,
+             "a FILTER does not borrow its rows for a MAP that calls a define()d function");
+  }
+  // A join evaluates its right source before its left only when neither can be
+  // told from its value (join_pure_source): T_SRC, define()d, rewrites the X
+  // row the left source joins. Written order joins it as it was.
+  define(Spec{"T_SRC", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                (void)effects_poke();
+                return a.val(0);
+              }});
+  {
+    Value ctx = Value::none();
+    compile("X = LIST(RECORD(\"id\", 1, \"k\", 1)); B = LIST(RECORD(\"id\", 1)); C = LIST(RECORD(\"id\", 1))").run(ctx);
+    effects_target = *ctx.get("X")->get("1");
+    const std::string got = compile("X .> LINK(B, _1[\"id\"] == _2[\"id\"]) .> LINK(T_SRC(C), _1[\"X\"][\"id\"] == _2[\"id\"])"
+                                    " .> FILTER(_[\"k\"] > 0) .> MAP(_[\"k\"])").run(ctx).dump();
+    effects_target.reset();
+    selt::eq(got, std::string("-{\"1\"=t\"1\"}"), "a define()d function in a join source keeps the sources in written order");
+  }
+  for (const char* name : {"T_POKE_STRICT", "T_POKE_LAZY", "T_POKE_EACH", "T_CLAIMS_SHIPPED", "T_SRC"}) table().erase(name);
+}
+
 void test_filter_packed_result() {
   selt::section("FILTER keeps the source's keys: a kept prefix is a packed list, a gap keeps its keys");
   auto run = [](const std::string& src) {
@@ -2635,6 +2726,7 @@ int main() {
   test_filter_borrows_rows_for_a_read_only_next_step();
   test_pipeline_temporaries_are_kept();
   test_write_free_programs_hold();
+  test_only_shipped_builtins_are_assumed_harmless();
   test_filter_packed_result();
   test_round2_fast_paths();
   test_round3_fast_paths();

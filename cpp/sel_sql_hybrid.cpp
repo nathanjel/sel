@@ -34,8 +34,9 @@ constexpr std::string_view SQL_SPECIAL_CALLS[] = {
 // What running a continuation can do to the context it is given: the root names
 // it assigns to, anywhere (helper statements, aggregate bodies, index targets
 // `A[k] = x` which write into A), and whether it calls an application's own
-// function, which is handed values and may change them through its argument --
-// directly, inside IF, inside an aggregate body. Iterative: a flat chain of 400k
+// function (may_have_effects: one registered or define()d outside the
+// manifest alike), which is handed values and may change them through its
+// argument -- directly, inside IF, inside an aggregate body. Iterative: a flat chain of 400k
 // operators is one tree as deep as the source is long.
 struct ContinuationEffects {
   std::set<std::string> assigned_roots;
@@ -53,7 +54,7 @@ ContinuationEffects continuation_effects(const Node& root) {
       while (target && target->t == NT::Index) target = target->l.get();
       if (target && target->t == NT::Var) out.assigned_roots.insert(target->s);
     }
-    if (n->t == NT::Call && n->spec && n->spec->host) out.calls_application_function = true;
+    if (n->t == NT::Call && may_have_effects(n->spec)) out.calls_application_function = true;
     if (n->l) stack.push_back(n->l.get());
     if (n->r) stack.push_back(n->r.get());
     for (const auto& item : n->items) if (item) stack.push_back(item.get());
