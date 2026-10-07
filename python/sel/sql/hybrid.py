@@ -30,7 +30,7 @@ from ..errors import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..optimizer import LITERAL_TYPES, build_pipeline, copy_node, field_refs, unwind_pipeline
-from ..registry import is_host_function
+from ..registry import may_have_effects
 from ..parser import Node
 from ..optimizer import optimize_ast_logical
 from . import map as sqlmap
@@ -1013,7 +1013,7 @@ def continuation_effects(ast: Node | None) -> ContinuationEffects:
                 stack.append(node.value)
             continue
         if node.t == 'call':
-            if is_host_function(node.name or ''):
+            if may_have_effects(node.name or ''):
                 calls_app = True
         stack.extend(node.args)
         stack.extend(node.items)

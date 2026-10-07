@@ -562,7 +562,7 @@ tell. PHP, C++ and Python make none in a program whose evaluated tree holds no
 assignment and no host-function call (`Context::$writeFree`,
 `Context::write_free`, Python's `Context.write_free`, decided once with the
 physical tree; Python counts a function `define()`d outside the manifest as the
-application's too, `registry.is_host_function`), and none of a value the body
+application's too, `registry.may_have_effects`), and none of a value the body
 built itself (PHP's `Core::buildsItsResult`; C++'s `adopt_or_clone` keeps any
 value nothing else holds; Python's `aggregate.collected`); either way they still
 make the copy's depth check (`Value::checkDepthBelow`,

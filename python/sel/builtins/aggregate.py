@@ -10,7 +10,7 @@ from ..errors import SelError, fail
 from ..eval import _COND, eval_cond, eval_node
 from ..parser import Node, may_write
 from ..opinfo import COALESCE_OPS, RELATIONAL, TEXT_COMPARE
-from ..registry import define, sort_form
+from ..registry import define, may_have_effects, sort_form
 from ..value import NONE, Value, elements, iter_elements, structural_hash
 # The direction and field names fold ASCII-only:
 # str.upper() took "deſc" for DESC.
@@ -304,6 +304,26 @@ def _leading_field_conjuncts(body, binder):
     return out
 
 
+def _right_null_test(conjunct, binder):
+    """(member, field) when CONJUNCT is `IS_NULL(binder["member"]["field"])`
+    -- the shipped IS_NULL of a literal field of a literal member of the
+    FILTER's element -- else None. Over a LINK_LEFT, a member that is one of
+    the join's right binder keys is the right row (spec §7.4), and the join
+    may skip building the joined rows of the right rows the conjunct is FALSE
+    on (structure.py, _right_null_rejects)."""
+    if (conjunct is None or conjunct.t != 'call' or conjunct.name != 'IS_NULL'
+            or len(conjunct.args) != 1 or may_have_effects('IS_NULL')):
+        return None
+    field = conjunct.args[0]
+    if field is None or field.t != 'index' or field.idx is None or field.idx.t != 'text':
+        return None
+    member = field.obj
+    if (member is None or member.t != 'index' or member.idx is None or member.idx.t != 'text'
+            or member.obj is None or member.obj.t != 'var' or member.obj.name != binder):
+        return None
+    return member.idx.v, field.idx.v
+
+
 def _filter(args, ctx):
     """The one aggregate that preserves keys — a filtered list should still be
     addressable the way the original was.
@@ -348,10 +368,20 @@ def _filter(args, ctx):
             ctx.join_prefilter = (stages, deep,
                                   handed[2] if handed is not None else [],
                                   handed[3] if handed is not None else [])
+        elif handed is None and src.name == 'LINK_LEFT' and own:
+            # A predicate that opens with IS_NULL of a right member's field
+            # (S6's unsold products): the join may reject the right rows it is
+            # FALSE on before building their joined rows. Nothing is reported
+            # back -- the null-extended rows were never tested -- so the whole
+            # predicate still runs over every row the join builds.
+            test = _right_null_test(own[0][0], binder)
+            if test is not None:
+                ctx.join_right_null = (test[0], test[1], deep)
     try:
         in_val = args.val(0)
     finally:
         ctx.join_prefilter = None
+        ctx.join_right_null = None
     # The join's report -- which conjuncts every row that came up has passed,
     # by identity, whether a row was kept on an error, and whether any row was
     # dropped -- goes up as it is: the join above skips the ones it finds

@@ -1062,6 +1062,131 @@ def test_join_prefilter_through_a_pushed_filter_keeps_results_keys_and_errors():
 
 
 
+def _with_errors_at(program_source, ctx):
+    """_joined's two forms, with an error's position as well as its code."""
+    head, tail = program_source.rsplit(' .> FILTER(', 1)
+
+    def go(src, head_at):
+        # An error's column, as (segment, offset): the join, or the FILTER on.
+        try:
+            return 'ok ' + sel_compile(src).run(dict(ctx)).dump()
+        except SelError as e:
+            filter_at = src.rindex('FILTER(' + tail)
+            at = e.col - 1
+            where = f'filter+{at - filter_at}' if at >= filter_at else f'join+{at - head_at}'
+            return f'err {e.code} {e.line}:{where}'
+    return go(head + ' .> FILTER(' + tail, 0), go('J = ' + head + '; J .> FILTER(' + tail, 4)
+
+
+def _counting_right_null_rejects(monkeypatch):
+    import sel.builtins.structure as structure
+    seen = []
+    real = structure._right_null_rejects
+
+    def counting(call, right_null, buckets):
+        rejected = real(call, right_null, buckets)
+        seen.append(None if rejected is None else len(rejected))
+        return rejected
+    monkeypatch.setattr(structure, '_right_null_rejects', counting)
+    return seen
+
+
+def test_left_join_right_null_rejection_keeps_results_keys_and_errors(monkeypatch):
+    """A FILTER that opens with IS_NULL of a LINK_LEFT's right member lets the
+    join skip building the joined rows of the right rows that conjunct is
+    FALSE on; every shape answers -- rows, keys, errors and their places --
+    what the join bound to a helper variable first answers."""
+    seen = _counting_right_null_rejects(monkeypatch)
+    ctx = {
+        'P': _rows({'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}, {'id': 3, 'name': 5},
+                   {'id': 4, 'name': 'd'}),
+        'I': _rows({'id': 10, 'product_id': 1}, {'id': None, 'product_id': 1},
+                   {'id': 12, 'product_id': 3}, {'product_id': 9}),
+    }
+    left = 'P .> LINK_LEFT(I, _1["id"] == _2["product_id"])'
+    for src in [
+        f'{left} .> FILTER(IS_NULL(_["i"]["id"]))',
+        f'{left} .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_K)',
+        f'{left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2")',
+        f'{left} .> FILTER(r, IS_NULL(r["i"]["id"]) AND r["p"]["name"] > 1)',
+        f'{left} .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["id"])',
+        f'{left} .> FILTER(IS_NULL(_["i"]["product_id"]))',
+        f'{left} .> FILTER(IS_NULL(_["i"]["sku"]))',
+    ]:
+        seen.clear()
+        as_written, through_a_variable = _with_errors_at(src, ctx)
+        assert as_written == through_a_variable, src
+        # The path was taken; it rejects rows only where the field is there
+        # and not NULL (no item has a sku: every row is the FILTER's to raise on).
+        assert seen and seen[0] is not None and bool(seen[0]) == ('sku' not in src), (src, seen)
+
+
+@pytest.mark.parametrize('src', [
+    # not a right binder key of this join: the left one, a mixed-case name,
+    # a relation name under explicit binders
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["p"]["id"]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["iI"]["id"]))',
+    'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))',
+    # binders spelled alike
+    'LINK_LEFT(P, I, X, x, X["id"] == x["product_id"]) .> FILTER(IS_NULL(_["x"]["id"]))',
+])
+def test_left_join_right_null_declines_what_is_not_the_right_row(monkeypatch, src):
+    seen = _counting_right_null_rejects(monkeypatch)
+    ctx = {'P': _rows({'id': 1}, {'id': 2}), 'I': _rows({'id': 10, 'product_id': 1})}
+    as_written, through_a_variable = _with_errors_at(src, ctx)
+    assert as_written == through_a_variable
+    assert seen in ([], [None])
+
+
+@pytest.mark.parametrize('src', [
+    # not IS_NULL first, not a literal member or field, not the FILTER's own element
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(TRUE AND IS_NULL(_["i"]["id"]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(NOT IS_NULL(_["i"]["id"]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_[LOWER("I")]["id"]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"][LOWER("ID")]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(r, IS_NULL(_["i"]["id"]))',
+    # an inner join, and a FILTER handed conjuncts by a join above
+    'P .> LINK(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))',
+    'P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))'
+    ' .> LINK(I, L, R, L["p"]["id"] == R["product_id"]) .> FILTER(_["p"]["id"] > 0) .> MAP(1)',
+])
+def test_left_join_right_null_is_offered_only_for_its_shape(monkeypatch, src):
+    seen = _counting_right_null_rejects(monkeypatch)
+    ctx = {'P': _rows({'id': 1}, {'id': 2}), 'I': _rows({'id': 10, 'product_id': 1})}
+    try:
+        sel_compile(src).run(dict(ctx))
+    except SelError:
+        pass
+    assert seen == []
+
+
+def test_left_join_right_null_counts_the_rows_it_does_not_build(monkeypatch):
+    """The join as written builds every matched row before the FILTER drops
+    it, and raises E_RANGE when they are more than MAX_COLLECTION: a row the
+    rejection never builds still counts, at the same place."""
+    import sel._budget as budget
+    monkeypatch.setattr(budget, 'MAX_COLLECTION', 100)
+    for n_left, expect in ((10, 'ok'), (11, 'err')):
+        ctx = {'P': [{'id': 1}] * n_left + [{'id': 2}], 'I': [{'id': 5, 'k': 1}] * 10}
+        if n_left == 10:
+            ctx['P'] = ctx['P'][:-1]          # 100 joined rows: at the limit
+        src = 'P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))'
+        as_written, through_a_variable = _with_errors_at(src, ctx)
+        assert as_written == through_a_variable, n_left
+        assert as_written.startswith(expect), as_written
+
+
+def test_left_join_right_null_holds_the_real_collection_limit():
+    from sel._limits import MAX_COLLECTION
+    side = int(MAX_COLLECTION ** 0.5)
+    assert side * side == MAX_COLLECTION
+    src = 'P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))'
+    rows = {'I': [{'id': 5, 'k': 1}] * side}
+    assert sel_compile(src).run({**rows, 'P': [{'id': 1}] * side}).dump() == '-'
+    with pytest.raises(SelError) as info:
+        sel_compile(src).run({**rows, 'P': [{'id': 1}] * (side + 1)})
+    assert info.value.code == 'E_RANGE' and info.value.col == src.index('LINK_LEFT') + 1
+
 def test_element_values_are_the_elements_iter_elements_yields():
     # MAP, FILTER and walk() take an aggregate's elements without their keys
     # when the body never reads _K (aggregate.element_values): the same

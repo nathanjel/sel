@@ -216,9 +216,19 @@ def register_function(name: str, min: int, max: int,   # noqa: A002
     _host.add(key)
 
 
-def is_host_function(name: str) -> bool:
-    """Whether NAME is an application's own function (register_function or define),
-    which the optimiser must assume can do anything with the values it is handed."""
+def may_have_effects(name: str) -> bool:
+    """The effects classification every analysis asks (spec/SPEC.md §8.1):
+    whether a call to NAME may keep, read or change values beyond its result,
+    so that no copy may be left out around it and nothing may be evaluated out
+    of order across it. Only a shipped builtin -- a name the manifest knows,
+    defined by the library itself (define() refuses a second definition, and
+    register_function() a builtin's name) -- is assumed not to. Every other
+    function is the application's, however it was installed: register_function,
+    or a define() outside the manifest, strict, lazy or binding. Defining a
+    function below the public API is not a declaration that it is pure.
+
+    Registration is a separate question (host_arity, register_function's
+    replacement rule), answered by _host alone."""
     key = ascii_upper(name)
     return key in _host or key not in BUILTIN_MANIFEST
 

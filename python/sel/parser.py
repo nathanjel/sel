@@ -55,7 +55,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
-from .registry import INF, REGEX_FLAG_AT, Spec, is_host_function, lookup
+from .registry import INF, REGEX_FLAG_AT, Spec, may_have_effects, lookup
 
 from .opinfo import ASSIGN_OPS, BP_ASSIGN, BP_NEG, BP_NOT, INFIX, OPS, PREFIX
 
@@ -179,7 +179,7 @@ def children(n: Node) -> tuple:
 
 def may_write(node: Node | None) -> bool:
     """Whether evaluating NODE might write into a value it reaches: it holds an
-    assignment, or calls an application's own function (registry.is_host_function),
+    assignment, or calls an application's own function (registry.may_have_effects),
     which may do anything to a value it is handed. Iterative: a body is as deep as
     the source is long. An assignment is answered at the node, so its target and
     value are not walked."""
@@ -192,7 +192,7 @@ def may_write(node: Node | None) -> bool:
         if t == 'assign':
             return True
         if t == 'call':
-            if is_host_function(n.name or ''):
+            if may_have_effects(n.name or ''):
                 return True
             stack.extend(n.args)
         elif t == 'index':

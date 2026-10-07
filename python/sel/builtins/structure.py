@@ -7,7 +7,7 @@ from .._budget import check_collection
 from ..errors import MAX_DEPTH, SelError, fail
 from ..eval import _CALL_HANDLERS, eval_cond, eval_node
 from ..lexer import ascii_lower, ascii_upper
-from ..registry import INF, define, is_host_function
+from ..registry import INF, define, may_have_effects
 from .aggregate import _SCALAR_FRESH_CALLS
 from ..opinfo import COALESCE_OPS
 from ..parser import Node
@@ -757,7 +757,7 @@ def _pure_source(node):
         # By name, as every other "is this the application's?" test asks: the
         # module a builtin's function lives in is not the package's name once
         # the package is vendored under another one.
-        if is_host_function(node.name or '') or node.name == 'ABORT':
+        if may_have_effects(node.name or '') or node.name == 'ABORT':
             return False
         return all(_pure_source(arg) for arg in node.args)
     return False
@@ -1287,6 +1287,30 @@ def _reject_right_rows(call, buckets):
     return rejected
 
 
+def _right_null_rejects(call, right_null, buckets):
+    """Equi-LINK_LEFT, phase 4b: the right rows a FILTER that opens with
+    IS_NULL(_["member"]["field"]) drops wherever they are joined, or None
+    when the join cannot tell. MEMBER must be one of this join's right binder
+    keys -- the binder, its lower case or `_2`, each bound in every joined row
+    to the right row as bucketed (spec §7.4, make_joined_row) -- and the two
+    binders must not be spelled alike. A row is rejected only when the read
+    certainly yields a non-NULL value: one without the field (E_NO_KEY in the
+    FILTER) or with a NULL there is kept, for the FILTER to decide. Its joined
+    rows are then never built; its left row stays matched, so it gets no
+    null-extended row in their place."""
+    member, field = right_null[0], right_null[1]
+    b1, b2 = call.b1, call.b2
+    if ascii_upper(b1) == ascii_upper(b2) or member not in _binder_keys(b2, '_2'):
+        return None
+    rejected = set()
+    for bucket in buckets.values():
+        for right in bucket:
+            value = right.get(field)
+            if value is not None and not value.is_null():
+                rejected.add(id(right))
+    return rejected
+
+
 def _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejected, project, project_many):
     """Equi-join, phase 4c: every left row's key, looked up in the buckets,
     and the joined rows built in order.
@@ -1303,6 +1327,11 @@ def _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejecte
     keys = [] if numbered else None
     position = 1
     dropped = call.dropped
+    # A LINK_LEFT rejects right rows only for a FILTER that opens with IS_NULL
+    # (_right_null_rejects), and then drops no left row: POSITION counts every
+    # joined row as written, built or not, and the collection limit is held to
+    # that count, where the join as written would have raised (spec §6.4).
+    logical = left_join and rejected is not None
     # The join key is computed for every left row before the pre-filter is
     # asked, so that a key that raises still raises. When the key is a
     # literal field of the row -- `_1["customer_id"]` -- the read can only
@@ -1359,18 +1388,21 @@ def _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejecte
                         keys.extend([str(p) for p in range(position, position + len(matches))])
                     position += len(matches)
                 else:
+                    if logical:
+                        check_collection(position - 1 + len(matches), args.pos)
                     for right in matches:
                         if id(right) in skip:
                             dropped = True
                             position += 1
                             continue
-                        check_collection(len(output) + 1, args.pos)
+                        if not logical:
+                            check_collection(len(output) + 1, args.pos)
                         output.append(project(row, right))
                         if keys is not None:
                             keys.append(str(position))
                         position += 1
             elif left_join:
-                check_collection(len(output) + 1, args.pos)
+                check_collection(position if logical else len(output) + 1, args.pos)
                 output.append(project(row, None))
                 if keys is not None:
                     keys.append(str(position))
@@ -1434,6 +1466,8 @@ def _link(args, ctx, left_join):
     # handed down on purpose in _link_sources.
     prefilter = ctx.join_prefilter
     ctx.join_prefilter = None
+    right_null = ctx.join_right_null
+    ctx.join_right_null = None
     count = args.count()             # 3 or 5: the manifest's arity, checked at compile time
     left_node, right_node = args.node(0), args.node(1)
     # The names each side's row is bound under (spec §7.4), worked out once
@@ -1483,6 +1517,11 @@ def _link(args, ctx, left_join):
         call.binders = [stage[0] for stage in call.stages]
         _settle_prefix(call)
     rejected = _reject_right_rows(call, buckets) if call.right_prefix else None
+    if right_null is not None and left_join and prefilter is None:
+        rejected = _right_null_rejects(call, right_null, buckets)
+        # Whether nothing observes the FILTER's keys: then the kept rows need
+        # not carry the positions the rows as written had.
+        call.deep = right_null[2]
     return _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejected, project, project_many)
 
 

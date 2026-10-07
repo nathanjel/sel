@@ -44,7 +44,7 @@ _COERCE = OpCode.COERCE
 
 class Context:
     __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report',
-                 'write_free')
+                 'join_right_null', 'write_free')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
@@ -65,6 +65,12 @@ class Context:
         # error -- in which case the join above applies them all again -- and
         # whether any row was dropped.
         self.join_prefilter_report = None
+        # A FILTER directly over a LINK_LEFT whose predicate opens with
+        # IS_NULL(_["member"]["field"]) hands the join (member, field, whether
+        # nothing observes the FILTER's keys) here: the join may skip building
+        # the joined rows of the right rows that conjunct is FALSE on
+        # (builtins/structure.py, _right_null_rejects).
+        self.join_right_null = None
         # Nothing in the tree being evaluated can write: it holds no assignment
         # and no call to an application's function (parser.may_write), and
         # assignment is the one way a program changes a value. Then no copy a

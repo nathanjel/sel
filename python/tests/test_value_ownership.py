@@ -142,9 +142,60 @@ def test_a_registered_function_brings_the_copies_back():
 
 
 def test_a_function_defined_through_the_registry_brings_the_copies_back():
-    # define() outside the manifest is the application's too (is_host_function).
+    # define() outside the manifest is the application's too (may_have_effects).
     assert _poke_writes_through_filters_result(
         lambda fn: registry.define('T_POKE', 0, 0, fn=fn)) == '1'
+
+
+def test_a_lazy_function_defined_through_the_registry_brings_the_copies_back():
+    assert _poke_writes_through_filters_result(
+        lambda fn: registry.define('T_POKE', 0, 0, lazy=True, fn=fn)) == '1'
+
+
+def test_a_replaced_registered_function_brings_the_copies_back():
+    def register(fn):
+        sel.register_function('T_POKE', 0, 0, lambda args: Value.text('1'))
+        sel.register_function('T_POKE', 0, 0, fn)
+    assert _poke_writes_through_filters_result(register) == '1'
+
+
+def test_a_binding_function_defined_through_the_registry_brings_the_copies_back():
+    # SPEC 8.1: defining a function below the public API is not a declaration
+    # that it is pure -- a binding one included (examples/fn-complex's form).
+    ctx = _x_context()
+    x1 = ctx.get('X').get('1')
+
+    def each(args, _ctx):
+        x1.set('k', Value.int(9))
+        return Value.text('1')
+
+    registry.define('T_POKE_EACH', 2, 3, lazy=True, binds=True, fn=each)
+    try:
+        assert registry.may_have_effects('T_POKE_EACH')
+        out = sel.compile('FILTER(X, TRUE)[T_POKE_EACH(LIST(1), _)]["k"]').run(ctx).scalar
+    finally:
+        registry._table.pop('T_POKE_EACH', None)
+    assert out == '1'
+
+
+def test_only_a_shipped_builtin_is_assumed_to_have_no_effects():
+    assert not registry.may_have_effects('FILTER')
+    assert not registry.may_have_effects('is_null')
+    assert registry.may_have_effects('T_NOT_DEFINED_ANYWHERE')
+    sel.register_function('T_HOST_FN', 0, 0, lambda args: Value.text('1'))
+    try:
+        assert registry.may_have_effects('T_HOST_FN')
+        assert registry.host_arity('T_HOST_FN') == (0, 0)
+    finally:
+        registry._table.pop('T_HOST_FN', None)
+        registry._host.discard('T_HOST_FN')
+    registry.define('T_LOW_FN', 0, 0, fn=lambda args, ctx: Value.text('1'))
+    try:
+        # Not the application's registration (no SQL arity), but no less able to write.
+        assert registry.may_have_effects('T_LOW_FN')
+        assert registry.host_arity('T_LOW_FN') is None
+    finally:
+        registry._table.pop('T_LOW_FN', None)
 
 
 def _deep_context():
