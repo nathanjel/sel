@@ -1483,6 +1483,11 @@ def _link(args, ctx, left_join):
         predicate = args.node(2)
     else:
         b1, b2, predicate = args.symbol(2), args.symbol(3), args.node(4)
+    # A predicate that may write can change a row between an early test and
+    # the FILTER's read of it (SPEC 7.4): then nothing is tested early here,
+    # and nothing is handed down.
+    if (prefilter is not None or right_null is not None) and not ctx.write_free and may_write(predicate):
+        prefilter = right_null = None
     equi = try_extract_equi_keys(predicate, b1, b2)
     call = _LinkCall(args, ctx, left_join, prefilter, b1, b2, equi)
     _link_sources(call, left_node, right_node)
