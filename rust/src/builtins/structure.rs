@@ -322,7 +322,11 @@ fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
     let nodes: &[Node] = args.nodes;
     let written: &Node = &nodes[body_idx];
     let src = &nodes[0];
-    let over_join = src.t == NodeType::Call && (src.s == "LINK" || src.s == "LINK_LEFT");
+    // An early test holds only while nothing can change what it read before
+    // this FILTER reads it (spec §7.4): a predicate that may write -- an
+    // assignment, or a call SEL does not ship -- is offered to no join, and
+    // the conjuncts handed from above stop here too.
+    let over_join = src.t == NodeType::Call && (src.s == "LINK" || src.s == "LINK_LEFT") && !may_write(written);
     let had_handed = handed.is_some();
     let mut own: Vec<JoinConjunct> = Vec::new();
     if over_join {
@@ -1531,8 +1535,8 @@ impl LinkState<'_> {
 fn do_link(args: &mut Args, left_join: bool) -> Result<Value, SelError> {
     // Taken with the pre-filter, before anything is evaluated (link_head),
     // and kept here rather than in the state: a pointer in this frame.
-    let right_null = args.ctx.join_right_null.take();
-    let mut st = link_head(args, left_join)?;
+    let mut right_null = args.ctx.join_right_null.take();
+    let mut st = link_head(args, left_join, &mut right_null)?;
     if st.deep_path {
         // Reading the right source first is unobservable only when it
         // succeeds: when it raises, the left source -- as written, with
@@ -1555,10 +1559,14 @@ fn do_link(args: &mut Args, left_join: bool) -> Result<Value, SelError> {
 }
 
 #[inline(never)]
-fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'a>>, SelError> {
+fn link_head<'a>(
+    args: &mut Args<'a>,
+    left_join: bool,
+    right_null: &mut Option<Box<JoinRightNull>>,
+) -> Result<Box<LinkState<'a>>, SelError> {
     // Taken before anything else is evaluated, so a LINK nested in this one's
     // sources cannot pick it up by accident; it is handed down on purpose.
-    let prefilter = args.ctx.join_prefilter.take();
+    let mut prefilter = args.ctx.join_prefilter.take();
     let nodes: &'a [Node] = args.nodes;
     let left_node = &nodes[0];
     let right_node = &nodes[1];
@@ -1581,6 +1589,13 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
         b2 = args.symbol(i)?;
     }
     let predicate_node: &'a Node = &nodes[roles.body.expect("a LINK form has a predicate")];
+    // A predicate that may write can change a row between an early test and
+    // the FILTER's read of it (spec §7.4): then nothing is tested early here,
+    // and nothing is handed down.
+    if (prefilter.is_some() || right_null.is_some()) && may_write(predicate_node) {
+        prefilter = None;
+        *right_null = None;
+    }
     let b1_names = vec![b1.clone(), "_1".to_string()];
     let b2_names = vec![b2.clone(), "_2".to_string()];
 
