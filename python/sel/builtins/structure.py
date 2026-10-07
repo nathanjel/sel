@@ -10,7 +10,7 @@ from ..lexer import ascii_lower, ascii_upper
 from ..registry import INF, define, may_have_effects
 from .aggregate import _SCALAR_FRESH_CALLS
 from ..opinfo import COALESCE_OPS
-from ..parser import Node
+from ..parser import Node, may_write
 from ..value import NONE, TEXT, Value, elements, iter_values, structural_hash, _record_shape
 
 
@@ -1430,7 +1430,11 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
     try:
         # The right side's table alias depends only on the right row, so it is
         # made once (on the first left row, so an empty left side still does no
-        # work), not once per PAIR -- it was 21% of a 500x500 join.
+        # work), not once per PAIR -- it was 21% of a 500x500 join. Unless the
+        # predicate may write: a right element it changes is seen as changed
+        # by the pairs after (SPEC 7.3: the elements are the source's own), and
+        # an alias is a record of the element's fields as they were.
+        stable = not needs_right_alias or not may_write(predicate)
         rights = None if needs_right_alias else right_items
         ctx = call.ctx
         for left_item in left_items:
@@ -1440,10 +1444,10 @@ def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias
             frame['_1'] = left
             frame['_'] = left
             matched = False
-            if rights is None:
+            if rights is None and stable:
                 rights = [ensure_row_table_alias(r, b2) for r in right_items]
 
-            for right in rights:
+            for right in (rights if stable else (ensure_row_table_alias(r, b2) for r in right_items)):
                 frame[b2] = right
                 frame[b2_lower] = right
                 frame['_2'] = right
