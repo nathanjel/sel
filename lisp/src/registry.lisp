@@ -17,9 +17,15 @@
   (arity-error nil)
   (fn nil)
   ;; Set once, on every function the library itself defines, when the shipped
-  ;; table is sealed (SEAL-SHIPPED-BUILTINS). Everything else -- REGISTER-FUNCTION,
-  ;; REGISTER-BUILTIN, a DEFINE-BUILTIN after the seal -- is an application's
-  ;; function, which SHIPPED-CALL-P treats as able to do anything.
+  ;; table is sealed (SEAL-SHIPPED-BUILTINS): no application may replace or
+  ;; remove one.
+  (library nil :type boolean)
+  ;; Set at the same moment on those of them spec/builtins.json names: the
+  ;; shipped builtins, the only functions SHIPPED-CALL-P lets an analysis assume
+  ;; have no effects (spec §8.1). Everything else -- REGISTER-FUNCTION,
+  ;; REGISTER-BUILTIN, a DEFINE-BUILTIN after the seal, one the library defines
+  ;; outside the manifest -- is an application's function, which may do
+  ;; anything to any value it can reach, however it was installed.
   (shipped nil :type boolean))
 
 ;;; Spec §8.1: registering or replacing a function while other threads compile
@@ -98,9 +104,12 @@ definition is a host that would silently lack a builtin the others have."
 
 (defun seal-shipped-builtins ()
   "Called once, when the library's own builtins have loaded: marks each of them
-shipped. An application may add functions and replace its own, never these."
+the library's, and those the manifest names shipped. An application may add
+functions and replace its own, never these."
   (sb-thread:with-mutex (*registry-lock*)
-    (maphash (lambda (name spec) (declare (ignore name)) (setf (spec-shipped spec) t))
+    (maphash (lambda (name spec)
+               (setf (spec-library spec) t
+                     (spec-shipped spec) (and (manifest-entry name) t)))
              *registry*)))
 
 (defun function-name-p (name)
@@ -133,7 +142,7 @@ plain ERROR. OVERWRITE NIL also refuses the name of an earlier registration."
       (error "SEL function ~a: fn is not a function" upper))
     (sb-thread:with-mutex (*registry-lock*)
       (let ((old (gethash upper *registry*)))
-        (when (and old (spec-shipped old))
+        (when (and old (spec-library old))
           (error "~a is a builtin; a registered function cannot replace it" upper))
         (when (and old (not overwrite))
           (error "SEL function ~a defined twice" upper))
@@ -146,7 +155,7 @@ tests use it to leave the process as they found it."
   (let ((upper (ascii-upcase name)))
     (sb-thread:with-mutex (*registry-lock*)
       (let ((old (gethash upper *registry*)))
-        (when (and old (not (spec-shipped old)))
+        (when (and old (not (spec-library old)))
           (remhash upper *registry*)
           (remhash upper *host-functions*))))))
 

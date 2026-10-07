@@ -1104,8 +1104,18 @@ carry is promoted from neither, spec §7.4)."
 (defun do-link (a ctx is-left)
   ;; Taken before anything else is evaluated, so a LINK nested in this one's
   ;; sources cannot pick it up by accident; it is handed down on purpose below.
+  ;; So is a FILTER's leading IS_NULL of a right member (RIGHT-NULL-REJECTS),
+  ;; which is never handed on.
   (let* ((prefilter (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
+         (right-null (prog1 (context-join-right-null ctx) (setf (context-join-right-null ctx) nil)))
          (count (args-count a))
+         (pred-node (args-node a (if (= count 5) 4 2)))
+         ;; A predicate that may write can change a row between an early test
+         ;; and the FILTER's read of it (spec §7.4): then nothing is tested
+         ;; early here, and nothing is handed down.
+         (writes (and (or prefilter right-null) (node-may-write-p pred-node)))
+         (prefilter (unless writes prefilter))
+         (right-null (unless writes right-null))
          (stages (and prefilter (join-prefilter-stages prefilter)))
          (deep (and prefilter (join-prefilter-deep prefilter)))
          (above (and prefilter (join-prefilter-above prefilter)))
@@ -1132,7 +1142,6 @@ carry is promoted from neither, spec §7.4)."
          (jb2 (if (= count 5) (args-symbol a 3) (or (single-relation-name node1) "_2")))
          (b1-names (list jb1 "_1"))
          (b2-names (list jb2 "_2"))
-         (pred-node (args-node a (if (= count 5) 4 2)))
          (obligations (and prefilter (join-prefilter-obligations prefilter)))
          (jequi-left (nth-value 0 (try-extract-equi-keys pred-node jb1 jb2)))
          (right-side nil)
@@ -1184,7 +1193,7 @@ carry is promoted from neither, spec §7.4)."
       (unwind-protect
            (multiple-value-prog1
                (do-link-rows a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                             right-side obligations jb1 jb2 pred-node)
+                             right-side obligations jb1 jb2 pred-node right-null)
              (setf completed t))
         (unless completed
           (setf (context-join-prefilter ctx) nil
@@ -1330,9 +1339,34 @@ order."
               right-prefix (nreverse right-prefix))))
     (values prefix right-prefix left-before-right binders report)))
 
+(defun right-null-rejects (b1 b2 right-null buckets)
+  "Equi-LINK_LEFT, once every right key was computed: the right rows a FILTER
+that opens with IS_NULL(_[\"member\"][\"field\"]) (RIGHT-NULL, from
+RIGHT-NULL-TEST) drops wherever they are joined, as an EQ table, or NIL when
+the join cannot tell. MEMBER must be one of this join's right binder keys --
+the binder, its lower case or `_2`, each bound in every joined row to the
+right row as bucketed (spec §7.4, MAKE-JOINED-ROW) -- and the two binders must
+not be spelled alike. A row is rejected only when the read certainly yields a
+non-NULL value: one without the field (E_NO_KEY in the FILTER) or with a NULL
+there is kept, for the FILTER to decide. Its joined rows are then never built;
+its left row stays matched, so it gets no null-extended row in their place."
+  (destructuring-bind (name field deep) right-null
+    (declare (ignore deep))
+    (unless (or (ascii-equal b1 b2)
+                (not (member name (join-binder-keys b2 "_2") :test #'string=)))
+      (let ((rejected (make-hash-table :test #'eq)))
+        (maphash (lambda (key bucket)
+                   (declare (ignore key))
+                   (dolist (r2 bucket)
+                     (let ((value (value-get r2 field)))
+                       (when (and value (not (value-null-p value)))
+                         (setf (gethash r2 rejected) t)))))
+                 buckets)
+        rejected))))
+
 (defun link-hash-join (a ctx val1 val2 is-left prefilter stages deep above above-keys b1-names b2-names
                        right-side obligations b1 b2 below applied-below projector facts
-                       left-expr right-expr is-numeric swapped)
+                       left-expr right-expr is-numeric swapped right-null)
   "The hash join (only with right rows: the probe phase evaluates the left key
 per left row, and with no pairs PRED must not run at all): build, plan the
 pre-filter, then probe the left rows in order."
@@ -1347,7 +1381,18 @@ pre-filter, then probe the left rows in order."
         ;; observes it (DEEP). When the join key is a literal field of the row,
         ;; a row that HAS it may be rejected before its key is computed.
         (with-row-binder (frame1 set-left) b1 ("_1" "_")
-          (let* ((rejected (and right-prefix (make-hash-table :test #'eq)))
+          (let* ((rejected (cond (right-prefix (make-hash-table :test #'eq))
+                                 ((and right-null is-left (null prefilter))
+                                  (right-null-rejects b1 b2 right-null ht))))
+                 ;; A LINK_LEFT rejects right rows only for a FILTER that opens
+                 ;; with IS_NULL, and then drops no left row: POSITION counts
+                 ;; every joined row as written, built or not, and the
+                 ;; collection limit is held to that count, where the join as
+                 ;; written would have raised (spec §6.4).
+                 (logical (and is-left rejected t))
+                 ;; Whether nothing observes that FILTER's keys: then the kept
+                 ;; rows need not carry the positions the rows as written had.
+                 (deep (if logical (third right-null) deep))
                  (numbered (and (or prefix rejected) (not deep)))
                  (dropped nil)
                  (position 1)
@@ -1377,7 +1422,8 @@ pre-filter, then probe the left rows in order."
                                          (return 2)))))
                            (unless keep (return 1)))))
                      (emit (joined)
-                       (check-collection-cap (incf nout) (args-pos a))
+                       (unless logical
+                         (check-collection-cap (incf nout) (args-pos a)))
                        (if numbered
                            (push (cons (format-index-string position) joined) keyed)
                            (push joined out))
@@ -1386,7 +1432,7 @@ pre-filter, then probe the left rows in order."
               ;; every right key was computed. They stay in their buckets: a
               ;; left row still counts them towards the numbering, and one kept
               ;; on an error joins them.
-              (when rejected
+              (when right-prefix
                 (let* ((cells (loop for binder in (remove-duplicates binders :test #'string=)
                                     collect (cons binder nil)))
                        (before (join-report-errored report)))
@@ -1454,11 +1500,15 @@ pre-filter, then probe the left rows in order."
                                  ;; row: its joined rows raise in the FILTER, in
                                  ;; order, where they would have.
                                  (let ((skip (and rejected (= asked 0) rejected)))
+                                   (when logical
+                                     (check-collection-cap (+ (1- position) (length matches)) (args-pos a)))
                                    (dolist (r2 matches)
                                      (if (and skip (gethash r2 skip))
                                          (progn (setf dropped t) (incf position))
                                          (emit (funcall projector r1 r2)))))
                                  (when is-left
+                                   (when logical
+                                     (check-collection-cap position (args-pos a)))
                                    (emit (funcall projector r1 nil))))))))
                   (ctx-pop-frame ctx))))
             (when dropped (setf (join-report-dropped report) t))
@@ -1520,7 +1570,7 @@ rows): the joined rows in order, as a list value."
     (make-list-value (nreverse out))))
 
 (defun do-link-rows (a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                     right-side obligations b1 b2 pred-node)
+                     right-side obligations b1 b2 pred-node right-null)
   (multiple-value-bind (val1 val2 below applied-below) (link-sources a ctx)
     ;; Spec §7.4 "How a LINK evaluates": with no right elements PRED is never
     ;; evaluated. A LINK over an empty side is the empty list; a LINK_LEFT
@@ -1546,7 +1596,7 @@ rows): the joined rows in order, as a list value."
               (if (and left-expr right-expr sample-r2)
                   (link-hash-join a ctx val1 val2 is-left prefilter stages deep above above-keys
                                   b1-names b2-names right-side obligations b1 b2 below applied-below
-                                  projector facts left-expr right-expr is-numeric swapped)
+                                  projector facts left-expr right-expr is-numeric swapped right-null)
                   (link-nested-loop a ctx val1 val2 is-left prefilter b1 b2 pred-node sample-r2 projector))))))))
 
 ;; Three or five arguments, refused at compile time like every E_ARITY (spec

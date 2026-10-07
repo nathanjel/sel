@@ -3318,3 +3318,287 @@ longer the leading equality."
                    (apply #'concatenate 'string (loop repeat levels collect ")")))))
     (is (sel:evaluate (src 30)))
     (raises "E_DEPTH" (sel:evaluate (src 70)))))
+
+;;; --- effects: only a shipped builtin is assumed harmless (spec §8.1) --------
+;;;
+;;; .selt cannot install a native function, so the rule is held here, the way
+;;; python/tests/test_value_ownership.py holds it. The probe rewrites X[1]["k"]
+;;; from 1 to 9 -- from its WRITE-FROMth call on -- and returns "1"; however it
+;;; was installed, it must count as able to write. This host's FILTER over a
+;;; variable copies each row as it keeps it, so `FILTER(X, TRUE)[T_POKE()]["k"]`
+;;; is "1" whatever the classifier says; TOP_BY and BUCKET are the probes it
+;;; decides: a key that may write has its element copied when it is collected,
+;;; before the next key's call rewrites it, where a harmless one leaves the copy
+;;; to the end.
+
+(defun effects-x-context ()
+  (sel:evaluate "RECORD('X', LIST(RECORD('k', 1), RECORD('k', 2)))"))
+
+(defparameter *poke-installs*
+  ;; (label install call): INSTALL takes the name and a thunk that pokes and
+  ;; returns "1"; CALL is how a program calls it.
+  (flet ((strict (poke) (lambda (a c) (declare (ignore a c)) (funcall poke))))
+    (list (list "register-function"
+                (lambda (name poke)
+                  (sel:register-function name 0 0 (lambda (a) (declare (ignore a)) (funcall poke))))
+                "T_POKE()")
+          (list "a replaced register-function"
+                (lambda (name poke)
+                  (sel:register-function name 0 0 (lambda (a) (declare (ignore a)) (sel:make-text "1")))
+                  (sel:register-function name 0 0 (lambda (a) (declare (ignore a)) (funcall poke))))
+                "T_POKE()")
+          (list "register-builtin"
+                (lambda (name poke) (sel:register-builtin name 0 0 (strict poke)))
+                "T_POKE()")
+          (list "a lazy register-builtin"
+                (lambda (name poke) (sel:register-builtin name 0 0 (strict poke) :lazy t))
+                "T_POKE()")
+          (list "a binding register-builtin"
+                (lambda (name poke) (sel:register-builtin name 2 3 (strict poke) :lazy t :binds t))
+                "T_POKE(LIST(1), _)")
+          (list "a define-builtin after the seal"
+                (lambda (name poke) (sel::define-builtin name 0 0 (strict poke)))
+                "T_POKE()"))))
+
+(defun poke-probe (install src &optional (write-from 1))
+  "SRC's answer, as text, over EFFECTS-X-CONTEXT with T_POKE installed by INSTALL."
+  (let* ((ctx (effects-x-context))
+         (x1 (sel:value-get (sel:value-get ctx "X") "1"))
+         (calls 0))
+    (funcall install "T_POKE"
+             (lambda ()
+               (when (>= (incf calls) write-from)
+                 (sel:value-set x1 "k" (sel:make-int 9)))
+               (sel:make-text "1")))
+    (unwind-protect (sel:as-text (sel:run (sel:compile-source src) ctx))
+      (sel::unregister-function "T_POKE"))))
+
+(test effects-every-installed-function-counts-as-able-to-write
+  (dolist (entry *poke-installs*)
+    (destructuring-bind (label install call) entry
+      (funcall install "T_POKE" (lambda () (sel:make-text "1")))
+      (unwind-protect
+           (is (not (sel::shipped-call-p (sel:program-ast (sel:compile-source call)))) "~a" label)
+        (sel::unregister-function "T_POKE"))
+      (is (string= "1" (poke-probe install (format nil "FILTER(X, TRUE)[~a][\"k\"]" call)))
+          "~a: FILTER" label)
+      (is (string= "1" (poke-probe install (format nil "TOP_BY(X, ~a, 2)[1][\"k\"]" call) 2))
+          "~a: TOP_BY" label)
+      (is (string= "1" (poke-probe install (format nil "BUCKET(X, ~a)[\"1\"][1][\"k\"]" call) 2))
+          "~a: BUCKET" label))))
+
+(test effects-a-fresh-source-is-copied-when-the-body-may-keep-an-element
+  ;; The aggregates keep the elements of a list MAP has just built uncopied --
+  ;; nothing else holds them -- while their body calls only shipped builtins.
+  ;; An application's function handed an element may keep it and change it on a
+  ;; later row, after it was collected (spec §3.4), so then they copy as they
+  ;; collect.
+  (let ((kept nil))
+    (sel:register-function "T_GRAB" 1 1
+                           (lambda (a)
+                             (let ((v (sel:args-val a 0)))
+                               (if kept (sel:value-set kept "k" (sel:make-int 9)) (setf kept v))
+                               (sel:make-text "1"))))
+    (unwind-protect
+         (dolist (src '("FILTER(MAP(X, RECORD(\"k\", _[\"k\"])), T_GRAB(_) $== \"1\")[1][\"k\"]"
+                        "SORT_BY(MAP(X, RECORD(\"k\", _[\"k\"])), T_GRAB(_))[1][\"k\"]"
+                        "TOP_BY(MAP(X, RECORD(\"k\", _[\"k\"])), T_GRAB(_), 2)[1][\"k\"]"
+                        "BUCKET(MAP(X, RECORD(\"k\", _[\"k\"])), T_GRAB(_))[\"1\"][1][\"k\"]"))
+           (setf kept nil)
+           (is (string= "1" (sel:as-text (sel:run (sel:compile-source src) (effects-x-context)))) "~a" src))
+      (sel::unregister-function "T_GRAB"))))
+
+(test effects-a-shipped-builtin-is-assumed-harmless
+  ;; Every name the manifest knows is shipped, and a body of shipped builtins
+  ;; still has its copies left out: FILTER over the list MAP built keeps MAP's
+  ;; own rows, where a body calling an application's function copies each one.
+  (is (every (lambda (entry) (sel::spec-shipped (sel::registry-lookup (first entry))))
+             sel::*builtin-manifest-data*))
+  (is (sel::shipped-call-p (sel:program-ast (sel:compile-source "IS_NULL(1)"))))
+  (sel:register-function "T_NOOP" 1 1 (lambda (a) (sel:args-val a 0)))
+  (unwind-protect
+       (flet ((copies (src)
+                (let ((n 0))
+                  (sb-int:encapsulate 'sel::value-copy 'count-copies
+                                      (lambda (f &rest args) (incf n) (apply f args)))
+                  (unwind-protect (sel:run (sel:compile-source src) (effects-x-context))
+                    (sb-int:unencapsulate 'sel::value-copy 'count-copies))
+                  n)))
+         (is (= 0 (copies "FILTER(MAP(X, RECORD(\"k\", _[\"k\"])), UPPER(_[\"k\"]) $!= \"\")")))
+         (is (= 2 (copies "FILTER(MAP(X, RECORD(\"k\", _[\"k\"])), T_NOOP(_[\"k\"]) $!= \"\")"))))
+    (sel::unregister-function "T_NOOP")))
+
+(test effects-the-seal-ships-only-manifest-names
+  ;; A function the library defines while it loads is its own -- no
+  ;; application replaces it -- but only one the manifest names is shipped.
+  (let ((sel::*registry* (make-hash-table :test #'equal :synchronized t)))
+    (setf (gethash "IS_NULL" sel::*registry*) (sel::make-spec "IS_NULL" 1 1 nil nil nil #'identity)
+          (gethash "T_IN_PLACE" sel::*registry*) (sel::make-spec "T_IN_PLACE" 0 0 nil nil nil #'identity))
+    (sel::seal-shipped-builtins)
+    (let ((listed (gethash "IS_NULL" sel::*registry*))
+          (in-place (gethash "T_IN_PLACE" sel::*registry*)))
+      (is (and (sel::spec-library listed) (sel::spec-shipped listed)))
+      (is (and (sel::spec-library in-place) (not (sel::spec-shipped in-place)))))))
+
+(test effects-hybrid-context-isolation-holds-for-lower-level-definitions
+  ;; test_perf_hybrid_context.py's probe: a function installed below
+  ;; REGISTER-FUNCTION writes into its argument, and the pure-memory plan still
+  ;; runs on a copy of the caller's context.
+  (dolist (install (list (lambda (name fn) (sel:register-builtin name 1 1 fn))
+                         (lambda (name fn) (sel:register-builtin name 1 1 fn :lazy t))
+                         (lambda (name fn) (sel::define-builtin name 1 1 fn))))
+    (funcall install "REVIEW_POKE_LOW"
+             (lambda (a ctx)
+               (declare (ignore ctx))
+               (let ((value (sel:args-val a 0)))
+                 (sel:value-set value "k" (sel:make-text "888"))
+                 value)))
+    (unwind-protect
+         (let ((ctx (sel:from-native (list (cons "A" (list (cons "k" "1"))))))
+               (plan (sel.sql:plan-hybrid (sel:compile-source "REVIEW_POKE_LOW(A)") "sqlite")))
+           (is (sel.sql:hybrid-plan-pure-memory-p plan))
+           (let ((result (sel.sql:execute-hybrid plan (lambda (&rest r) (declare (ignore r)) nil) ctx)))
+             (is (string= "888" (sel:as-text (sel:value-get result "k"))))
+             (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "A") "k"))))))
+      (sel::unregister-function "REVIEW_POKE_LOW"))))
+
+;;; --- LINK_LEFT: the right rows a leading IS_NULL drops ----------------------
+;;;
+;;; A FILTER that opens with IS_NULL of a LINK_LEFT's right member lets the
+;;; join skip building the joined rows of the right rows that conjunct is FALSE
+;;; on (RIGHT-NULL-REJECTS); every shape must answer -- rows, keys, errors and
+;;; their places -- what the join bound to a helper variable first answers.
+
+(defun joined-both-forms (src context)
+  "SRC, which ends in ` .> FILTER(...)`, as written and with the join bound to a
+helper variable first: each `ok <dump>` or `err <code> <line>:<where>`, the
+error's column as an offset into the join or into the FILTER on. CONTEXT
+makes a fresh context."
+  (let* ((at (search " .> FILTER(" src :from-end t))
+         (head (subseq src 0 at))
+         (tail (subseq src (+ at (length " .> FILTER(")))))
+    (flet ((answer (text head-at)
+             (handler-case
+                 (concatenate 'string "ok "
+                              (sel:value-dump (sel:run (sel:compile-source text) (funcall context))))
+               (sel:sel-error (e)
+                 (let ((filter-at (search (concatenate 'string "FILTER(" tail) text :from-end t))
+                       (col (1- (sel:sel-error-col e))))
+                   (format nil "err ~a ~a:~a" (sel:sel-error-code e) (sel:sel-error-line e)
+                           (if (>= col filter-at)
+                               (format nil "filter+~d" (- col filter-at))
+                               (format nil "join+~d" (- col head-at)))))))))
+      (values (answer (concatenate 'string head " .> FILTER(" tail) 0)
+              (answer (concatenate 'string "J = " head "; J .> FILTER(" tail) 4)))))
+
+(defmacro counting-right-null-rejects ((seen) &body body)
+  "BODY with SEEN collecting, per call of RIGHT-NULL-REJECTS, the number of
+right rows it rejected (NIL when it declined), in call order."
+  `(let ((,seen '()))
+     (sb-int:encapsulate 'sel::right-null-rejects 'count-rejects
+                         (lambda (f &rest args)
+                           (let ((rejected (apply f args)))
+                             (setf ,seen (append ,seen (list (and rejected (hash-table-count rejected)))))
+                             rejected)))
+     (unwind-protect (progn ,@body)
+       (sb-int:unencapsulate 'sel::right-null-rejects 'count-rejects))))
+
+(defun right-null-context ()
+  (sel:evaluate "RECORD('P', LIST(RECORD('id', 1, 'name', 'a'), RECORD('id', 2, 'name', 'b'),
+                                  RECORD('id', 3, 'name', 5), RECORD('id', 4, 'name', 'd')),
+                        'I', LIST(RECORD('id', 10, 'product_id', 1), RECORD('id', NULL, 'product_id', 1),
+                                  RECORD('id', 12, 'product_id', 3), RECORD('product_id', 9)))"))
+
+(test link-left-right-null-keeps-results-keys-and-errors
+  (let ((left "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"])"))
+    (dolist (filter '("FILTER(IS_NULL(_[\"i\"][\"id\"]))"
+                      "FILTER(IS_NULL(_[\"I\"][\"id\"])) .> MAP(_K)"
+                      "FILTER(IS_NULL(_[\"_2\"][\"id\"]) AND _K $!= \"2\")"
+                      ;; a later step hides the keys, but the predicate reads them
+                      "FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _K $!= \"2\") .> MAP(_[\"p\"][\"id\"])"
+                      "FILTER(r, IS_NULL(r[\"i\"][\"id\"]) AND r[\"p\"][\"name\"] > 1)"
+                      "FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _[\"p\"][\"name\"] $!= \"b\") .> MAP(_[\"p\"][\"id\"])"
+                      "FILTER(IS_NULL(_[\"i\"][\"product_id\"]))"
+                      "FILTER(IS_NULL(_[\"i\"][\"sku\"]))"))
+      (let ((src (concatenate 'string left " .> " filter)))
+        (counting-right-null-rejects (seen)
+          (multiple-value-bind (as-written through-a-variable) (joined-both-forms src #'right-null-context)
+            (is (string= as-written through-a-variable) "~a~%  ~a~%  ~a" src as-written through-a-variable))
+          ;; The path was taken; it rejects rows only where the field is there
+          ;; and not NULL (no item has a sku: every row is the FILTER's to raise on).
+          (is (and seen (first seen) (eq (plusp (first seen)) (not (search "sku" src))))
+              "~a: ~s" src seen))))))
+
+(test link-left-right-null-declines-what-is-not-the-right-row
+  ;; not a right binder key of this join: the left one, a mixed-case name, a
+  ;; relation name under explicit binders; and binders spelled alike
+  (dolist (src '("P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"p\"][\"id\"]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"iI\"][\"id\"]))"
+                 "LINK_LEFT(P, I, L, R, L[\"id\"] == R[\"product_id\"]) .> FILTER(IS_NULL(_[\"I\"][\"id\"]))"
+                 "LINK_LEFT(P, I, X, x, X[\"id\"] == x[\"product_id\"]) .> FILTER(IS_NULL(_[\"x\"][\"id\"]))"))
+    (counting-right-null-rejects (seen)
+      (multiple-value-bind (as-written through-a-variable)
+          (joined-both-forms src (lambda () (sel:evaluate "RECORD('P', LIST(RECORD('id', 1), RECORD('id', 2)),
+                                                                  'I', LIST(RECORD('id', 10, 'product_id', 1)))")))
+        (is (string= as-written through-a-variable) "~a" src))
+      (is (member seen '(() (nil)) :test #'equal) "~a: ~s" src seen))))
+
+(test link-left-right-null-is-offered-only-for-its-shape
+  ;; not IS_NULL first, not a literal member or field, not the FILTER's own
+  ;; element; an inner join; and a FILTER handed conjuncts by a join above
+  (dolist (src '("P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(TRUE AND IS_NULL(_[\"i\"][\"id\"]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(NOT IS_NULL(_[\"i\"][\"id\"]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[LOWER(\"I\")][\"id\"]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"i\"][LOWER(\"ID\")]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(r, IS_NULL(_[\"i\"][\"id\"]))"
+                 "P .> LINK(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"i\"][\"id\"]))"
+                 "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"i\"][\"id\"])) .> LINK(I, L, R, L[\"p\"][\"id\"] == R[\"product_id\"]) .> FILTER(_[\"p\"][\"id\"] > 0) .> MAP(1)"))
+    (counting-right-null-rejects (seen)
+      (handler-case
+          (sel:run (sel:compile-source src)
+                   (sel:evaluate "RECORD('P', LIST(RECORD('id', 1), RECORD('id', 2)),
+                                         'I', LIST(RECORD('id', 10, 'product_id', 1)))"))
+        (sel:sel-error () nil))
+      (is (null seen) "~a: ~s" src seen))))
+
+(test link-left-right-null-holds-the-real-collection-limit
+  ;; The join as written builds every matched row before the FILTER drops it,
+  ;; and raises E_RANGE at the LINK_LEFT when they are more than MAX_COLLECTION:
+  ;; a row the rejection never builds still counts, at the same place.
+  (is (= sel::+limit-max-collection+ (* 1000 1000)))
+  (let ((src "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"k\"]) .> FILTER(IS_NULL(_[\"i\"][\"id\"]))"))
+    (flet ((context (n-left)
+             (sel:from-native (list (cons "P" (loop repeat n-left collect (list (cons "id" 1))))
+                                    (cons "I" (loop repeat 1000 collect (list (cons "id" 5) (cons "k" 1))))))))
+      (counting-right-null-rejects (seen)
+        (is (string= "-" (sel:value-dump (sel:run (sel:compile-source src) (context 1000)))))
+        (is (equal '(1000) seen)))
+      (handler-case (progn (sel:run (sel:compile-source src) (context 1001))
+                           (fail "1001 x 1000 joined rows raised nothing"))
+        (sel:sel-error (e)
+          (is (string= "E_RANGE" (sel:sel-error-code e)))
+          (is (= (1+ (search "LINK_LEFT" src)) (sel:sel-error-col e))))))))
+
+(test a-join-whose-key-may-write-tests-nothing-early
+  ;; The left key runs after the right rows were tested; a function SEL does
+  ;; not ship may change a right row there (spec §7.4, §8.1), which the FILTER
+  ;; then reads -- the item under `_2` is the element itself. Compared with
+  ;; the same predicate behind a leading TRUE, which no join tests early.
+  (dolist (shape '(("LINK_LEFT(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"])" "IS_NULL(_[\"_2\"][\"id\"])" nil)
+                  ("LINK(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"])" "_[\"_2\"][\"id\"] < 8" "5")))
+    (destructuring-bind (join predicate value) shape
+      (flet ((answer (src)
+               (let* ((ctx (sel:evaluate "RECORD('P', LIST(RECORD('id', 1), RECORD('id', 2)),
+                                                 'I', LIST(RECORD('id', 10, 'product_id', 1),
+                                                           RECORD('id', 11, 'product_id', 2)))"))
+                      (item (sel:value-get (sel:value-get ctx "I") "2")))
+                 (sel:register-function "T_MUT" 1 1
+                                        (lambda (a)
+                                          (sel:value-set item "id" (if value (sel:make-text value) (sel:make-none)))
+                                          (sel:args-val a 0)))
+                 (unwind-protect (sel:value-dump (sel:run (sel:compile-source src) ctx))
+                   (sel::unregister-function "T_MUT")))))
+        (let ((as-written (answer (format nil "~a .> FILTER(~a) .> MAP(_[\"_1\"][\"id\"])" join predicate))))
+          (is (string= as-written (answer (format nil "~a .> FILTER(TRUE AND ~a) .> MAP(_[\"_1\"][\"id\"])" join predicate)))
+              "~a" join)
+          (is (string= "-{\"1\"=t\"2\"}" as-written) "~a: ~a" join as-written))))))
