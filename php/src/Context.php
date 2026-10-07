@@ -30,12 +30,22 @@ final class Context
     /** What a join below reported: the conjuncts every row it emitted has passed, whether a row was kept on an error, and whether any row was dropped. @var array{0: array<string, true>, 1: bool, 2: bool}|null */
     public ?array $joinPrefilterReport = null;
     /**
+     * A FILTER directly over a LINK_LEFT whose predicate opens with
+     * IS_NULL(_["member"]["field"]) hands the join [member, field, deep --
+     * whether nothing observes the joined rows' keys, neither the FILTER's
+     * body nor the step after it] here: the join may skip building the
+     * joined rows of the right rows that conjunct is FALSE on
+     * (Builtins\Structure::rightNullRejects).
+     * @var array{0: string, 1: string, 2: bool}|null
+     */
+    public ?array $joinRightNull = null;
+    /**
      * Nothing in the tree being evaluated can write: it holds no assignment and
-     * no call to a host function (Program::evaluate). Assignment is the one way
-     * a program changes a value, so no copy a collector or a constructor makes
-     * (spec §3.4) can be told from the value itself: they hold their elements
-     * as they are, after the depth check the copy would have made. Off unless
-     * the Program proved it.
+     * no call to an application's function (Program::evaluate, Core::mayWrite).
+     * Assignment is the one way a program changes a value, so no copy a
+     * collector or a constructor makes (spec §3.4) can be told from the value
+     * itself: they hold their elements as they are, after the depth check the
+     * copy would have made. Off unless the Program proved it.
      */
     public bool $writeFree = false;
 

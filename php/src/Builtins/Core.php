@@ -362,6 +362,33 @@ final class Core
     }
 
     /**
+     * [member, field] when $conjunct is `IS_NULL(binder["member"]["field"])` --
+     * the shipped IS_NULL of a literal field of a literal member of the
+     * FILTER's element, the binder exactly as named -- else null. Over a
+     * LINK_LEFT, a member that is one of the join's right binder keys is the
+     * right row (spec §7.4), and the join may skip building the joined rows of
+     * the right rows the conjunct is FALSE on (Structure::rightNullRejects).
+     *
+     * @param array<string,mixed>|null $conjunct
+     * @return array{0:string,1:string}|null
+     */
+    private static function rightNullTest(?array $conjunct, string $binder): ?array
+    {
+        if ($conjunct === null || $conjunct['t'] !== 'call' || $conjunct['name'] !== 'IS_NULL'
+                || count($conjunct['args']) !== 1 || Registry::mayHaveEffects('IS_NULL')) {
+            return null;
+        }
+        $field = $conjunct['args'][0];
+        if ($field === null || $field['t'] !== 'index' || ($field['idx']['t'] ?? null) !== 'text') return null;
+        $member = $field['obj'] ?? null;
+        if ($member === null || $member['t'] !== 'index' || ($member['idx']['t'] ?? null) !== 'text'
+                || ($member['obj']['t'] ?? null) !== 'var' || $member['obj']['name'] !== $binder) {
+            return null;
+        }
+        return [(string) $member['idx']['v'], (string) $field['idx']['v']];
+    }
+
+    /**
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
      */
@@ -460,10 +487,11 @@ final class Core
 
     /**
      * Whether evaluating $node might write into a value: it holds an assignment or
-     * calls a host function. A collector copies an element when it collects it
-     * (spec §3.4); while nothing below the body can write, deferring the copy to
-     * the end is unobservable, so only a body that might write copies at
-     * collection. Iterative: a body can be a flat chain as long as the source.
+     * calls an application's function (Registry::mayHaveEffects: anything outside
+     * the manifest, however installed). A collector copies an element when it
+     * collects it (spec §3.4); while nothing below the body can write, deferring
+     * the copy to the end is unobservable, so only a body that might write copies
+     * at collection. Iterative: a body can be a flat chain as long as the source.
      *
      * @param array<string,mixed>|null $node
      */
@@ -475,7 +503,7 @@ final class Core
             if (!is_array($n)) continue;
             $t = $n['t'] ?? null;
             if ($t === 'assign') return true;
-            if ($t === 'call' && Registry::isHostFunction((string) ($n['name'] ?? ''))) return true;
+            if ($t === 'call' && Registry::mayHaveEffects((string) ($n['name'] ?? ''))) return true;
             foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;
@@ -560,15 +588,28 @@ final class Core
                     $blocked = $own !== [] && $own[0]['fields'] === null && $own[0]['total'] === null;
                     $stages = $blocked ? [] : [[$binder, $own, 0]];
                     if ($handed !== null && !$blocked) foreach ($handed[0] as $stage) $stages[] = $stage;
-                    $deep = $handed === null ? !empty($body['keysUnobserved']) : true;
+                    // A body that reads _K observes the keys itself, whatever
+                    // the step after it does: rows dropped below must keep
+                    // their positions then.
+                    $deep = ($handed === null ? !empty($body['keysUnobserved']) : true) && !self::containsVar($body, '_K');
                     if ($stages !== []) {
                         $ctx->joinPrefilter = [$stages, $deep, $handed === null ? [] : $handed[2], $handed === null ? [] : $handed[3]];
+                    } elseif ($handed === null && $src['name'] === 'LINK_LEFT' && $own !== []) {
+                        // A predicate that opens with IS_NULL of a right member's
+                        // field (S6's unsold products): the join may reject the
+                        // right rows it is FALSE on before building their joined
+                        // rows. Nothing is reported back -- the null-extended rows
+                        // were never tested -- so the whole predicate still runs
+                        // over every row the join builds.
+                        $test = self::rightNullTest($own[0]['node'], $binder);
+                        if ($test !== null) $ctx->joinRightNull = [$test[0], $test[1], $deep];
                     }
                 }
                 try {
                     $source = $a->val(0);
                 } finally {
                     $ctx->joinPrefilter = null;
+                    $ctx->joinRightNull = null;
                 }
                 // The join's report -- which conjuncts every row that came up
                 // has passed, whether a row was kept on an error, and whether

@@ -171,8 +171,9 @@ final class Program
         if ($this->physical === null || $this->physicalOf !== $this->ast) {
             $this->physical = Optimizer::optimize($this->ast, true);
             $this->physicalOf = $this->ast;
-            // An assignment or a host function anywhere in the tree may write, and
-            // then every copy the spec names is made (spec §3.4).
+            // An assignment or an application's function (Registry::mayHaveEffects)
+            // anywhere in the tree may write, and then every copy the spec names is
+            // made (spec §3.4).
             $this->physicalWriteFree = !Builtins\Core::mayWrite($this->physical);
         }
         return $this->physical;

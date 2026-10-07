@@ -1061,6 +1061,28 @@ L = LIST(RECORD("a", 1), RECORD("a", 2)); R = LIST(RECORD("k", 1), RECORD("k", 2
 --- expect
 tree -{"1"=t"-", "2"=t"-"}
 ===
+### name: rel.link.then-filter.as-written.a-write-in-the-body-reaches-a-later-row
+--- note
+The first joined row passes and its second conjunct sets item 2's id to 5;
+the second joined row holds item 2 itself under `_2` (an unnamed binder binds
+the element as it is), so it passes too. Every host tested `_["_2"]["id"] < 8`
+on the items before the join, when item 2's id was still 10, and dropped the
+row: an early test holds only while nothing can change what it read.
+--- source
+P = LIST(RECORD("id", 1), RECORD("id", 2)); I = LIST(RECORD("id", 5, "product_id", 1), RECORD("id", 10, "product_id", 2)); LINK(P, I, _1, _2, _1["id"] == _2["product_id"]) .> FILTER(_["_2"]["id"] < 8 AND (I[2]["id"] = 5; TRUE)) .> MAP(_["_1"]["id"])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+### name: rel.link-left.then-filter.right-null.a-write-in-the-body-reaches-a-later-row
+--- note
+P1 matches nothing: its null-extended row passes and sets the item's id to
+NULL, which P2's joined row -- holding the item itself under `_2` -- then
+reads. Rejecting the item for its id 10 before the FILTER ran would lose P2.
+--- source
+P = LIST(RECORD("id", 1), RECORD("id", 2)); I = LIST(RECORD("id", 10, "product_id", 2)); LINK_LEFT(P, I, _1, _2, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"]) AND (I[1]["id"] = NULL; TRUE)) .> MAP(_["_1"]["id"])
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
 ### name: rel.link.then-filter.as-written.join-key.a-left-key-raises-though-the-right-rows-all-fail
 --- note
 The join computes its left key for every left row that has a right row to

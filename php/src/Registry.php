@@ -17,7 +17,8 @@ final class Registry
      * min/max/lazy/binds must agree, and the extra arity rule (COND's odd
      * count, LINK's three-or-five) comes from the manifest rather than from
      * the caller — one body for every host. A name it does not know is a
-     * host's own function (examples/fn-*) and passes.
+     * host's own function (examples/fn-*) and passes, and is the
+     * application's to every analysis (mayHaveEffects).
      *
      * @param array<string,mixed> $spec
      */
@@ -216,10 +217,25 @@ final class Registry
         self::$host[$key] = true;
     }
 
-    /** Whether $name is a function an application registered (and so may do anything, writes included). */
-    public static function isHostFunction(string $name): bool
+    /**
+     * The effects classification every analysis asks (spec/SPEC.md §8.1):
+     * whether a call to $name may keep, read or change values beyond its
+     * result, so that no copy may be left out around it and nothing may be
+     * evaluated out of order across it. Only a shipped builtin -- a name the
+     * manifest knows, which the bootstrap defines before any application code
+     * can, and which define() refuses to define again and registerFunction()
+     * to replace -- is assumed not to. Every other function is the
+     * application's, however it was installed: registerFunction(), or a
+     * define() outside the manifest, strict, lazy or binding. Defining a
+     * function below the public API is not a declaration that it is pure.
+     *
+     * Registration is a separate question (hostArity(), registerFunction()'s
+     * replacement rule), answered by $host alone.
+     */
+    public static function mayHaveEffects(string $name): bool
     {
-        return isset(self::$host[Utf8::upper($name)]);
+        $key = Utf8::upper($name);
+        return isset(self::$host[$key]) || !isset(BuiltinManifest::BUILTINS[$key]);
     }
 
     /**
