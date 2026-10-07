@@ -341,3 +341,22 @@ LINK_LEFT(LIST(5), LIST(), A, B, TRUE)
 --- expect
 tree -{"1"=-{"A"=-{"A"=t"5", "a"=t"5"}, "a"=-{"A"=t"5", "a"=t"5"}, "_1"=-{"A"=t"5", "a"=t"5"}, "B"=-{"B"=-, "b"=-}, "b"=-{"B"=-, "b"=-}, "_2"=-{"B"=-, "b"=-}}}
 ===
+
+### name: rel.link-left.then-filter.right-null.an-item-with-a-field-of-the-binder-name
+--- note
+The first item has a field `i`, so it is extended with `I` alone; the second
+has a field `I`, so it is bound as it is (§7.4). Either way every right
+binder key of the joined row -- `I`, `i`, `_2` -- holds the item as bound,
+and `_["I"]["id"]` reads its id: 10 fails, NULL passes.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1, "i", 5), RECORD("I", 3, "id", NULL, "product_id", 2)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+
+### name: rel.link-left.then-filter.right-null.an-item-with-a-field-of-the-binder-name-lowercase
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1, "i", 5), RECORD("I", 3, "id", NULL, "product_id", 2)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===

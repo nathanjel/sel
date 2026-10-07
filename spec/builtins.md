@@ -4,7 +4,10 @@ One entry per builtin, keyed by its upper-case name, sorted. It is the one
 place a builtin's *shape* is authored: the parts of the function table that
 every host must agree on before a program is even run. Bodies stay native, in
 each host's `builtins/`; custom host registration (`register`, `register_builtin`,
-`Registry::define` outside the shipped table) is not described here.
+`Registry::define` outside the shipped table) is not described here. Only the
+builtins listed here may be assumed to have no effects: a function installed
+any other way, at any level, counts as able to change any value it can reach
+(`spec/SPEC.md` §8.1).
 
 ```jsonc
 "LINK": {

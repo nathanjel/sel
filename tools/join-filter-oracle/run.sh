@@ -15,12 +15,13 @@ cd "$(dirname "$0")/../.."
 . tools/impls.sh
 COUNT="${1:-3000}"; SEED="${2:-52001}"; MODE="${3:-mixed}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-# Two passes: joins then filters (the lane's first question), and pipelines without joins, where the optimiser moved
-# FILTERs, MAPs and sorts past steps that raise. Each pass compares every host
+# Three passes: joins then filters (the lane's first question); pipelines without joins, where the optimiser moved
+# FILTERs, MAPs and sorts past steps that raise; and LINK_LEFTs under a FILTER that opens with IS_NULL of a right
+# member, which a host may test on the right rows before it joins them. Each pass compares every host
 # with itself (as written vs every step bound to a variable) before the hosts
 # with each other.
 status=0
-for pass in "$MODE" pipeline; do
+for pass in "$MODE" pipeline leftnull; do
   mkdir -p "$WORK/$pass"
   python3 tools/join-filter-oracle/gen.py "$COUNT" "$SEED" "$WORK/$pass/corpus.selc" "$WORK/$pass/sidecar" "$pass"
   outs=()

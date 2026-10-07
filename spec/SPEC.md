@@ -1050,7 +1050,13 @@ the join been assigned to a variable first; the same predicate with its
 conjuncts swapped is `E_NOT_NUM` at the amount, in either form.
 Nothing else an early test does can be seen either. The `FILTER`'s result
 keeps the keys the joined rows had (§7.3), not the positions of the rows a
-smaller join would have made. Every join still computes every key it would
+smaller join would have made. Under `LINK_LEFT`, a right element an early test
+rejects has still matched: its left element gets no null-extended row in place
+of the joined rows it would have made, and the null-extended rows, which no
+test of a right element can speak for, go through the whole predicate.
+`ITEMS` holding one item of product 1, with an id, `PRODUCTS .>
+LINK_LEFT(ITEMS, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["items"]["id"]))`
+answers the products no item names — never product 1. Every join still computes every key it would
 have computed: an element dropped early still raises in a key expression it
 cannot evaluate, so does a join above it, and a side emptied early does not
 spare the other side's keys. And a member the predicate reads is the joined
@@ -1528,6 +1534,16 @@ PHP (`Sel::registerFunction`), `register_function` in Python, C++ and Rust
   is the host's own and propagates unchanged.
 - **It is invisible to the analyses.** `dependencies()` treats a call to it
   like a call to any strict builtin.
+- **It is never assumed harmless.** An implementation leaves out a copy, or
+  evaluates an expression out of its written order, only where nothing can
+  tell (§3.4, §7.4) — and a function SEL does not ship can tell: it may hold
+  values of its own and change them, the program's included. Every function
+  outside `spec/builtins.json` therefore counts as able to change any value
+  it can reach: one registered here, and equally one a host installs through
+  a lower-level definition, strict, lazy or binding. Defining a function below
+  this API is not a declaration that it is pure, and how a function was
+  installed decides nothing else either: only a function registered here
+  can be replaced or given a SQL spelling.
 - **It has a SQL spelling only if the application gives it one.** The
   application may register, per dialect, a SQL expression for its function
   (`sql/MAP.md` §4.7) — a call to a database function, a stored function, an

@@ -1091,6 +1091,279 @@ A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(
 error E_NO_KEY at 1:169
 ===
 
+% --- a FILTER after a LINK_LEFT that opens with IS_NULL of a right member
+% (S6's "unsold products" shape). An implementation may reject right rows the
+% leading conjunct is FALSE on before it builds their joined rows, but a left
+% element whose matches are all rejected is still a matched element: it gets
+% no null-extended row. Its null-extended rows, and the rows it kept, still go
+% through the whole predicate in order (spec §7.4). Every case answers what it
+% answers with the join bound to a variable first.
+
+### name: rel.link-left.then-filter.right-null.all-matches-rejected-leave-no-null-row
+--- note
+P1 matches two items and P3 one, all with an id: their joined rows fail the
+predicate, and neither gets a null-extended row in their place. Only P2,
+which matched nothing, answers.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 1), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.the-result-keeps-the-joined-row-keys
+--- note
+P2's null-extended row is the third joined row (P1 made two): the FILTER's
+result keeps that key, however many rows were never built.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 1), RECORD("id", 12, "product_id", 3)); J = P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])); INDEXES(J)
+--- expect
+tree -{"1"=t"3"}
+===
+### name: rel.link-left.then-filter.right-null.k-is-the-joined-row-key
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 1), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"3"}
+===
+### name: rel.link-left.then-filter.right-null.a-later-conjunct-reads-the-joined-row-key
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", NULL, "product_id", 1), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]) AND _K $!= "3") .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link-left.then-filter.right-null.the-whole-predicate-runs-on-the-null-extended-row
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 1), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["name"])
+--- expect
+tree -
+===
+### name: rel.link-left.then-filter.right-null.a-matched-null-id-passes
+--- note
+A real item whose id is NULL passes the predicate: its joined row is kept,
+beside P2's null-extended row.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", NULL, "product_id", 1), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"2", "2"=t"3"}
+===
+### name: rel.link-left.then-filter.right-null.an-empty-record-is-null-an-empty-list-is-not
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", RECORD(), "product_id", 1), RECORD("id", LIST(), "product_id", 2)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"a"}
+===
+### name: rel.link-left.then-filter.right-null.a-matched-item-without-the-field-raises
+--- note
+The item P3 matches first has no id: the FILTER raises there, after P2's row
+passed. Testing the conjunct on the items keeps that item for the FILTER.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("product_id", 3), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+error E_NO_KEY at 1:282
+===
+### name: rel.link-left.then-filter.right-null.an-unmatched-item-without-the-field-is-never-read
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("product_id", 9), RECORD("id", 12, "product_id", 3)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link-left.then-filter.right-null.a-scalar-item-raises-where-matched
+--- note
+A scalar right element is bound as the record of its name keys (§7.4), which
+has no id: the joined row raises in the FILTER, not before it.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); LINK_LEFT(P, LIST(2, 7), L, R, L["id"] == R) .> FILTER(IS_NULL(_["R"]["id"])) .> MAP(_K)
+--- expect
+error E_NO_KEY at 1:140
+===
+### name: rel.link-left.then-filter.right-null.the-null-record-without-the-field-raises
+--- note
+The null-extended row's right record is shaped like the first item, which
+has no id: P2's row raises in the FILTER, whatever the other items carry.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("product_id", 9), RECORD("id", 12, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+error E_NO_KEY at 1:217
+===
+### name: rel.link-left.then-filter.right-null.duplicate-matches-are-tested-per-row
+--- note
+Two left elements share the same three items; each keeps only the joined row
+of the item whose id is NULL, under its own key, and P2 its null row.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 1, "name", "a2"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", NULL, "product_id", 1), RECORD("id", 11, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"] & ":" & _K)
+--- expect
+tree -{"1"=t"a:2", "2"=t"a2:5", "3"=t"b:7"}
+===
+### name: rel.link-left.then-filter.right-null.a-null-left-key-is-unmatched
+--- source
+P = LIST(RECORD("id", NULL, "name", "a"), RECORD("id", 1, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"a"}
+===
+### name: rel.link-left.then-filter.right-null.no-items-the-name-keys-have-no-field
+--- note
+With no right elements the null record holds just the name keys (§7.4):
+`_["i"]["id"]` is E_NO_KEY on every row.
+--- source
+P = LIST(RECORD("id", 1, "name", "a")); I = LIST(); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))
+--- expect
+error E_NO_KEY at 1:129
+===
+### name: rel.link-left.then-filter.right-null.no-items-the-name-record-is-not-null
+--- source
+P = LIST(RECORD("id", 1, "name", "a")); I = LIST(); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]))
+--- expect
+tree -
+===
+### name: rel.link-left.then-filter.right-null.no-left-elements
+--- source
+P = LIST(); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))
+--- expect
+tree -
+===
+### name: rel.link-left.then-filter.right-null.under-explicit-binders
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["r"]["id"])) .> MAP(_["L"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.under-explicit-binders-the-relation-is-no-member
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_["L"]["name"])
+--- expect
+error E_NO_KEY at 1:185
+===
+### name: rel.link-left.then-filter.right-null.through-the-positional-member
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.through-the-name-as-written
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.a-mixed-case-name-is-no-member
+--- note
+The joined row has `IT` and `it`, not `It`: E_NO_KEY on the first row, the
+matched one.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); IT = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(IT, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["It"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+error E_NO_KEY at 1:189
+===
+### name: rel.link-left.then-filter.right-null.binders-spelled-alike
+--- note
+Binders `X` and `x`: the right binder's keys are bound last, so `_["x"]` is
+the item -- as with the join bound to a variable first (next case). An
+implementation that cannot tell the two binders apart tests nothing early.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); LINK_LEFT(P, I, X, x, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["x"]["id"])) .> MAP(_["_1"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.binders-spelled-alike-through-a-variable
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); J = LINK_LEFT(P, I, X, x, _1["id"] == _2["product_id"]); J .> FILTER(IS_NULL(_["x"]["id"])) .> MAP(_["_1"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.a-right-key-raises-first
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))
+--- expect
+error E_NO_KEY at 1:170
+===
+### name: rel.link-left.then-filter.right-null.a-left-key-raises-after-rejected-rows
+--- note
+P1's only joined row fails the predicate; P2 has no id, and the join raises
+computing its key, as written.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))
+--- expect
+error E_NO_KEY at 1:131
+===
+### name: rel.link-left.then-filter.right-null.a-later-conjunct-is-not-reached-on-rejected-rows
+--- note
+P1's name is text, and `> 1` raises on it -- but P1's joined row fails the
+first conjunct, and AND never reaches the second there.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", 5)); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] > 1) .> MAP(_["p"]["id"])
+--- expect
+tree -{"1"=t"2"}
+===
+### name: rel.link-left.then-filter.right-null.a-later-conjunct-raises-on-a-kept-row
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] > 1) .> MAP(_["p"]["name"])
+--- expect
+error E_NOT_NUM at 1:210
+===
+### name: rel.link-left.then-filter.right-null.an-earlier-conjunct-raises-on-every-row
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(_["p"]["name"] > 1 AND IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+error E_NOT_NUM at 1:184
+===
+### name: rel.link-left.then-filter.right-null.a-promoted-field-is-not-the-member
+--- note
+P and I both carry `id`, so the joined row has none (§7.4): E_NO_KEY.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["id"])) .> MAP(_["p"]["name"])
+--- expect
+error E_NO_KEY at 1:187
+===
+### name: rel.link-left.then-filter.right-null.under-an-explicit-filter-binder
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(r, IS_NULL(r["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.under-an-explicit-filter-binder-underscore-is-unbound
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(r, IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+error E_UNDEF_VAR at 1:189
+===
+### name: rel.link-left.then-filter.right-null.then-take
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", "c")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> TAKE(1) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.not-is-null-keeps-the-matches
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(NOT IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"a"}
+===
+### name: rel.link-left.then-filter.right-null.not-an-equijoin
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1)); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"] AND TRUE) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.between-two-joins
+--- note
+The FILTER between the joins drops P1 (matched); P2 and P3 go on to C, keyed
+2 and 3, and the FILTER above keeps P2's row.
+--- source
+P = LIST(RECORD("id", 1, "name", "a", "cid", 7), RECORD("id", 2, "name", "b", "cid", 7), RECORD("id", 3, "name", "c", "cid", 8)); I = LIST(RECORD("id", 10, "product_id", 1)); C = LIST(RECORD("cid", 7, "tier", "P"), RECORD("cid", 8, "tier", "Q")); P .> LINK_LEFT(I, _["p"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> LINK(C, L, R, L["p"]["cid"] == R["cid"]) .> FILTER(_["tier"] $== "P") .> MAP(_["L"]["p"]["name"])
+--- expect
+tree -{"1"=t"b"}
+===
+### name: rel.link-left.then-filter.right-null.over-a-join-that-carries-the-name
+--- note
+The first join nests I's rows under `I` and `i` in every left element; the
+second binds its own items there. Those match nothing (no product id is 10
+or 11), so each row is null-extended and `_["i"]["id"]` is NULL -- the
+nested item's id is not what the FILTER reads.
+--- source
+P = LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b")); I = LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 2)); P .> LINK(I, _["p"]["id"] == _2["product_id"]) .> LINK_LEFT(I, _1["i"]["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> MAP(_K)
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
 % --- an equijoin matches pairs "as the comparison
 % would compare them" (spec §7.4). Every host's hash path keyed only TEXT (and
 % numbers under ==), swallowed a failed numeric conversion, and so matched
