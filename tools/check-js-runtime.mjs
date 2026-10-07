@@ -847,6 +847,99 @@ a*a*$
   }
 }
 
+// --- an application's function is never assumed harmless (spec/SPEC.md §8.1):
+// however it was installed, a call to it may write, so no copy is put off past
+// it and no aliasing outlives it (registry.mayHaveEffects) -----------------
+{
+  const { registerFunction } = await import('../js/src/sel.mjs');
+  const { define, mayHaveEffects, hostArity } = await import('../js/src/registry.mjs');
+  const { mayWrite } = await import('../js/src/ast.mjs');
+  let installs = 0;
+  // POKE rewrites X[1]["k"] from 1 to 9 -- from its FROM-th call on -- and
+  // answers ANSWER. INSTALL defines it under a fresh name (the table cannot
+  // drop one) and answers the call as a program spells it.
+  const poke = (install, src, { from = 1, answer = Value.text('1') } = {}) => {
+    const ctx = Value.fromNative({ X: [{ k: 1 }, { k: 2 }], L: [{ a: 1 }, { a: 2 }] });
+    const x1 = ctx.get('X').get('1');
+    let calls = 0;
+    const fn = () => {
+      calls += 1;
+      if (calls >= from) x1.set('k', Value.int(9));
+      return answer;
+    };
+    installs += 1;
+    return compile(src.replaceAll('POKE', install(`T13_POKE_${installs}`, fn))).run(ctx).scalar;
+  };
+  const installers = {
+    'a registered function': (name, fn) => { registerFunction(name, 0, 0, fn); return `${name}()`; },
+    'a replaced registration': (name, fn) => {
+      registerFunction(name, 0, 0, () => Value.text('1'));
+      registerFunction(name, 0, 0, fn);
+      return `${name}()`;
+    },
+    'a define()d strict function': (name, fn) => { define({ name, min: 0, max: 0, fn }); return `${name}()`; },
+    'a define()d lazy function': (name, fn) => {
+      define({ name, min: 0, max: 0, lazy: true, fn });
+      return `${name}()`;
+    },
+    // examples/fn-complex's form: a binding function defined in place.
+    'a define()d binding function': (name, fn) => {
+      define({ name, min: 2, max: 3, lazy: true, binds: true, fn });
+      return `${name}(LIST(1), _)`;
+    },
+  };
+  for (const [what, install] of Object.entries(installers)) {
+    // FILTER collected X[1] before POKE ran: the write must not reach it (SPEC 3.4).
+    expectOk(`${what}: FILTER(X, TRUE)[POKE]["k"] is 1`, () =>
+      assert.equal(poke(install, 'FILTER(X, TRUE)[POKE]["k"]'), '1'));
+    // A key that may write copies each element once its key is computed: the
+    // second key's write must not reach the first element.
+    for (const src of ['SORT_BY(X, POKE)[1]["k"]', 'TOP_BY(X, POKE, 2)[1]["k"]', 'BUCKET(X, POKE)["1"][1]["k"]']) {
+      expectOk(`${what}: ${src} is 1`, () => assert.equal(poke(install, src, { from: 2 }), '1'));
+    }
+    // A predicate that may write re-aliases the right rows per pair: the second
+    // left row meets X[1] as the first pair's predicate left it.
+    expectOk(`${what}: LINK(L, X, A, B, POKE)[3]["k"] is 9`, () =>
+      assert.equal(poke(install, 'LINK(L, X, A, B, POKE)[3]["k"]', { answer: Value.bool(true) }), '9'));
+  }
+  // A join evaluates its right source before its left only when neither can
+  // be seen doing it (structure.mjs, pureSource): a source calling the
+  // application's function, however defined, runs in the order written.
+  for (const [what, install] of [
+    ['registered', (name, fn) => registerFunction(name, 2, 2, fn)],
+    ['define()d', (name, fn) => define({ name, min: 2, max: 2, fn })],
+  ]) {
+    expectOk(`a join's sources calling a ${what} function run left first`, () => {
+      const order = [];
+      installs += 1;
+      const name = `T13_LOG_${installs}`;
+      install(name, (args) => { order.push(args.text(0)); return args.val(1); });
+      const src = `LINK(LINK(${name}("a", A), B, _1["id"] == _2["aid"]), ${name}("c", C), _1["id"] == _2["cid"])`
+        + ' .> FILTER(_["x"] > 0) .> MAP(1)';
+      const out = compile(src).run(Value.fromNative({ A: [{ id: 1, x: 1 }], B: [{ aid: 1 }], C: [{ cid: 1 }] }));
+      assert.equal(out.dump(), '-{"1"=t"1"}');
+      assert.deepEqual(order, ['a', 'c']);
+    });
+  }
+  expectOk('only a shipped builtin is assumed to have no effects', () => {
+    assert.equal(mayHaveEffects('FILTER'), false);
+    assert.equal(mayHaveEffects('is_null'), false);
+    assert.equal(mayHaveEffects('T13_NOT_DEFINED_ANYWHERE'), true);
+    registerFunction('T13_HOST_FN', 0, 0, () => Value.text('1'));
+    assert.equal(mayHaveEffects('T13_HOST_FN'), true);
+    assert.deepEqual(hostArity('T13_HOST_FN'), [0, 0]);
+    define({ name: 'T13_LOW_FN', min: 0, max: 0, fn: () => Value.text('1') });
+    // Not the application's registration (no SQL arity), but no less able to write.
+    assert.equal(mayHaveEffects('T13_LOW_FN'), true);
+    assert.equal(hostArity('T13_LOW_FN'), null);
+    // A body of shipped calls stays write-free: its copies are still put off
+    // to the end, and the right rows still aliased once.
+    assert.equal(mayWrite(parse('SORT_BY(X, LOWER(_["k"]))')), false);
+    assert.equal(mayWrite(parse('LINK(L, X, A, B, IS_NULL(B["k"]))')), false);
+    assert.equal(mayWrite(parse('SORT_BY(X, T13_LOW_FN())')), true);
+  });
+}
+
 // --- performance work, part 2: the optimisations are invisible ---------
 {
   const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
@@ -1040,6 +1133,140 @@ a*a*$
     }
     let e; try { run('A * A', { A: '9'.repeat(600000) }); } catch (x) { e = x; }
     assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
+  });
+}
+
+// --- a FILTER that opens with IS_NULL of a LINK_LEFT's right member: the join
+// skips building the joined rows of the right rows that conjunct is FALSE on
+// (structure.mjs, rightNullRejects), and nothing else changes (spec §7.4) ----
+{
+  const { SelError } = await import('../js/src/errors.mjs');
+  const { MAX_COLLECTION } = await import('../js/src/budget.mjs');
+  // The program's two forms, with an error's position as well as its code: as
+  // written, and with the join bound to a helper variable first, where no
+  // FILTER sits on a LINK and nothing can be skipped.
+  const twoForms = (src, input) => {
+    const cut = src.lastIndexOf(' .> FILTER(');
+    const head = src.slice(0, cut);
+    const tail = src.slice(cut + ' .> FILTER('.length);
+    const go = (text, headAt) => {
+      try {
+        return `ok ${compile(text).run(Value.fromNative(input)).dump()}`;
+      } catch (e) {
+        if (!(e instanceof SelError)) throw e;
+        // An error's column, as (segment, offset): the join, or the FILTER on.
+        const filterAt = text.lastIndexOf(`FILTER(${tail}`);
+        const at = e.col - 1;
+        return `err ${e.code} ${e.line}:${at >= filterAt ? `filter+${at - filterAt}` : `join+${at - headAt}`}`;
+      }
+    };
+    return [go(`${head} .> FILTER(${tail}`, 0), go(`J = ${head}; J .> FILTER(${tail}`, 4)];
+  };
+  // How many records a run builds, its error swallowed: the joined rows a
+  // skipping join never builds are the difference. Every record constructor
+  // the join reaches is counted.
+  const recordsBuilt = (src, input) => {
+    const program = compile(src);
+    const root = Value.fromNative(input);
+    const saved = ['shapedFromShape', 'fromEntriesOwned', 'fromEntriesPreserveDuplicates'].map((name) => [name, Value[name]]);
+    let built = 0;
+    for (const [name, fn] of saved) Value[name] = (...a) => { built++; return fn(...a); };
+    try {
+      program.run(root);
+    } catch (e) {
+      if (!(e instanceof SelError)) throw e;
+    } finally {
+      for (const [name, fn] of saved) Value[name] = fn;
+    }
+    return built;
+  };
+  const left = 'P .> LINK_LEFT(I, _1["id"] == _2["product_id"])';
+  const ctx = {
+    P: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }, { id: 3, name: 5 }, { id: 4, name: 'd' }],
+    I: [{ id: 10, product_id: 1 }, { id: null, product_id: 1 }, { id: 12, product_id: 3 }, { product_id: 9 }],
+  };
+  for (const src of [
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_K)`,
+    `${left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2")`,
+    `${left} .> FILTER(r, IS_NULL(r["i"]["id"]) AND r["p"]["name"] > 1)`,
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["id"])`,
+    `${left} .> FILTER(IS_NULL(_["i"]["product_id"]))`,
+    `${left} .> FILTER(IS_NULL(_["i"]["sku"]))`,
+    // the body reads the keys the skipped rows leave gaps in, a step after it renumbers
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]) AND _K $!= "3") .> TAKE(5)`,
+    // not the right row, binders alike, not the shape: nothing is skipped
+    `${left} .> FILTER(IS_NULL(_["p"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["iI"]["id"]))`,
+    'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))',
+    'LINK_LEFT(P, I, X, x, X["id"] == x["product_id"]) .> FILTER(IS_NULL(_["x"]["id"]))',
+    `${left} .> FILTER(NOT IS_NULL(_["i"]["id"]))`,
+  ]) {
+    expectOk(`LINK_LEFT right-null rejection answers as the helper form: ${src}`, () => {
+      const [asWritten, throughAVariable] = twoForms(src, ctx);
+      assert.equal(asWritten, throughAVariable);
+    });
+  }
+  // Every right row matches every left row, and has an id: the FILTER drops all
+  // 40 x 40 joined rows. The rejection builds none of them, anywhere else every one.
+  const P = Array.from({ length: 40 }, () => ({ id: 1 }));
+  const I = Array.from({ length: 40 }, () => ({ id: 10, product_id: 1 }));
+  const skips = (src) => recordsBuilt(src, { P, I }) < P.length * I.length;
+  expectOk('LINK_LEFT right-null rejection: the joined rows are not built', () => {
+    assert.ok(skips(`${left} .> FILTER(IS_NULL(_["i"]["id"]))`));
+    assert.ok(skips(`${left} .> FILTER(r, IS_NULL(r["I"]["id"]) AND r["p"]["id"] > 0)`));
+    assert.ok(skips(`${left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2") .> MAP(_K)`));
+    assert.ok(skips('LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["r"]["id"]))'));
+  });
+  // (Binders spelled alike are left to the helper-form comparison above: such a
+  // join's predicate reads one row twice, and as written it matches nothing.)
+  for (const src of [
+    // not a right binder key of this join: the left one, a mixed-case name, a
+    // relation name under explicit binders
+    `${left} .> FILTER(IS_NULL(_["p"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["iI"]["id"]))`,
+    'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))',
+    // not IS_NULL first, not a literal member or field, not the FILTER's own element
+    `${left} .> FILTER(TRUE AND IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(NOT IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_[LOWER("I")]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["i"][LOWER("ID")]))`,
+    `${left} .> FILTER(r, IS_NULL(_["i"]["id"]))`,
+    // an inner join, and a FILTER handed conjuncts by a join above
+    'P .> LINK(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))',
+    `${left} .> FILTER(IS_NULL(_["i"]["id"])) .> LINK(I, L, R, L["p"]["id"] == R["product_id"])`
+      + ' .> FILTER(_["p"]["id"] > 0) .> MAP(1)',
+  ]) {
+    expectOk(`LINK_LEFT right-null rejection is not taken: ${src}`, () => assert.ok(!skips(src)));
+  }
+  // A FILTER whose own body reads `_K` observes the keys its join gives the
+  // rows: nothing below it may renumber them, whatever step follows it -- an
+  // inner join's left-row drop and a drop for a FILTER further up included.
+  expectOk('a FILTER that reads _K keeps the keys of the rows a join drops for it', () => {
+    const data = {
+      A: [{ id: 1, x: 0 }, { id: 2, x: 5 }, { id: 3, x: 5 }],
+      B: [{ aid: 1 }, { aid: 2 }, { aid: 3 }],
+      C: [{ cid: 1 }, { cid: 2 }, { cid: 3 }],
+    };
+    const ids = (src) => compile(src).run(Value.fromNative(data)).dump();
+    const joined = 'A .> LINK(B, _1["id"] == _2["aid"]) .> FILTER(_["a"]["x"] > 1 AND _K $!= "2")';
+    assert.equal(ids(`${joined} .> TAKE(2) .> MAP(_["a"]["id"])`), '-{"1"=t"3"}');
+    assert.equal(ids(`${joined} .> LINK(C, L, R, L["a"]["id"] == R["cid"]) .> FILTER(_["R"]["cid"] > 0)`
+      + ' .> MAP(_["L"]["a"]["id"])'), '-{"1"=t"3"}');
+  });
+  // The join as written builds every matched row before the FILTER drops it,
+  // and raises E_RANGE, at the call, when they are more than MAX_COLLECTION
+  // (spec §6.4): a row the rejection never builds still counts, at the same place.
+  expectOk('LINK_LEFT right-null rejection holds the real collection limit', () => {
+    const side = Math.sqrt(MAX_COLLECTION);
+    assert.equal(side * side, MAX_COLLECTION);
+    const src = 'P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))';
+    const rows = (n, row) => Array.from({ length: n }, () => row);
+    assert.equal(compile(src).run(Value.fromNative({ I: rows(side, { id: 5, k: 1 }), P: rows(side, { id: 1 }) })).dump(), '-');
+    let e = null;
+    try { compile(src).run(Value.fromNative({ I: rows(side, { id: 5, k: 1 }), P: rows(side + 1, { id: 1 }) })); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
+    assert.equal(e.col, src.indexOf('LINK_LEFT') + 1);
   });
 }
 

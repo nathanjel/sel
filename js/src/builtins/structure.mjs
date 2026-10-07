@@ -586,8 +586,9 @@ function flatRow(row, binderNames) {
 // the rows, at run time, so the physical tree stays a function of the AST.
 
 // Whether evaluating NODE can be observed only through its value: no
-// assignment, no sequence, no call outside the shipped builtins (a host's own
-// function may do anything), no ABORT. Such a node may be evaluated out of
+// assignment, no sequence, no call outside the shipped builtins (an
+// application's function, however it was defined, may do anything:
+// registry.mayHaveEffects), no ABORT. Such a node may be evaluated out of
 // order -- the right source of a join before the left -- which is what lets a
 // FILTER's conjuncts travel down a chain of joins.
 function pureSource(root) {
@@ -1100,6 +1101,29 @@ function rejectRightRows(call, buckets) {
   return rejected;
 }
 
+// Equi-LINK_LEFT, phase 4b: the right rows a FILTER that opens with
+// IS_NULL(_["member"]["field"]) drops wherever they are joined, or null when
+// the join cannot tell. MEMBER must be one of this join's right binder keys
+// -- the binder, its lower case or `_2`, each bound in every joined row to the
+// right row as bucketed (spec §7.4, makeJoinedRow) -- and the two binders must
+// not be spelled alike. A row is rejected only when the read certainly yields
+// a non-NULL value: one without the field (E_NO_KEY in the FILTER) or with a
+// NULL there is kept, for the FILTER to decide. Its joined rows are then never
+// built; its left row stays matched, so it gets no null-extended row in their
+// place.
+function rightNullRejects(call, rightNull, buckets) {
+  const { member, field } = rightNull;
+  if (upperName(call.b1) === upperName(call.b2) || !binderKeys(call.b2, '_2').includes(member)) return null;
+  const rejected = new Set();
+  for (const bucket of buckets.values()) {
+    for (const row of bucket) {
+      const value = row.get(field);
+      if (value !== undefined && !value.isNull()) rejected.add(row);
+    }
+  }
+  return rejected;
+}
+
 // Equi-join, phase 4c: every left row's key, looked up in the buckets, and
 // the joined rows built in order.
 //
@@ -1117,6 +1141,11 @@ function probeLeftRows(call, leftItems, buckets, rightFacts, rejected, project) 
   const keyed = numbered ? new Value(NONE, null, true) : null;
   let position = 1;
   let dropped = call.dropped;
+  // A LINK_LEFT rejects right rows only for a FILTER that opens with IS_NULL
+  // (rightNullRejects), and then drops no left row: POSITION counts every
+  // joined row as written, built or not, and the collection limit is held to
+  // that count, where the join as written would have raised (spec §6.4).
+  const logical = leftJoin && rejected !== null;
   // When the join key is a literal field of the row -- `_1["customer_id"]`
   // -- the read can only raise for a row that lacks the field, so a row
   // that HAS it may be rejected first and its key never computed. Only
@@ -1164,20 +1193,22 @@ function probeLeftRows(call, leftItems, buckets, rightFacts, rejected, project) 
         // A left row kept on an error meets every right row: its joined
         // rows raise in the FILTER, in order, where they would have.
         const skip = rejected !== null && asked === 0 ? rejected : null;
+        if (logical) capRows(position - 1 + matches.length);
         for (let i = 0; i < matches.length; i++) {
           if (skip === null || !skip.has(matches[i])) {
             const joined = project(row, matches[i]);
             if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
-            capRows(keyed !== null ? position : output.length);
+            if (!logical) capRows(keyed !== null ? position : output.length);
           } else {
             dropped = true;
           }
           position++;
         }
       } else if (leftJoin) {
+        if (logical) capRows(position);
         const joined = project(row, null);
         if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
-        capRows(keyed !== null ? position : output.length);
+        if (!logical) capRows(keyed !== null ? position : output.length);
         position++;
       }
     }
@@ -1203,8 +1234,8 @@ function nestedLoopJoin(call, predicate, leftItems, rightItems, hasRight, projec
     [b2, null], [b2Lower, null], ['_2', null],
   ]);
   ctx.pushFrame(frame);
-  // A predicate that can change no value (no assignment, no host function) sees the
-  // same right rows for every left row, so they are aliased once, at the first left
+  // A predicate that can change no value (no assignment, no application function:
+  // ast.mayWrite) sees the same right rows for every left row, so they are aliased once, at the first left
   // row, not once per pair. Anything else re-aliases per pair as before: a
   // predicate's writes are visible to the pairs still to come.
   const stable = !mayWrite(predicate);
@@ -1248,6 +1279,8 @@ function doLink(args, ctx, leftJoin) {
   // evaluateSources.
   const prefilter = ctx.joinPrefilter;
   ctx.joinPrefilter = null;
+  const rightNull = ctx.joinRightNull;
+  ctx.joinRightNull = null;
   const count = args.count();             // 3 or 5: the manifest's arity rule, at compile time
   const leftNode = args.node(0);
   const rightNode = args.node(1);
@@ -1287,7 +1320,13 @@ function doLink(args, ctx, leftJoin) {
     call.binders = call.stages.map((stage) => stage.binder);
     settlePrefix(call);
   }
-  const rejected = call.rightPrefix.length ? rejectRightRows(call, buckets) : null;
+  let rejected = call.rightPrefix.length ? rejectRightRows(call, buckets) : null;
+  if (rightNull !== null && leftJoin && prefilter === null) {
+    rejected = rightNullRejects(call, rightNull, buckets);
+    // Whether nothing observes the FILTER's keys: then the kept rows need not
+    // carry the positions the rows as written had.
+    call.deep = rightNull.deep;
+  }
   return probeLeftRows(call, leftItems, buckets, rightFacts, rejected, project);
 }
 

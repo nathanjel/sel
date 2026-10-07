@@ -1007,6 +1007,60 @@ A = LIST(RECORD("id", 1, "b", 1), RECORD("id", 2, "b", 3)); B = LIST(RECORD("bid
 --- expect
 tree -{"1"=t"2"}
 ===
+### name: rel.link.then-filter.as-written.renumbered.a-k-conjunct-after-a-tested-one
+--- note
+The FILTER's own `_K` observes the joined rows' keys, whatever the step after
+it does (here a TAKE, which renumbers): rows dropped before the join must keep
+their positions. Every host tested `_["a"]["x"] > 1` on A, dropped A1 without
+numbering, and A3's row answered `_K` "2" -- the helper form keeps A2's.
+--- source
+A = LIST(RECORD("id", 1, "x", 0), RECORD("id", 2, "x", 5), RECORD("id", 3, "x", 5)); B = LIST(RECORD("aid", 1), RECORD("aid", 2), RECORD("aid", 3)); A .> LINK(B, _1["id"] == _2["aid"]) .> FILTER(_["a"]["x"] > 1 AND _K $!= "2") .> TAKE(2) .> MAP(_["a"]["id"])
+--- expect
+tree -{"1"=t"3"}
+===
+### name: rel.link-left.then-filter.as-written.renumbered.a-k-conjunct-after-a-tested-one
+--- source
+A = LIST(RECORD("id", 1, "bid", 3, "x", 0), RECORD("id", 2, "bid", 1, "x", 5), RECORD("id", 3, "bid", 1, "x", 5)); B = LIST(RECORD("id", 2, "aid", 3)); A .> LINK_LEFT(B, L, R, L["bid"] == R["aid"]) .> FILTER(_["x"] > 1 AND _K $!= "2") .> TAKE(2) .> MAP(_["L"]["id"])
+--- expect
+tree -{"1"=t"3"}
+===
+### name: rel.link.chain.then-filter.as-written.renumbered.a-k-conjunct-in-the-middle-filter
+--- note
+The same in a FILTER between two joins, which the join above hands its
+conjuncts through: its `_K` still reads the keys of the join below it.
+--- source
+A = LIST(RECORD("id", 1, "x", 0), RECORD("id", 2, "x", 5), RECORD("id", 3, "x", 5)); B = LIST(RECORD("aid", 1), RECORD("aid", 2), RECORD("aid", 3)); C = LIST(RECORD("cid", 1), RECORD("cid", 2), RECORD("cid", 3)); A .> LINK(B, _1["id"] == _2["aid"]) .> FILTER(_["a"]["x"] > 1 AND _K $!= "2") .> LINK(C, L, R, L["a"]["id"] == R["cid"]) .> FILTER(_["R"]["cid"] > 0) .> MAP(_["L"]["a"]["id"])
+--- expect
+tree -{"1"=t"3"}
+===
+### name: rel.link-left.then-filter.right-null.a-k-conjunct-after-it
+--- note
+A1's only joined row fails IS_NULL; A2's null-extended row is the second
+joined row, which `_K $!= "2"` drops -- under a TAKE, which renumbers.
+--- source
+A = LIST(RECORD("id", 1, "bid", 3), RECORD("id", 2, "bid", 1)); B = LIST(RECORD("id", 2, "aid", 3)); A .> LINK_LEFT(B, L, R, L["bid"] == R["aid"]) .> FILTER(IS_NULL(_["r"]["id"]) AND _K $!= "2") .> TAKE(2) .> MAP(_["L"]["id"])
+--- expect
+tree -
+===
+### name: rel.link.nested-loop.a-write-in-the-predicate-reaches-later-pairs
+--- note
+The right element is the source's own (§7.3): the predicate's write to it on
+the first pair is seen by the second. Python reused a record of the element's
+fields made before the write.
+--- source
+L = LIST(RECORD("a", 1), RECORD("a", 2)); R = LIST(RECORD("k", 1)); MAP(LINK(L, R, A, B, (R[1]["k"] = 9; TRUE)), _["k"])
+--- expect
+tree -{"1"=t"1", "2"=t"9"}
+===
+### name: rel.link-left.nested-loop.a-write-in-the-predicate-reaches-later-pairs
+--- note
+Each left element rewrites the second right element's k before comparing it
+with 2, so neither ever matches: both rows are null-extended.
+--- source
+L = LIST(RECORD("a", 1), RECORD("a", 2)); R = LIST(RECORD("k", 1), RECORD("k", 2)); MAP(LINK_LEFT(L, R, A, B, (R[2]["k"] = A["a"] + 10; B["k"] == 2)), _["k"] ?? "-")
+--- expect
+tree -{"1"=t"-", "2"=t"-"}
+===
 ### name: rel.link.then-filter.as-written.join-key.a-left-key-raises-though-the-right-rows-all-fail
 --- note
 The join computes its left key for every left row that has a right row to

@@ -116,7 +116,8 @@ function rolesOf(form) {
 const table = new Map();
 
 // Names a host registered (register / registerFunction): the only ones that may
-// be replaced.
+// be replaced, and the only ones with a SQL arity (hostArity). Not the effects
+// question: mayHaveEffects asks that.
 const hostNames = new Set();
 
 // The shipped table is authored once, in spec/builtins.json, and rendered into
@@ -253,7 +254,22 @@ function makeSpec(spec) {
 }
 
 export function lookup(name) { return table.get(asciiUpper(name)); }
-// Whether `name` is a function a host registered (and so could do anything,
-// including write into the values it is handed).
-export function isHostFunction(name) { return hostNames.has(asciiUpper(String(name))); }
+
+// The effects classification every analysis asks (spec/SPEC.md §8.1): whether
+// a call to `name` may keep, read or change values beyond its result, so that
+// no copy may be put off or left out around it and nothing may be evaluated
+// out of its written order across it. Only a shipped builtin -- a name the
+// manifest knows, defined by the library itself (define() refuses a second
+// definition and registerFunction() a builtin's name, so nothing replaces
+// one) -- is assumed not to. Every other function is the application's,
+// however it was installed: registerFunction/register, or a define() outside
+// the manifest, strict, lazy or binding. Defining a function below the public
+// API is not a declaration that it is pure.
+//
+// Registration is a separate question (hostArity, registerFunction's
+// replacement rule), answered by hostNames alone.
+export function mayHaveEffects(name) {
+  const key = asciiUpper(String(name));
+  return hostNames.has(key) || !Object.hasOwn(BUILTIN_MANIFEST, key);
+}
 export function names() { return Array.from(table.keys()).sort(); }
