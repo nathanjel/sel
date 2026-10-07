@@ -190,3 +190,36 @@ func TestLeftJoinRightNullHoldsTheRealCollectionLimit(t *testing.T) {
 		}
 	}
 }
+
+// The left key runs after the right rows were tested early; a function SEL does
+// not ship may change a right row there (SPEC §7.4, §8.1), which the FILTER then
+// reads -- the item under `_2` is the element itself. So a join whose predicate
+// may write tests nothing early: each shape answers what the same predicate
+// behind a leading TRUE, which no join tests early, answers.
+func TestAJoinWhoseKeyMayWriteTestsNothingEarly(t *testing.T) {
+	for _, c := range []struct {
+		pipeline string
+		value    *Value
+	}{
+		{`LINK_LEFT(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"]))`, NewNull()},
+		{`LINK(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(_["_2"]["id"] < 8)`, NewText("5")},
+	} {
+		run := func(src string) string {
+			ctx := ctxWith("P", newListOwned([]*Value{rec("id", 1), rec("id", 2)}),
+				"I", newListOwned([]*Value{rec("id", 10, "product_id", 1), rec("id", 11, "product_id", 2)}))
+			item := ctx.Get("I").Get("2")
+			RegisterFunction("T_MUT", 1, 1, func(a *Args) *Value {
+				item.Set("id", c.value)
+				return a.Val(0)
+			})
+			defer forgetFunction("T_MUT")
+			return runOnce(src, ctx)
+		}
+		asWritten := run(c.pipeline + ` .> MAP(_["_1"]["id"])`)
+		head, tail, _ := strings.Cut(c.pipeline, ` .> FILTER(`)
+		noEarlyTest := run(head + ` .> FILTER(TRUE AND ` + tail + ` .> MAP(_["_1"]["id"])`)
+		if asWritten != noEarlyTest || asWritten != `-{"1"=t"2"}` {
+			t.Errorf("%s\n as written       %s\n no early test    %s", c.pipeline, asWritten, noEarlyTest)
+		}
+	}
+}

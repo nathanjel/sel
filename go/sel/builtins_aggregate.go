@@ -1138,6 +1138,16 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 	leftNode := args.Node(0)
 	rightNode := args.Node(1)
+	predNode := args.Node(2)
+	if count == 5 {
+		predNode = args.Node(4)
+	}
+	// A predicate that may write can change a row between an early test and
+	// the FILTER's read of it (SPEC §7.4): then nothing is tested early here,
+	// and nothing is handed down.
+	if (prefilter != nil || rightNull != nil) && !subtreeIsPure(predNode) {
+		prefilter, rightNull = nil, nil
+	}
 
 	var stages []joinStage
 	var above []*joinSideFacts
@@ -1185,11 +1195,9 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	// relation names, else _1 and _2.
 	jb1 := boundName(leftNode, "_1")
 	jb2 := boundName(rightNode, "_2")
-	predNode := args.Node(2)
 	if count == 5 {
 		jb1 = args.Symbol(2)
 		jb2 = args.Symbol(3)
-		predNode = args.Node(4)
 	}
 	b1Names := []string{jb1, "_1"}
 	b2Names := []string{jb2, "_2"}
@@ -1857,7 +1865,11 @@ func init() {
 			src := args.Node(0)
 			var ownNodes []*Node
 			overJoin := false
-			if src != nil && src.T == NodeCall && (src.S == "LINK" || src.S == "LINK_LEFT") {
+			// An early test holds only while nothing can change what it read
+			// before this FILTER reads it (SPEC §7.4): a predicate that may write
+			// -- an assignment, or a call SEL does not ship -- is offered to no
+			// join, and the conjuncts handed from above stop here too.
+			if src != nil && src.T == NodeCall && (src.S == "LINK" || src.S == "LINK_LEFT") && subtreeIsPure(written) {
 				overJoin = true
 				three := args.Count() == 3
 				binder := "_"
