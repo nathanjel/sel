@@ -1259,10 +1259,16 @@ final class Structure
         if ($count !== 3 && $count !== 5) throw new \LogicException("unreachable: {$a->name} with {$count} arguments");
         $leftNode = $a->node(0);
         $rightNode = $a->node(1);
+        $predicate = $a->node($count === 5 ? 4 : 2);
+        // A predicate that may write can change a row between an early test
+        // and the FILTER's read of it (spec §7.4): then nothing is tested
+        // early here, and nothing is handed down.
+        if (($prefilter !== null || $rightNull !== null) && !$ctx->writeFree && Core::mayWrite($predicate)) {
+            $prefilter = $rightNull = null;
+        }
         [$stages, $deep, $above, $obligations] = $prefilter ?? [[], false, [], []];
         $b1 = $count === 5 ? $a->symbol(2) : (self::singleRelationName($leftNode) ?? '_1');
         $b2 = $count === 5 ? $a->symbol(3) : (self::singleRelationName($rightNode) ?? '_2');
-        $predicate = $a->node($count === 5 ? 4 : 2);
         $equi = self::tryExtractEquiKeys($predicate, $b1, $b2);
         // The upper-cased keys of the joins between a stage's FILTER and this
         // join, per count of them.

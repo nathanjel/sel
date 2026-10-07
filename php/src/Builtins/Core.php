@@ -578,7 +578,13 @@ final class Core
                 $handed = $ctx->joinPrefilter;
                 $ctx->joinPrefilter = null;
                 $own = null;
-                if ($src !== null && $src['t'] === 'call' && in_array($src['name'], ['LINK', 'LINK_LEFT'], true)) {
+                // An early test holds only while nothing can change what it
+                // read before this FILTER reads it (spec §7.4): a predicate
+                // that may write -- an assignment, or a call SEL does not
+                // ship -- is offered to no join, and the conjuncts handed
+                // from above stop here too.
+                if ($src !== null && $src['t'] === 'call' && in_array($src['name'], ['LINK', 'LINK_LEFT'], true)
+                        && ($ctx->writeFree || !self::mayWrite(self::shape($a)['body']))) {
                     ['binder' => $binder, 'body' => $body] = self::shape($a);
                     $own = Structure::leadingFieldConjuncts($body, $binder);
                     // A first conjunct that is neither a field test nor total

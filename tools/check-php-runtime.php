@@ -1360,6 +1360,30 @@ $expect('LINK_LEFT under a FILTER that opens with IS_NULL never builds the rows 
     }
     return true;
 });
+$expect('a join whose key may write tests nothing early: what the FILTER reads is the row after the key ran (SPEC 7.4, 8.1)', function () {
+    // The left key runs after the right rows were tested; a function SEL does
+    // not ship may change a right row there, which the FILTER then reads --
+    // the item under `_2` is the element itself. Compared with the same
+    // predicate behind a leading TRUE, which no join tests early.
+    $run = static function (string $src, ?string $value): string {
+        $ctx = Value::fromNative(['P' => [['id' => 1], ['id' => 2]],
+                                  'I' => [['id' => 10, 'product_id' => 1], ['id' => 11, 'product_id' => 2]]]);
+        $item = $ctx->get('I')->get('2');
+        \Sel\Sel::registerFunction('T_MUT', 1, 1, static function (\Sel\Args $a) use ($item, $value): Value {
+            $item->set('id', $value === null ? Value::none() : Value::text($value));
+            return $a->val(0);
+        });
+        return \Sel\Sel::compile($src)->run($ctx)->dump();
+    };
+    foreach ([['LINK_LEFT(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"]))', null],
+              ['LINK(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(_["_2"]["id"] < 8)', '5']] as [$pipeline, $value]) {
+        $asWritten = $run($pipeline . ' .> MAP(_["_1"]["id"])', $value);
+        [$head, $tail] = explode(' .> FILTER(', $pipeline);
+        $untested = $run($head . ' .> FILTER(TRUE AND ' . $tail . ' .> MAP(_["_1"]["id"])', $value);
+        if ($asWritten !== $untested || $asWritten !== '-{"1"=t"2"}') return "{$pipeline}: {$asWritten} vs {$untested}";
+    }
+    return true;
+});
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);
