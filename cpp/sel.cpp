@@ -2503,7 +2503,8 @@ Value keep_element(const Value& coll, std::size_t index, const Value& item, std:
 // Whether evaluating `root` can change a value that existed before it ran. SEL
 // has exactly two ways to do that: an assignment (anywhere below `root`,
 // including inside a nested aggregate's body) and a call to an application's own
-// function, which is handed values and may keep or change them. A body with
+// function (may_have_effects: anything SEL does not ship, however it was
+// installed), which is handed values and may keep or change them. A body with
 // neither leaves every value it reads as it found it.
 bool writes_nothing(const Node& root) {
   std::vector<const Node*> stack{&root};
@@ -2511,7 +2512,7 @@ bool writes_nothing(const Node& root) {
     const Node* n = stack.back();
     stack.pop_back();
     if (n->t == NT::Assign) return false;
-    if (n->t == NT::Call && n->spec && n->spec->host) return false;
+    if (n->t == NT::Call && may_have_effects(n->spec)) return false;
     if (n->l) stack.push_back(n->l.get());
     if (n->r) stack.push_back(n->r.get());
     for (const NodePtr& c : n->items) {
@@ -3324,7 +3325,12 @@ void define(Spec spec) {
   if (table().count(spec.name)) {
     throw std::runtime_error("SEL function " + spec.name + " defined twice");
   }
-  if (const auto* m = manifest_entry(spec.name)) {
+  // The manifest's name is enough to say the library defined it: no name is
+  // defined twice, so a manifest name defined before register_builtins() makes
+  // the library's own definition refuse, and no program ever compiles.
+  const auto* m = manifest_entry(spec.name);
+  spec.shipped = m != nullptr;
+  if (m) {
     const int m_max = m->max < 0 ? VARIADIC : m->max;
     std::string wrong;
     auto note = [&](const std::string& s) { wrong += (wrong.empty() ? "" : "; ") + s; };
@@ -4565,6 +4571,15 @@ struct JoinReport {
   bool errored = false;
   bool dropped = false;
 };
+// A FILTER directly over a LINK_LEFT whose predicate opens with
+// IS_NULL(_["member"]["field"]) hands the join this: the join may skip
+// building the joined rows of the right rows that conjunct is FALSE on
+// (join_right_null_rejects). Nothing is reported back.
+struct JoinRightNull {
+  std::string member;
+  std::string field;
+  bool deep = false;                    // nothing observes the FILTER's keys
+};
 
 // Context, Args and eval_node are at sel:: scope rather than in the anonymous
 // namespace above, and not by preference: Spec's `fn` is a
@@ -4604,12 +4619,16 @@ struct Context {
   // an error, and whether it dropped any (SEL-0052, SEL-0054).
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
+  // A FILTER over a LINK_LEFT that opens with IS_NULL of a right member's
+  // field hands the join (member, field, keys unobserved) here.
+  std::optional<JoinRightNull> join_right_null;
   // Nothing in the tree being evaluated can write: it holds no assignment and
-  // no call to a host function (Program::run decides it once per program,
-  // writes_nothing). Assignment is the one way a program changes a value, so
-  // no copy a collector or a constructor makes (spec §3.4) can be told from
-  // the value it copies: they keep what they collect as it is, after the depth
-  // check the copy would have made. Off unless the Program proved it.
+  // no call to an application's function (may_have_effects; Program::run
+  // decides it once per program, writes_nothing). Assignment is the one way a
+  // program changes a value, so no copy a collector or a constructor makes
+  // (spec §3.4) can be told from the value it copies: they keep what they
+  // collect as it is, after the depth check the copy would have made. Off
+  // unless the Program proved it.
   bool write_free = false;
   // The frames of the math plans running now, one after another. A plan's slots
   // are addressed by index, never by pointer or reference held across a step
@@ -6396,19 +6415,11 @@ std::string single_relation_name(const Node& node) {
 // Decided here from the rows, at run time, so the physical tree stays a
 // function of the AST. See docs/contributing.md for the rule in every host.
 
-bool shipped_builtin(const std::string& name) {
-  static const std::unordered_set<std::string> names = [] {
-    std::unordered_set<std::string> out;
-    for (const auto& entry : sel_builtin_manifest::ENTRIES) out.insert(entry.name);
-    return out;
-  }();
-  return names.count(name) > 0;
-}
-
 // Whether evaluating NODE can be observed only through its value: no
-// assignment, no sequence, no call outside the shipped builtins (a host's own
-// function may do anything), no ABORT. Such a node may run out of order --
-// the right source of a join before the left.
+// assignment, no sequence, no call outside the shipped builtins (an
+// application's own function may do anything, may_have_effects), no ABORT.
+// Such a node may run out of order -- the right source of a join before the
+// left.
 bool join_pure_source(const Node* node) {
   if (!node) return true;
   switch (node->t) {
@@ -6419,7 +6430,7 @@ bool join_pure_source(const Node* node) {
       for (const NodePtr& item : node->items) if (!join_pure_source(item.get())) return false;
       return true;
     case NT::Call:
-      if (!shipped_builtin(node->s) || node->s == "ABORT") return false;
+      if (may_have_effects(node->spec) || node->s == "ABORT") return false;
       for (const NodePtr& item : node->items) if (!join_pure_source(item.get())) return false;
       return true;
     default: return false;
@@ -6658,13 +6669,46 @@ bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSi
   return true;
 }
 
+// Equi-LINK_LEFT: the right rows a FILTER that opens with
+// IS_NULL(_["member"]["field"]) drops wherever they are joined, into
+// REJECTED; false when the join cannot tell. MEMBER must be one of this
+// join's right binder keys -- the binder, its lower case or `_2`, each bound
+// in every joined row to the right row as bucketed (spec §7.4) -- and the two
+// binders must not be spelled alike. A row is rejected only when the read
+// certainly yields a non-NULL value: one without the field (E_NO_KEY in the
+// FILTER) or with a NULL there is kept, for the FILTER to decide. Its joined
+// rows are then never built; its left row stays matched, so it gets no
+// null-extended row in their place.
+template <typename Buckets>
+bool join_right_null_rejects(const JoinRightNull& hint, const std::string& b1, const std::string& b2,
+                             const Buckets& buckets, std::unordered_set<const void*>& rejected) {
+  if (ascii_upper(b1) == ascii_upper(b2)) return false;
+  if (hint.member != b2 && hint.member != ascii_lower(b2) && hint.member != "_2") return false;
+  for (const auto& [key, bucket] : buckets) {
+    for (const Value& right : bucket) {
+      const Value* value = right.get(hint.field);
+      if (value && !value->is_null()) rejected.insert(Internals::identity(right));
+    }
+  }
+  return true;
+}
+
 Value do_link(Args& a, Context& ctx, bool left_join) {
   // Taken before anything else is evaluated, so a LINK nested in this one's
   // sources cannot pick it up by accident; it is handed down on purpose below.
   std::optional<JoinPrefilter> prefilter = std::move(ctx.join_prefilter);
   ctx.join_prefilter.reset();
+  std::optional<JoinRightNull> right_null = std::move(ctx.join_right_null);
+  ctx.join_right_null.reset();
   const int count = a.count();
   if (count != 3 && count != 5) unreachable_arity(a.name());
+  // A predicate that may write can change a row between an early test and
+  // the FILTER's read of it (spec §7.4): then nothing is tested early here,
+  // and nothing is handed down.
+  if ((prefilter || right_null) && !ctx.write_free && !writes_nothing(a.node(count == 5 ? 4 : 2))) {
+    prefilter.reset();
+    right_null.reset();
+  }
   const Node& left_node = a.node(0);
   const Node& right_node = a.node(1);
   const std::vector<JoinStage> no_stages;
@@ -6944,8 +6988,15 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // key was computed. They stay in their buckets: a left row still counts
     // them towards the numbering, and one kept on an error joins them.
     std::unordered_set<const void*> rejected;
-    const bool rejecting = !right_prefix.empty();
-    if (rejecting) {
+    // A LINK_LEFT rejects right rows only for a FILTER that opens with
+    // IS_NULL (join_right_null_rejects), and then drops no left row: the
+    // position counts every joined row as written, built or not, and the
+    // collection limit is held to that count, where the join as written would
+    // have raised (spec §6.4).
+    const bool logical = right_null && left_join && !prefilter &&
+                         join_right_null_rejects(*right_null, b1, b2, buckets, rejected);
+    const bool rejecting = !right_prefix.empty() || logical;
+    if (!right_prefix.empty()) {
       std::vector<std::pair<std::string, Value>> right_frame;
       for (const std::string& binder : binders) right_frame.emplace_back(binder, Value::none());
       const bool before = report.errored;
@@ -6965,7 +7016,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // rows a dropped row stood for), unless nothing observes it (deep). When
     // the join key is a literal field of the row, a row that HAS it may be
     // rejected before its key is computed.
-    const bool numbered = (!prefix.empty() || rejecting) && !deep;
+    const bool numbered = (!prefix.empty() || rejecting) && !(logical ? right_null->deep : deep);
     std::vector<Value::Entry> keyed;
     bool dropped = false;
     std::size_t position = 1;
@@ -7027,9 +7078,12 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           return;
         }
         const auto emit = [&](Value joined) {
-          // The rows a join builds are capped as they appear (spec §6.4).
-          cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1,
-                         a.pos());
+          // The rows a join builds are capped as they appear (spec §6.4), or,
+          // when it skips some it would have built, as the rows as written
+          // count (logical, checked below before they are built).
+          if (!logical) {
+            cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1, a.pos());
+          }
           if (numbered) keyed.emplace_back(std::to_string(position), std::move(joined));
           else output.push_back(std::move(joined));
           ++position;
@@ -7038,6 +7092,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           // A left row kept on an error meets every right row: its joined
           // rows raise in the FILTER, in order, where they would have.
           const bool skip = rejecting && asked == 0;
+          if (logical) cap_collection(static_cast<u128>(position - 1 + it->second.size()), a.pos());
           for (const Value& right : it->second) {
             if (skip && rejected.count(Internals::identity(right))) {
               dropped = true;
@@ -7047,6 +7102,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
             emit(projector(row, &right));
           }
         } else if (left_join) {
+          if (logical) cap_collection(static_cast<u128>(position), a.pos());
           emit(projector(row, nullptr));
         }
       });
@@ -7351,6 +7407,26 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
     out.push_back(std::move(entry));
   }
   return out;
+}
+
+// What a FILTER over a LINK_LEFT hands its join (JoinRightNull) when CONJUNCT
+// is `IS_NULL(binder["member"]["field"])` -- the shipped IS_NULL of a literal
+// field of a literal member of the FILTER's element, the element matched as
+// leading_field_conjuncts matches it. Over a LINK_LEFT, a member that is one
+// of the join's right binder keys is the right row (spec §7.4).
+std::optional<JoinRightNull> join_right_null_test(const Node* conjunct, const std::string& binder, bool deep) {
+  if (!conjunct || conjunct->t != NT::Call || conjunct->s != "IS_NULL" || conjunct->items.size() != 1 ||
+      may_have_effects(conjunct->spec)) {
+    return std::nullopt;
+  }
+  const Node* field = conjunct->items.front().get();
+  if (!field || field->t != NT::Index || !field->r || field->r->t != NT::Text) return std::nullopt;
+  const Node* member = field->l.get();
+  if (!member || member->t != NT::Index || !member->r || member->r->t != NT::Text || !member->l ||
+      member->l->t != NT::Var || member->l->s != binder) {
+    return std::nullopt;
+  }
+  return JoinRightNull{member->r->s, field->r->s, deep};
 }
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
@@ -7707,7 +7783,7 @@ Value do_bucket(Args& a, Context& ctx) {
   // no row reaches the result uncopied. When neither the key nor the projection
   // writes anything, no row can change while the BUCKET runs either, and the
   // copy spec §3.4 asks for is one nobody could tell from the row itself.
-  const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && agg_node->spec && !agg_node->spec->host &&
+  const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && !may_have_effects(agg_node->spec) &&
                           (agg_node->spec->name == "RECORD" || agg_node->spec->name == "LIST") &&
                           writes_nothing(*key_node) && writes_nothing(*agg_node);
   const auto keep = [&](std::size_t i, const Value& item) {
@@ -7858,7 +7934,13 @@ void register_aggregates() {
                 const Node& src = a.node(0);
                 std::vector<const Node*> own_nodes;
                 bool over_join = false;
-                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
+                // An early test holds only while nothing can change what it
+                // read before this FILTER reads it (spec §7.4): a predicate
+                // that may write -- an assignment, or a call SEL does not ship
+                // -- is offered to no join, and the conjuncts handed from
+                // above stop here too.
+                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT") &&
+                    (ctx.write_free || writes_nothing(written))) {
                   over_join = true;
                   const bool three = a.count() == 3;
                   const std::string binder = three ? a.symbol(1) : std::string("_");
@@ -7875,16 +7957,31 @@ void register_aggregates() {
                     pre.above = handed->above;
                     pre.obligations = handed->obligations;
                   }
-                  pre.deep = handed ? true : written.keys_unobserved;
-                  if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
+                  // A body that reads _K observes the keys itself, whatever
+                  // the step after it does: rows dropped below must keep
+                  // their positions then.
+                  pre.deep = (handed ? true : written.keys_unobserved) && !node_contains_var(written, "_K");
+                  if (!pre.stages.empty()) {
+                    ctx.join_prefilter = std::move(pre);
+                  } else if (!handed && src.s == "LINK_LEFT") {
+                    // A predicate that opens with IS_NULL of a right member's
+                    // field (S6's unsold products): the join may reject the
+                    // right rows it is FALSE on before building their joined
+                    // rows. Nothing is reported back -- the null-extended rows
+                    // were never tested -- so the whole predicate still runs
+                    // over every row the join builds.
+                    ctx.join_right_null = join_right_null_test(own_nodes.front(), binder, pre.deep);
+                  }
                 }
                 try {
                   (void)a.val(0);
                 } catch (...) {
                   ctx.join_prefilter.reset();
+                  ctx.join_right_null.reset();
                   throw;
                 }
                 ctx.join_prefilter.reset();
+                ctx.join_right_null.reset();
                 // The join's report -- which conjuncts every row that came up
                 // has passed, whether a row was kept on an error, and whether
                 // any row was dropped -- goes up as it is.
@@ -10844,7 +10941,7 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
         for (std::size_t k = 1; k < after.items.size(); ++k) {
           after_writes = after_writes || (after.items[k] && !writes_nothing(*after.items[k]));
         }
-        body->borrow_rows = after.t == NT::Call && after.spec && !after.spec->host && copies_its_elements &&
+        body->borrow_rows = after.t == NT::Call && !may_have_effects(after.spec) && copies_its_elements &&
                             writes_nothing(*body) && !after_writes;
       }
       copy->items.back() = std::move(body);
@@ -11202,8 +11299,9 @@ NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true);
 struct Program::Physical {
   std::once_flag once;
   NodePtr tree;
-  // No assignment and no host function anywhere in `tree` (Context::write_free),
-  // decided with it: such a program makes none of the copies spec §3.4 names.
+  // No assignment and no application's function anywhere in `tree`
+  // (Context::write_free), decided with it: such a program makes none of the
+  // copies spec §3.4 names.
   bool write_free = false;
 };
 

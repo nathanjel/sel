@@ -890,6 +890,97 @@ void test_write_free_programs_hold() {
   }
 }
 
+// What the effects probes below write through: X[1] of the context being run.
+std::optional<Value> effects_target;
+
+Value effects_poke() {
+  if (effects_target) effects_target->set("k", Value::integer(9));
+  return Value::text("1");
+}
+
+// `FILTER(X, TRUE)[CALL]["k"]`, where CALL rewrites X[1]["k"] from 1 to 9 after
+// FILTER collected X[1] and answers 1: the copy FILTER made still says 1 (spec
+// §3.4); a FILTER that kept X[1] itself says 9.
+std::string poke_through_filters_result(const std::string& call) {
+  Value ctx = Value::none();
+  compile("X = LIST(RECORD(\"k\", 1), RECORD(\"k\", 2))").run(ctx);
+  effects_target = *ctx.get("X")->get("1");
+  std::string got;
+  try {
+    got = compile("FILTER(X, TRUE)[" + call + "][\"k\"]").run(ctx).dump();
+  } catch (const SelError& e) {
+    got = e.code();
+  }
+  effects_target.reset();
+  return got;
+}
+
+// Only a shipped builtin is assumed to have no effects (spec §8.1,
+// may_have_effects). Every other function brings the copies back however it
+// was installed: registered, or define()d outside the manifest -- strict,
+// lazy or binding (examples/fn-complex's form) -- or a registration replaced.
+void test_only_shipped_builtins_are_assumed_harmless() {
+  selt::section("only a shipped builtin is assumed to have no effects");
+  register_function("T_POKE_REG", 0, 0, [](HostArgs&) { return effects_poke(); });
+  define(Spec{"T_POKE_STRICT", 0, 0, false, false, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  define(Spec{"T_POKE_LAZY", 0, 0, true, false, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  define(Spec{"T_POKE_EACH", 2, 3, true, true, nullptr, [](Args&, Context&) -> Value { return effects_poke(); }});
+  register_function("T_POKE_REPL", 0, 0, [](HostArgs&) { return Value::text("1"); });
+  register_function("T_POKE_REPL", 0, 0, [](HostArgs&) { return effects_poke(); });
+  selt::eq(poke_through_filters_result("T_POKE_REG()"), std::string("t\"1\""), "a registered function");
+  selt::eq(poke_through_filters_result("T_POKE_STRICT()"), std::string("t\"1\""), "a strict define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_LAZY()"), std::string("t\"1\""), "a lazy define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_EACH(LIST(1), _)"), std::string("t\"1\""),
+           "a binding define() outside the manifest");
+  selt::eq(poke_through_filters_result("T_POKE_REPL()"), std::string("t\"1\""), "a replaced registration");
+  // A shipped builtin in the same place leaves the program write-free: FILTER
+  // keeps the context's own element, uncopied.
+  {
+    Value ctx = Value::none();
+    compile("X = LIST(RECORD(\"k\", 1), RECORD(\"k\", 2))").run(ctx);
+    const Value got = compile("FILTER(X, TRUE)[ABS(-1)]").run(ctx);
+    selt::ok(Internals::identity(got) == Internals::identity(*ctx.get("X")->get("1")),
+             "a shipped builtin's call: the copy is still left out");
+  }
+
+  // The classification, and what it leaves alone: registration (the SQL
+  // host-function arity, replacement) is still `host`'s.
+  selt::ok(!may_have_effects(lookup_builtin("FILTER")) && !may_have_effects(lookup_builtin("IS_NULL")),
+           "FILTER and IS_NULL are shipped");
+  selt::ok(may_have_effects(lookup_builtin("T_POKE_REG")) && lookup_builtin("T_POKE_REG")->host != nullptr,
+           "a registered function may have effects, and is registered");
+  selt::ok(may_have_effects(lookup_builtin("T_POKE_STRICT")) && lookup_builtin("T_POKE_STRICT")->host == nullptr,
+           "a define()d one may have effects, and is not registered");
+  Spec claimed{"T_CLAIMS_SHIPPED", 0, 0, false, false, nullptr, [](Args&, Context&) -> Value { return Value::none(); }};
+  claimed.shipped = true;
+  define(claimed);
+  selt::ok(may_have_effects(lookup_builtin("T_CLAIMS_SHIPPED")), "define() decides `shipped`, not its caller");
+  selt::ok(may_have_effects(nullptr), "a call with no definition is not assumed harmless");
+  selt::ok(!writes_nothing(*compile("MAP(L, T_POKE_LAZY())").ast()), "writes_nothing asks the same question");
+  {
+    const NodePtr p = compile("L .> FILTER(_[\"v\"] > 0) .> MAP(T_POKE_STRICT())").physical_ast();
+    selt::ok(p->t == NT::Call && p->s == "MAP" && !p->items.front()->items.back()->borrow_rows,
+             "a FILTER does not borrow its rows for a MAP that calls a define()d function");
+  }
+  // A join evaluates its right source before its left only when neither can be
+  // told from its value (join_pure_source): T_SRC, define()d, rewrites the X
+  // row the left source joins. Written order joins it as it was.
+  define(Spec{"T_SRC", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                (void)effects_poke();
+                return a.val(0);
+              }});
+  {
+    Value ctx = Value::none();
+    compile("X = LIST(RECORD(\"id\", 1, \"k\", 1)); B = LIST(RECORD(\"id\", 1)); C = LIST(RECORD(\"id\", 1))").run(ctx);
+    effects_target = *ctx.get("X")->get("1");
+    const std::string got = compile("X .> LINK(B, _1[\"id\"] == _2[\"id\"]) .> LINK(T_SRC(C), _1[\"X\"][\"id\"] == _2[\"id\"])"
+                                    " .> FILTER(_[\"k\"] > 0) .> MAP(_[\"k\"])").run(ctx).dump();
+    effects_target.reset();
+    selt::eq(got, std::string("-{\"1\"=t\"1\"}"), "a define()d function in a join source keeps the sources in written order");
+  }
+  for (const char* name : {"T_POKE_STRICT", "T_POKE_LAZY", "T_POKE_EACH", "T_CLAIMS_SHIPPED", "T_SRC"}) table().erase(name);
+}
+
 void test_filter_packed_result() {
   selt::section("FILTER keeps the source's keys: a kept prefix is a packed list, a gap keeps its keys");
   auto run = [](const std::string& src) {
@@ -2338,6 +2429,236 @@ void test_join_keys() {
   selt::ok(!extract_join_equi(*eq_node, "x", "X").has_value(), "no equi key when both binders are the same name");
 }
 
+// A join-then-FILTER program as written and with the join bound to a helper
+// variable first (tools/join-filter-oracle's two forms): the value, or the
+// error's code, line and place -- in the join, or from the FILTER on.
+std::pair<std::string, std::string> join_then_filter_both_ways(const std::string& setup, const std::string& src) {
+  const std::string glue = " .> FILTER(";
+  const std::size_t cut = src.rfind(glue);
+  const std::string head = src.substr(0, cut);
+  const std::string tail = src.substr(cut + glue.size());
+  const auto go = [&](const std::string& program, std::size_t head_at) {
+    Value ctx = Value::none();
+    compile(setup).run(ctx);
+    try {
+      return "ok " + compile(program).run(ctx).dump();
+    } catch (const SelError& e) {
+      const std::size_t filter_at = program.rfind("FILTER(" + tail);
+      const std::size_t at = static_cast<std::size_t>(e.col()) - 1;
+      return "err " + e.code() + " " + std::to_string(e.line()) + ":" +
+             (at >= filter_at ? "filter+" + std::to_string(at - filter_at) : "join+" + std::to_string(at - head_at));
+    }
+  };
+  return {go(head + glue + tail, 0), go("J = " + head + "; J .> FILTER(" + tail, 4)};
+}
+
+// A FILTER that opens with IS_NULL of a LINK_LEFT's right member lets the join
+// skip building the joined rows of the right rows that conjunct is FALSE on
+// (join_right_null_test, join_right_null_rejects); every shape answers -- rows,
+// keys, errors and their places -- what the join bound to a helper variable
+// first answers.
+void test_left_join_right_null() {
+  selt::section("LINK_LEFT skips the rows a leading IS_NULL of a right member drops");
+  const std::string rows =
+      "P = LIST(RECORD(\"id\", 1, \"name\", \"a\"), RECORD(\"id\", 2, \"name\", \"b\"), RECORD(\"id\", 3, \"name\", 5), "
+      "RECORD(\"id\", 4, \"name\", \"d\")); "
+      "I = LIST(RECORD(\"id\", 10, \"product_id\", 1), RECORD(\"id\", NULL, \"product_id\", 1), "
+      "RECORD(\"id\", 12, \"product_id\", 3), RECORD(\"product_id\", 9))";
+  const std::string left = "P .> LINK_LEFT(I, _1[\"id\"] == _2[\"product_id\"])";
+  for (const std::string& src : {
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"]))",
+           left + " .> FILTER(IS_NULL(_[\"I\"][\"id\"])) .> MAP(_K)",
+           left + " .> FILTER(IS_NULL(_[\"_2\"][\"id\"]) AND _K $!= \"2\")",
+           left + " .> FILTER(r, IS_NULL(r[\"i\"][\"id\"]) AND r[\"p\"][\"name\"] > 1)",
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _[\"p\"][\"name\"] $!= \"b\") .> MAP(_[\"p\"][\"id\"])",
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"product_id\"]))",
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"sku\"]))",
+           // A body that reads _K sees the joined rows' keys, whatever the
+           // step after it does: the kept rows keep their positions.
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _K $!= \"3\") .> TAKE(5)",
+           // Not the right row: the left binder, a mixed-case name, a relation
+           // name under explicit binders, binders spelled alike.
+           left + " .> FILTER(IS_NULL(_[\"p\"][\"id\"]))",
+           left + " .> FILTER(IS_NULL(_[\"iI\"][\"id\"]))",
+           std::string("LINK_LEFT(P, I, L, R, L[\"id\"] == R[\"product_id\"]) .> FILTER(IS_NULL(_[\"I\"][\"id\"]))"),
+           std::string("LINK_LEFT(P, I, X, x, X[\"id\"] == x[\"product_id\"]) .> FILTER(IS_NULL(_[\"x\"][\"id\"]))"),
+           // Not offered: IS_NULL not first, negated, a computed member, not
+           // the FILTER's own element, an inner join, a FILTER handed
+           // conjuncts by a join above.
+           left + " .> FILTER(TRUE AND IS_NULL(_[\"i\"][\"id\"]))",
+           left + " .> FILTER(NOT IS_NULL(_[\"i\"][\"id\"]))",
+           left + " .> FILTER(IS_NULL(_[LOWER(\"I\")][\"id\"]))",
+           left + " .> FILTER(r, IS_NULL(_[\"i\"][\"id\"]))",
+           std::string("P .> LINK(I, _1[\"id\"] == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"i\"][\"id\"]))"),
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"])) .> LINK(I, L, R, L[\"p\"][\"id\"] == R[\"product_id\"])"
+                  " .> FILTER(_[\"p\"][\"id\"] > 0) .> MAP(1)",
+       }) {
+    const auto [as_written, through_a_variable] = join_then_filter_both_ways(rows, src);
+    selt::eq(as_written, through_a_variable, src);
+  }
+
+  // The FILTER's side: only the shipped IS_NULL, first, of a literal field of
+  // a literal member of its own element.
+  const auto offered = [](const std::string& body, const std::string& binder) {
+    const NodePtr tree = parse(body);
+    const auto hint = join_right_null_test(leading_field_conjuncts(*tree, binder).front().node, binder, true);
+    return hint ? hint->member + "." + hint->field : std::string("-");
+  };
+  selt::eq(offered("IS_NULL(_[\"i\"][\"id\"]) AND _[\"x\"] > 1", "_"), std::string("i.id"), "IS_NULL first");
+  // Names are canonical (upper case): `r` is the binder R.
+  selt::eq(offered("IS_NULL(r[\"Items\"][\"id\"])", "R"), std::string("Items.id"), "an explicit binder");
+  for (const auto& [body, binder] : std::vector<std::pair<std::string, std::string>>{
+           {"TRUE AND IS_NULL(_[\"i\"][\"id\"])", "_"}, {"NOT IS_NULL(_[\"i\"][\"id\"])", "_"},
+           {"IS_NOT_NULL(_[\"i\"][\"id\"])", "_"}, {"IS_NULL(_[\"i\"])", "_"},
+           {"IS_NULL(_[LOWER(\"I\")][\"id\"])", "_"}, {"IS_NULL(_[\"i\"][LOWER(\"ID\")])", "_"},
+           {"IS_NULL(_[\"i\"][\"id\"])", "R"}, {"IS_NULL(X[\"i\"][\"id\"])", "_"}}) {
+    selt::eq(offered(body, binder), std::string("-"), "not offered: " + body + " under " + binder);
+  }
+  // The join's side: a member that is one of its right binder keys, binders
+  // not spelled alike; a row with a non-NULL field is rejected, one without
+  // the field or with a NULL there is the FILTER's to decide.
+  {
+    std::map<int, std::vector<Value>> buckets;
+    buckets[1] = {evaluate("RECORD(\"id\", 10)"), evaluate("RECORD(\"id\", NULL)"), evaluate("RECORD(\"sku\", 1)")};
+    buckets[2] = {evaluate("RECORD(\"id\", LIST())"), evaluate("RECORD(\"id\", RECORD())")};
+    const auto rejects = [&](const std::string& member, const std::string& b1, const std::string& b2) {
+      std::unordered_set<const void*> rejected;
+      if (!join_right_null_rejects(JoinRightNull{member, "id", false}, b1, b2, buckets, rejected)) return std::string("-");
+      std::string out;
+      for (const auto& [key, bucket] : buckets) {
+        for (const Value& row : bucket) out += rejected.count(Internals::identity(row)) ? "R" : "k";
+      }
+      return out;
+    };
+    selt::eq(rejects("I", "P", "I"), std::string("RkkRk"), "the right binder: non-NULL ids rejected");
+    selt::eq(rejects("i", "P", "I"), std::string("RkkRk"), "its lower case");
+    selt::eq(rejects("_2", "P", "I"), std::string("RkkRk"), "_2");
+    selt::eq(rejects("P", "P", "I"), std::string("-"), "the left binder: declined");
+    selt::eq(rejects("iI", "P", "I"), std::string("-"), "another spelling: declined");
+    selt::eq(rejects("I", "L", "R"), std::string("-"), "a relation name under explicit binders: declined");
+    selt::eq(rejects("x", "X", "x"), std::string("-"), "binders spelled alike: declined");
+  }
+
+  // The join as written builds every matched row before the FILTER drops it,
+  // and raises E_RANGE at the LINK_LEFT when they are more than
+  // MAX_COLLECTION: a row the rejection never builds still counts, at the
+  // same place.
+  {
+    static_assert(MAX_COLLECTION == 1000 * 1000, "the side below is the limit's square root");
+    const auto run = [](int left_rows) {
+      Value ctx = Value::none();
+      std::vector<Value> p, i;
+      for (int n = 0; n < left_rows; ++n) p.push_back(evaluate("RECORD(\"id\", 1)"));
+      for (int n = 0; n < 1000; ++n) i.push_back(evaluate("RECORD(\"id\", 5, \"k\", 1)"));
+      ctx.set("P", Value::list(std::move(p)));
+      ctx.set("I", Value::list(std::move(i)));
+      try {
+        return "ok " + compile("P .> LINK_LEFT(I, _1[\"id\"] == _2[\"k\"]) .> FILTER(IS_NULL(_[\"i\"][\"id\"]))").run(ctx).dump();
+      } catch (const SelError& e) {
+        return "err " + e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());
+      }
+    };
+    selt::eq(run(1000), "ok " + Value::list({}).dump(), "1000 x 1000 rows, none kept: at the limit");
+    selt::eq(run(1001), std::string("err E_RANGE 1:6"), "1001 x 1000: past it, at the LINK_LEFT");
+  }
+#if !defined(SEL_UNIT_SANITIZED)
+  // That the path is taken shows only in the work done: 300 x 300 matched
+  // rows, every one rejected, are never built, where the same join under a
+  // FILTER that does not open with IS_NULL builds all 90,000. Best of three,
+  // against a wide margin (it is some fiftyfold).
+  {
+    const std::string side = "MAP(SPLIT(REPEAT(\"x,\", 299) & \"x\", \",\"), ";
+    const auto best_ms = [&](const std::string& predicate) {
+      const Program prog = compile("P = " + side + "RECORD(\"id\", 1)); I = " + side +
+                                   "RECORD(\"id\", 5, \"k\", 1)); COUNT(P .> LINK_LEFT(I, _1[\"id\"] == _2[\"k\"]) "
+                                   ".> FILTER(" + predicate + "))");
+      double best = 1e9;
+      for (int k = 0; k < 3; ++k) {
+        const auto t0 = std::chrono::steady_clock::now();
+        selt::eq(prog.run().dump(), std::string("t\"0\""), predicate + ": nothing kept");
+        best = std::min(best, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+      }
+      return best;
+    };
+    const double skipped = best_ms("IS_NULL(_[\"i\"][\"id\"])");
+    const double built = best_ms("TRUE AND IS_NULL(_[\"i\"][\"id\"])");
+    selt::ok(skipped * 5 < built, "the rejected rows are never built (" + std::to_string(skipped) + " ms against " +
+                                      std::to_string(built) + " ms)");
+  }
+#endif
+}
+
+// The left key runs after the right rows were tested; a function SEL does
+// not ship may change a right row there (spec §7.4, §8.1), which the FILTER
+// then reads -- the item under `_2` is the element itself. Compared with the
+// same predicate behind a leading TRUE, which no join tests early.
+void test_a_join_whose_key_may_write_tests_nothing_early() {
+  selt::section("a join whose key may write tests nothing early");
+  const auto run = [](const std::string& src, const std::optional<std::string>& value) {
+    Value ctx = Value::none();
+    compile("P = LIST(RECORD(\"id\", 1), RECORD(\"id\", 2)); "
+            "I = LIST(RECORD(\"id\", 10, \"product_id\", 1), RECORD(\"id\", 11, \"product_id\", 2))").run(ctx);
+    Value item = *ctx.get("I")->get("2");
+    register_function("T_MUT", 1, 1, [item, value](HostArgs& args) {
+      Value target = item;   // a handle: set() writes the context's own element
+      target.set("id", value ? Value::text(*value) : Value::none());
+      return args.val(0);
+    });
+    return compile(src).run(ctx).dump();
+  };
+  for (const auto& [pipeline, value] : std::vector<std::pair<std::string, std::optional<std::string>>>{
+           {"LINK_LEFT(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"]) .> FILTER(IS_NULL(_[\"_2\"][\"id\"]))",
+            std::nullopt},
+           {"LINK(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"]) .> FILTER(_[\"_2\"][\"id\"] < 8)",
+            std::string("5")}}) {
+    const std::string as_written = run(pipeline + " .> MAP(_[\"_1\"][\"id\"])", value);
+    const std::size_t cut = pipeline.find(" .> FILTER(");
+    const std::string untested = pipeline.substr(0, cut) + " .> FILTER(TRUE AND " +
+                                 pipeline.substr(cut + std::string(" .> FILTER(").size()) + " .> MAP(_[\"_1\"][\"id\"])";
+    selt::eq(as_written, run(untested, value), pipeline + ": as the predicate no join tests early");
+    selt::eq(as_written, std::string("-{\"1\"=t\"2\"}"), pipeline);
+  }
+}
+
+// What an aggregate keeps of a source nothing else holds (a MAP's fresh
+// records) it may keep uncopied -- but not once a function SEL does not ship
+// has seen it: T_GRAB keeps its argument and, called again, changes the one
+// it kept. The element FILTER, SORT_BY, TOP_BY or BUCKET kept is a copy.
+void test_an_element_a_function_kept_is_copied() {
+  selt::section("an element a function SEL does not ship has kept is copied");
+  static std::optional<Value> grabbed;
+  register_function("T_GRAB", 1, 1, [](HostArgs& args) {
+    if (grabbed) grabbed->set("k", Value::integer(9));
+    grabbed = args.val(0);
+    return Value::boolean(true);
+  });
+  define(Spec{"T_GRAB_LOW", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                if (grabbed) grabbed->set("k", Value::integer(9));
+                grabbed = a.val(0);
+                return Value::boolean(true);
+              }});
+  for (const char* fn : {"T_GRAB", "T_GRAB_LOW"}) {
+    for (const std::string& shape : {std::string("FILTER(MAP(X, RECORD(\"k\", _)), %(_))[1]"),
+                                     std::string("SORT_BY(MAP(X, RECORD(\"k\", _)), %(_))[1]"),
+                                     std::string("TOP_BY(MAP(X, RECORD(\"k\", _)), %(_), 2)[1]"),
+                                     std::string("BUCKET(MAP(X, RECORD(\"k\", _)), %(_), _)[1][1]"),
+                                     std::string("(X .> MAP(RECORD(\"k\", _)) .> FILTER(%(_)) .> MAP(_))[1]")}) {
+      // X comes from the context: a program with an assignment would make
+      // every copy whatever it calls.
+      std::string src = shape + "[\"k\"]";
+      src.replace(src.find('%'), 1, fn);
+      Value ctx = Value::none();
+      ctx.set("X", Value::list({Value::integer(1), Value::integer(2)}));
+      grabbed.reset();
+      std::string got;
+      try { got = compile(src).run(ctx).dump(); } catch (const SelError& e) { got = e.code(); }
+      grabbed.reset();
+      selt::eq(got, std::string("t\"1\""), src);
+    }
+  }
+  table().erase("T_GRAB_LOW");
+}
+
 void test_regex_shapes() {
   selt::section("regex shape rules");
   for (const char* bad : {"^*", "$+", "^{2}", "^+?", "a$+", "$?", "${0}", "^{2}a", "a**", "a{2}{3}", "*a", "(a", "a)",
@@ -2635,6 +2956,7 @@ int main() {
   test_filter_borrows_rows_for_a_read_only_next_step();
   test_pipeline_temporaries_are_kept();
   test_write_free_programs_hold();
+  test_only_shipped_builtins_are_assumed_harmless();
   test_filter_packed_result();
   test_round2_fast_paths();
   test_round3_fast_paths();
@@ -2655,6 +2977,9 @@ int main() {
   test_host_boundary();
   test_snapshots_and_order();
   test_join_keys();
+  test_left_join_right_null();
+  test_a_join_whose_key_may_write_tests_nothing_early();
+  test_an_element_a_function_kept_is_copied();
   test_regex_shapes();
   test_regex_ambiguity();
   test_records_sort_by_first_field();
