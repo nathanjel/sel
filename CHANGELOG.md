@@ -226,12 +226,46 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     already did; `clone()` a result before changing it through the API if the
     context must not see the change (docs/usage, "Variables flow back").
 
+**Follow-ups to the review (every host):**
+
+  - A function SEL does not ship counts as able to change any value it can
+    reach, however it was installed (SPEC §8.1): through the public
+    registration or a lower-level `define()`, strict, lazy or binding. Each
+    host now asks one classifier for it (`docs/contributing.md`, "Never take a
+    lower-level definition for a pure one"). Before, PHP's and C++'s
+    write-free decisions took a `define()`d function for a builtin (PHP
+    answered `9` for `FILTER(X, TRUE)[T_POKE()]["k"]` where `T_POKE` rewrote
+    `X[1]`), Go and Rust ran a join's right source before its left around one,
+    Rust's hybrid planner could hand one the caller's context, and Lisp kept a
+    FILTER's or SORT's rows uncopied over a source a MAP built whatever the
+    body called. The PHP and C++ scale benchmarks `define()` their scorers, so
+    those programs make their copies again: PHP S2 25.5 → 44.7 ms, S3
+    821 → 963 ms; C++ S2 4.2 → 4.7 ms, S3 139 → 151 ms. Nothing was
+    whitelisted to win them back.
+  - A `FILTER` directly over a `LINK_LEFT` whose predicate opens with
+    `IS_NULL(_["right"]["field"])` lets the join skip the joined rows of the
+    right rows whose field is there and not NULL: scale S6's unsold products,
+    90,000 joined rows the FILTER only dropped. A left row whose matches were
+    all skipped is still matched, so it gets no null-extended row (SPEC §7.4),
+    and the collection limit counts the rows as written. S6, A B B A against
+    the previous main: C++ 250 → 151 ms, Rust 233 → 126, Go 203 → 99, JS
+    232 → 160, Lisp 180 → 113, PHP 686 → 267, Python 688 → 402.
+  - The join pre-filter: a FILTER whose own predicate reads `_K` keeps the
+    joined rows' numbering, where every host renumbered them when the step
+    after it did not read `_K`; and nothing is tested early under a FILTER or a
+    join predicate that may write, where every host dropped a row the FILTER's
+    own body changed before reading it (SPEC §7.4). Both were found by the
+    join-filter oracle's new `leftnull` pass and the host lanes.
+  - Python: a nested-loop join reused a right element's alias made before the
+    predicate wrote to the element (SPEC §7.3). Rust: `TOP` and `TOP_BY`
+    copied an element before its own key ran, where the key could write.
+
 Performance (the review itself): measured A B B A against 0.10.0 on a quiet box, every host is
 within 3% or faster on all six scale scenarios and Mandelbrot (49 pairs; the
 largest gains Go S4 −20%, Lisp S1 −16%, JS S3 −9%; the largest change the other
 way Go S2 +2.6%).
 
-Lanes: 2264 conformance cases in every host; 1392 SQL translation cases in every
+Lanes: 2313 conformance cases in every host; 1392 SQL translation cases in every
 host; 222 SQL mutations caught, none surviving; 98 decimal mutations caught, none
 surviving.
 
