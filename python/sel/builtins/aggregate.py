@@ -348,7 +348,12 @@ def _filter(args, ctx):
     handed = ctx.join_prefilter
     ctx.join_prefilter = None
     own = None
-    if src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT'):
+    # An early test holds only while nothing can change what it read before
+    # this FILTER reads it (SPEC 7.4): a predicate that may write -- an
+    # assignment, or a call SEL does not ship -- is offered to no join, and
+    # the conjuncts handed from above stop here too.
+    if (src is not None and src.t == 'call' and src.name in ('LINK', 'LINK_LEFT')
+            and (ctx.write_free or not may_write(shape(args)[1]))):
         binder, body = shape(args)
         own = _leading_field_conjuncts(body, binder)
         # This FILTER's conjuncts first -- it runs before the FILTER that

@@ -32,6 +32,12 @@ export class Context {
     // row that came up has passed, and whether any row was kept on an error
     // -- in which case the join above applies them all again.
     this.joinPrefilterReport = null;
+    // A FILTER directly over a LINK_LEFT whose predicate opens with
+    // IS_NULL(_["member"]["field"]) hands the join { member, field, deep }
+    // here (deep: nothing observes the FILTER's keys): the join may skip
+    // building the joined rows of the right rows that conjunct is FALSE on
+    // (builtins/structure.mjs, rightNullRejects).
+    this.joinRightNull = null;
   }
 
   lookup(name) {
