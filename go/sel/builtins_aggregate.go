@@ -1129,6 +1129,10 @@ func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOcc
 func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	prefilter := ctx.joinPrefilter
 	ctx.joinPrefilter = nil
+	// Taken with the prefilter, before either source is evaluated, so a
+	// LINK_LEFT nested in this join's sources cannot pick it up.
+	rightNull := ctx.joinRightNull
+	ctx.joinRightNull = nil
 
 	count := args.Count() // 3 or 5: arity_LINK runs at compile time
 
@@ -1304,6 +1308,13 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 		ctx.PushFrame(rFrame)
 		buckets := make(map[joinKey][]*Value)
+		// The rows the buckets hold, in the right side's order, for a FILTER's
+		// IS_NULL to be tested on (rightNullRejects): read in the order they
+		// were built, where walking the buckets jumps about the heap.
+		var bucketed []*Value
+		if rightNull != nil && leftJoin && prefilter == nil {
+			bucketed = make([]*Value, 0, len(rightEnts))
+		}
 		var facts joinFacts
 		flatTest := newJoinFlatTest(b1, b2)
 		rightFlat := true
@@ -1326,6 +1337,9 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 					}
 				} else {
 					buckets[k] = append(buckets[k], right)
+					if bucketed != nil {
+						bucketed = append(bucketed, right)
+					}
 				}
 				facts.live = true
 			}
@@ -1442,6 +1456,20 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			}
 			report.Errored = report.Errored || before
 		}
+		// A LINK_LEFT rejects right rows only for a FILTER that opens with IS_NULL
+		// (rightNullRejects), and then drops no left row: position counts every
+		// joined row as written, built or not, and the collection limit is held
+		// to that count, where the join as written would have raised (spec §6.4).
+		logical := false
+		if bucketed != nil {
+			rejected = make(map[*Value]bool, len(bucketed))
+			if rightNullRejects(rightNull, b1, b2, bucketed, rejected) {
+				rejecting, logical = true, true
+				// Whether nothing observes the FILTER's keys: then the kept rows
+				// need not carry the positions the rows as written had.
+				deep = rightNull.Deep
+			}
+		}
 
 		numbered := (len(prefix) > 0 || rejecting) && !deep
 		var keyedEntries []Entry
@@ -1499,15 +1527,18 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			return 0
 		}
 
-		emit := func(joined *Value) {
-			// A join's rows are a collection an operation builds (SPEC §6.4).
-			checkCollection(int64(position), "the join", args.Pos())
+		place := func(joined *Value) {
 			if numbered {
 				keyedEntries = append(keyedEntries, Entry{Key: strconv.Itoa(position), Val: joined})
 			} else {
 				output = append(output, joined)
 			}
 			position++
+		}
+		emit := func(joined *Value) {
+			// A join's rows are a collection an operation builds (SPEC §6.4).
+			checkCollection(int64(position), "the join", args.Pos())
+			place(joined)
 		}
 
 		for _, lEntry := range leftEnts {
@@ -1556,13 +1587,22 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 			if hasBucket {
 				skip := rejecting && asked == 0
+				if logical {
+					// Once for the left row's matches, the count the join as
+					// written checks whether it builds them or not.
+					checkCollection(int64(position-1+len(rRows)), "the join", args.Pos())
+				}
 				for _, rRow := range rRows {
 					if skip && rejected[rRow] {
 						dropped = true
 						position++
 						continue
 					}
-					emit(projector.project(left, rRow))
+					if logical {
+						place(projector.project(left, rRow))
+					} else {
+						emit(projector.project(left, rRow))
+					}
 				}
 			} else if leftJoin {
 				emit(projector.project(left, nil))
@@ -1845,6 +1885,18 @@ func init() {
 				}
 				if len(pre.Stages) > 0 {
 					ctx.joinPrefilter = &pre
+				} else if handed == nil && src.S == "LINK_LEFT" && len(own) > 0 {
+					// A predicate that opens with IS_NULL of a right member's field
+					// (S6's unsold products): the join may reject the right rows it
+					// is FALSE on before building their joined rows. Nothing is
+					// reported back -- the null-extended rows were never tested --
+					// so the whole predicate still runs over every row the join builds.
+					// The keys the join numbers are the ones this FILTER's own _K
+					// reads, observed there whatever the next step does.
+					if member, field, ok := rightNullTest(own[0].Node, binder); ok {
+						ctx.joinRightNull = &joinRightNull{Member: member, Field: field,
+							Deep: pre.Deep && !nodeContainsVar(written, "_K")}
+					}
 				}
 			}
 
@@ -1852,6 +1904,7 @@ func init() {
 			func() {
 				defer func() {
 					ctx.joinPrefilter = nil
+					ctx.joinRightNull = nil
 				}()
 				inVal = args.Val(0)
 			}()

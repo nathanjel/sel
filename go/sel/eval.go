@@ -70,6 +70,7 @@ func evalNode(node *Node, ctx *Context) *Value {
 			// find it there.
 			ctx.joinPrefilter = nil
 			ctx.joinPrefilterReport = nil
+			ctx.joinRightNull = nil
 			ctx.noCopy = nil
 		}
 	}()
