@@ -1117,6 +1117,122 @@ a*a*$
   });
 }
 
+// --- a FILTER that opens with IS_NULL of a LINK_LEFT's right member: the join
+// skips building the joined rows of the right rows that conjunct is FALSE on
+// (structure.mjs, rightNullRejects), and nothing else changes (spec §7.4) ----
+{
+  const { SelError } = await import('../js/src/errors.mjs');
+  const { MAX_COLLECTION } = await import('../js/src/budget.mjs');
+  // The program's two forms, with an error's position as well as its code: as
+  // written, and with the join bound to a helper variable first, where no
+  // FILTER sits on a LINK and nothing can be skipped.
+  const twoForms = (src, input) => {
+    const cut = src.lastIndexOf(' .> FILTER(');
+    const head = src.slice(0, cut);
+    const tail = src.slice(cut + ' .> FILTER('.length);
+    const go = (text, headAt) => {
+      try {
+        return `ok ${compile(text).run(Value.fromNative(input)).dump()}`;
+      } catch (e) {
+        if (!(e instanceof SelError)) throw e;
+        // An error's column, as (segment, offset): the join, or the FILTER on.
+        const filterAt = text.lastIndexOf(`FILTER(${tail}`);
+        const at = e.col - 1;
+        return `err ${e.code} ${e.line}:${at >= filterAt ? `filter+${at - filterAt}` : `join+${at - headAt}`}`;
+      }
+    };
+    return [go(`${head} .> FILTER(${tail}`, 0), go(`J = ${head}; J .> FILTER(${tail}`, 4)];
+  };
+  // How many records a run builds, its error swallowed: the joined rows a
+  // skipping join never builds are the difference. Every record constructor
+  // the join reaches is counted.
+  const recordsBuilt = (src, input) => {
+    const program = compile(src);
+    const root = Value.fromNative(input);
+    const saved = ['shapedFromShape', 'fromEntriesOwned', 'fromEntriesPreserveDuplicates'].map((name) => [name, Value[name]]);
+    let built = 0;
+    for (const [name, fn] of saved) Value[name] = (...a) => { built++; return fn(...a); };
+    try {
+      program.run(root);
+    } catch (e) {
+      if (!(e instanceof SelError)) throw e;
+    } finally {
+      for (const [name, fn] of saved) Value[name] = fn;
+    }
+    return built;
+  };
+  const left = 'P .> LINK_LEFT(I, _1["id"] == _2["product_id"])';
+  const ctx = {
+    P: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }, { id: 3, name: 5 }, { id: 4, name: 'd' }],
+    I: [{ id: 10, product_id: 1 }, { id: null, product_id: 1 }, { id: 12, product_id: 3 }, { product_id: 9 }],
+  };
+  for (const src of [
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["I"]["id"])) .> MAP(_K)`,
+    `${left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2")`,
+    `${left} .> FILTER(r, IS_NULL(r["i"]["id"]) AND r["p"]["name"] > 1)`,
+    `${left} .> FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["id"])`,
+    `${left} .> FILTER(IS_NULL(_["i"]["product_id"]))`,
+    `${left} .> FILTER(IS_NULL(_["i"]["sku"]))`,
+    // not the right row, binders alike, not the shape: nothing is skipped
+    `${left} .> FILTER(IS_NULL(_["p"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["iI"]["id"]))`,
+    'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))',
+    'LINK_LEFT(P, I, X, x, X["id"] == x["product_id"]) .> FILTER(IS_NULL(_["x"]["id"]))',
+    `${left} .> FILTER(NOT IS_NULL(_["i"]["id"]))`,
+  ]) {
+    expectOk(`LINK_LEFT right-null rejection answers as the helper form: ${src}`, () => {
+      const [asWritten, throughAVariable] = twoForms(src, ctx);
+      assert.equal(asWritten, throughAVariable);
+    });
+  }
+  // Every right row matches every left row, and has an id: the FILTER drops all
+  // 40 x 40 joined rows. The rejection builds none of them, anywhere else every one.
+  const P = Array.from({ length: 40 }, () => ({ id: 1 }));
+  const I = Array.from({ length: 40 }, () => ({ id: 10, product_id: 1 }));
+  const skips = (src) => recordsBuilt(src, { P, I }) < P.length * I.length;
+  expectOk('LINK_LEFT right-null rejection: the joined rows are not built', () => {
+    assert.ok(skips(`${left} .> FILTER(IS_NULL(_["i"]["id"]))`));
+    assert.ok(skips(`${left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2") .> MAP(_K)`));
+    assert.ok(skips('LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["r"]["id"]))'));
+  });
+  // (Binders spelled alike are left to the helper-form comparison above: such a
+  // join's predicate reads one row twice, and as written it matches nothing.)
+  for (const src of [
+    // not a right binder key of this join: the left one, a mixed-case name, a
+    // relation name under explicit binders
+    `${left} .> FILTER(IS_NULL(_["p"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["iI"]["id"]))`,
+    'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))',
+    // not IS_NULL first, not a literal member or field, not the FILTER's own element
+    `${left} .> FILTER(TRUE AND IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(NOT IS_NULL(_["i"]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_[LOWER("I")]["id"]))`,
+    `${left} .> FILTER(IS_NULL(_["i"][LOWER("ID")]))`,
+    `${left} .> FILTER(r, IS_NULL(_["i"]["id"]))`,
+    // an inner join, and a FILTER handed conjuncts by a join above
+    'P .> LINK(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))',
+    `${left} .> FILTER(IS_NULL(_["i"]["id"])) .> LINK(I, L, R, L["p"]["id"] == R["product_id"])`
+      + ' .> FILTER(_["p"]["id"] > 0) .> MAP(1)',
+  ]) {
+    expectOk(`LINK_LEFT right-null rejection is not taken: ${src}`, () => assert.ok(!skips(src)));
+  }
+  // The join as written builds every matched row before the FILTER drops it,
+  // and raises E_RANGE, at the call, when they are more than MAX_COLLECTION
+  // (spec §6.4): a row the rejection never builds still counts, at the same place.
+  expectOk('LINK_LEFT right-null rejection holds the real collection limit', () => {
+    const side = Math.sqrt(MAX_COLLECTION);
+    assert.equal(side * side, MAX_COLLECTION);
+    const src = 'P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))';
+    const rows = (n, row) => Array.from({ length: n }, () => row);
+    assert.equal(compile(src).run(Value.fromNative({ I: rows(side, { id: 5, k: 1 }), P: rows(side, { id: 1 }) })).dump(), '-');
+    let e = null;
+    try { compile(src).run(Value.fromNative({ I: rows(side, { id: 5, k: 1 }), P: rows(side + 1, { id: 1 }) })); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
+    assert.equal(e.col, src.indexOf('LINK_LEFT') + 1);
+  });
+}
+
 if (boundary.length) {
   console.error(`JS runtime: ${boundary.length} host-boundary contract(s) broken:\n  ` + boundary.join('\n  '));
   process.exit(1);

@@ -3,7 +3,7 @@
 
 import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey, elements } from '../value.mjs';
-import { define, callRoles } from '../registry.mjs';
+import { define, callRoles, mayHaveEffects } from '../registry.mjs';
 import { mayWrite, mentionsKey } from '../ast.mjs';
 import { bytesCompare, compareText, ANY_SURROGATE } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
@@ -212,6 +212,23 @@ export function leadingFieldConjuncts(body, binder) {
   });
 }
 
+// { member, field } when CONJUNCT is `IS_NULL(binder["member"]["field"])` --
+// the shipped IS_NULL of a literal field of a literal member of the FILTER's
+// element -- else null. Over a LINK_LEFT, a member that is one of the join's
+// right binder keys is the right row (spec §7.4), and the join may skip
+// building the joined rows of the right rows the conjunct is FALSE on
+// (structure.mjs, rightNullRejects).
+function rightNullTest(conjunct, binder) {
+  if (!conjunct || conjunct.t !== 'call' || conjunct.name !== 'IS_NULL'
+      || conjunct.args.length !== 1 || mayHaveEffects('IS_NULL')) return null;
+  const field = conjunct.args[0];
+  if (!field || field.t !== 'index' || !field.idx || field.idx.t !== 'text') return null;
+  const member = field.obj;
+  if (!member || member.t !== 'index' || !member.idx || member.idx.t !== 'text'
+      || !member.obj || member.obj.t !== 'var' || member.obj.name !== binder) return null;
+  return { member: member.idx.v, field: field.idx.v };
+}
+
 // The one aggregate that preserves keys — a filtered list should still be
 // addressable the way the original was.
 define({
@@ -240,6 +257,14 @@ define({
       if (stages.length) {
         ctx.joinPrefilter = { stages, deep, above: handed === null ? [] : handed.above,
           obligations: handed === null ? [] : handed.obligations };
+      } else if (handed === null && src.name === 'LINK_LEFT' && own.length > 0) {
+        // A predicate that opens with IS_NULL of a right member's field
+        // (S6's unsold products): the join may reject the right rows it is
+        // FALSE on before building their joined rows. Nothing is reported
+        // back -- the null-extended rows were never tested -- so the whole
+        // predicate still runs over every row the join builds.
+        const test = rightNullTest(own[0].node, binder);
+        if (test !== null) ctx.joinRightNull = { member: test.member, field: test.field, deep };
       }
     }
     let source;
@@ -247,6 +272,7 @@ define({
       source = args.val(0);
     } finally {
       ctx.joinPrefilter = null;
+      ctx.joinRightNull = null;
     }
     // The join's report -- which conjuncts every row that came up has
     // passed, and whether a row was kept on an error -- goes up as it is.
