@@ -345,7 +345,9 @@ fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
                 obligations = h.obligations;
             }
         }
-        let deep = if had_handed { true } else { written.keys_unobserved };
+        // A body that reads _K observes the keys itself, whatever the step
+        // after it does: rows dropped below must keep their positions then.
+        let deep = (had_handed || written.keys_unobserved) && !node_contains_var(written, "_K");
         if !stages.is_empty() {
             args.ctx.join_prefilter = Some(JoinPrefilter {
                 stages,

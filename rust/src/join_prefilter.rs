@@ -67,7 +67,8 @@ pub struct JoinPrefilter {
 pub struct JoinRightNull {
     pub member: String,
     pub field: String,
-    /// Nothing observes the FILTER's keys (its body's `keys_unobserved`).
+    /// Nothing observes the FILTER's keys: not the step after it (its body's
+    /// `keys_unobserved`), and not the body itself (no `_K` in it).
     pub deep: bool,
 }
 
