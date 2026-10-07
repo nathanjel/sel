@@ -264,13 +264,21 @@ fn test_top_key_evaluation_error_precedes_deferred_key_resolution_error() {
 
 #[test]
 fn test_top_mutating_key_expression_triggers_eager_copy() {
-    let src = "
-    R = LIST(RECORD(\"k\", 10, \"v\", 1), RECORD(\"k\", 5, \"v\", 2));
-    TOP_BY(R, (R[1][\"v\"] = 99; _[\"k\"]), 2) .> MAP(_[\"v\"]) .> JOIN(\",\")
-    ";
-    let mut p = compile(src).unwrap();
-    let res = p.run(None).unwrap();
-    assert_eq!(res.as_text(Pos::default()).unwrap(), "2,1");
+    // An element is collected -- copied -- once its own key is computed (spec
+    // §3.4): the second key's write into the first element does not reach the
+    // result, the first key's own write does.
+    for (key, expected) in [
+        ("(IF(_[\"k\"] == 5, (R[1][\"v\"] = 99), 0); _[\"k\"])", "2,1"),
+        ("(R[1][\"v\"] = 99; _[\"k\"])", "2,99"),
+    ] {
+        let src = format!("
+        R = LIST(RECORD(\"k\", 10, \"v\", 1), RECORD(\"k\", 5, \"v\", 2));
+        TOP_BY(R, {key}, 2) .> MAP(_[\"v\"]) .> JOIN(\",\")
+        ");
+        let mut p = compile(&src).unwrap();
+        let res = p.run(None).unwrap();
+        assert_eq!(res.as_text(Pos::default()).unwrap(), expected, "{key}");
+    }
 }
 
 #[test]

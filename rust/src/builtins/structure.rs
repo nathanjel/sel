@@ -913,13 +913,6 @@ fn do_top(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> 
         args.ctx.push_frame(frame);
     }
     for (ei, ev) in ents.vals.iter().enumerate() {
-        let item = if eager {
-            ev.deep_copy(2, args.pos())?
-        } else {
-            ev.check_copy_depth(2, args.pos())?;
-            ev.clone()
-        };
-
         let k_val = if !framed {
             ev.clone()
         } else {
@@ -928,6 +921,14 @@ fn do_top(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> 
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
             args.eval_node(body_opt.as_ref().unwrap())?
+        };
+        // Collected once its key is computed (spec §3.4), as do_sort does: a
+        // key that writes into its own element is held by the copy.
+        let item = if eager {
+            ev.deep_copy(2, args.pos())?
+        } else {
+            ev.check_copy_depth(2, args.pos())?;
+            ev.clone()
         };
         indexed.push(SortItem {
             item,
