@@ -183,3 +183,36 @@ fn a_deep_join_still_reports_the_left_sources_error_first() {
     assert_eq!(error.code, "E_UNDEF_VAR");
     assert_eq!(&source[error.pos.offset..error.pos.offset + 6], "NOPE_C");
 }
+
+#[test]
+fn a_join_whose_key_may_write_tests_nothing_early() {
+    // The left key runs after the right rows were tested; a function SEL does
+    // not ship may change a right row there (spec §7.4, §8.1), which the
+    // FILTER then reads -- the row under `_2` is the context's own element.
+    // Compared with the same predicate behind a leading TRUE, which no join
+    // tests early.
+    for (name, value) in [("T_MUT_NULL", None), ("T_MUT_FIVE", Some("5"))] {
+        sel_lang::register_function(name, 1, 1, move |args| {
+            let item = args.ctx.root.get("I").and_then(|items| items.get("2")).unwrap();
+            let id = value.map_or_else(Value::null, |v| Value::text_owned(v.into()));
+            item.set("id", id, Pos::default())?;
+            args.val(0)
+        })
+        .unwrap();
+    }
+    let run = |source: &str| {
+        let context = root(&[
+            ("P", r#"LIST(RECORD("id", 1), RECORD("id", 2))"#),
+            ("I", r#"LIST(RECORD("id", 10, "product_id", 1), RECORD("id", 11, "product_id", 2))"#),
+        ]);
+        compile(source).unwrap().run(Some(context)).unwrap().dump().unwrap()
+    };
+    for (join, filter) in [
+        (r#"LINK_LEFT(P, I, _1, _2, T_MUT_NULL(_1["id"]) == _2["product_id"])"#, r#"IS_NULL(_["_2"]["id"])"#),
+        (r#"LINK(P, I, _1, _2, T_MUT_FIVE(_1["id"]) == _2["product_id"])"#, r#"_["_2"]["id"] < 8"#),
+    ] {
+        let as_written = run(&format!(r#"{join} .> FILTER({filter}) .> MAP(_["_1"]["id"])"#));
+        assert_eq!(as_written, run(&format!(r#"{join} .> FILTER(TRUE AND {filter}) .> MAP(_["_1"]["id"])"#)), "{join}");
+        assert_eq!(as_written, r#"-{"1"=t"2"}"#, "{join}");
+    }
+}

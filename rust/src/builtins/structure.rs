@@ -9,13 +9,13 @@ use crate::args::Args;
 use crate::ast::{Node, NodeType};
 use crate::context::{Context, Frame};
 use crate::dec::{dec_add, dec_cmp, dec_format, Dec};
-use crate::join_plan::{JoinFlatTest, JoinProjector};
+use crate::join_plan::{binder_keys, JoinFlatTest, JoinProjector};
 use crate::manifest::{self, builtins::Form, ArgRoles};
 use crate::join_prefilter::{
     join_keys_safe, join_pure_source, join_read_self, join_row_keys, join_stage_walk,
     join_totality, join_truncate_stages, leading_field_conjuncts, new_join_side_facts,
-    JoinConjunct, JoinObligation, JoinPrefilter, JoinReport, JoinSideFacts, JoinStage,
-    JoinTotalReq,
+    right_null_test, JoinConjunct, JoinObligation, JoinPrefilter, JoinReport, JoinRightNull,
+    JoinSideFacts, JoinStage, JoinTotalReq,
 };
 use crate::shape::{unique_record_shape, RecordShape};
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
@@ -306,6 +306,7 @@ pub fn fn_filter(args: &mut Args) -> Result<Value, SelError> {
     let plan = filter_plan(args)?;
     let source = args.val(0);
     args.ctx.join_prefilter = None;
+    args.ctx.join_right_null = None;
     filter_rows(args, plan, source)
 }
 
@@ -321,7 +322,11 @@ fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
     let nodes: &[Node] = args.nodes;
     let written: &Node = &nodes[body_idx];
     let src = &nodes[0];
-    let over_join = src.t == NodeType::Call && (src.s == "LINK" || src.s == "LINK_LEFT");
+    // An early test holds only while nothing can change what it read before
+    // this FILTER reads it (spec §7.4): a predicate that may write -- an
+    // assignment, or a call SEL does not ship -- is offered to no join, and
+    // the conjuncts handed from above stop here too.
+    let over_join = src.t == NodeType::Call && (src.s == "LINK" || src.s == "LINK_LEFT") && !may_write(written);
     let had_handed = handed.is_some();
     let mut own: Vec<JoinConjunct> = Vec::new();
     if over_join {
@@ -344,7 +349,9 @@ fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
                 obligations = h.obligations;
             }
         }
-        let deep = if had_handed { true } else { written.keys_unobserved };
+        // A body that reads _K observes the keys itself, whatever the step
+        // after it does: rows dropped below must keep their positions then.
+        let deep = (had_handed || written.keys_unobserved) && !node_contains_var(written, "_K");
         if !stages.is_empty() {
             args.ctx.join_prefilter = Some(JoinPrefilter {
                 stages,
@@ -352,6 +359,15 @@ fn filter_plan(args: &mut Args) -> Result<Box<FilterPlan>, SelError> {
                 above,
                 obligations,
             });
+        } else if !had_handed && src.s == "LINK_LEFT" {
+            // A predicate that opens with IS_NULL of a right member's field
+            // (S6's unsold products): the join may reject the right rows it
+            // is FALSE on before building their joined rows. Nothing is
+            // reported back -- the null-extended rows were never tested -- so
+            // the whole predicate still runs over every row the join builds.
+            if let Some((member, field)) = own.first().and_then(|c| right_null_test(&c.node, &binder)) {
+                args.ctx.join_right_null = Some(Box::new(JoinRightNull { member, field, deep }));
+            }
         }
     }
     Ok(Box::new(FilterPlan { binder, body_idx, over_join, had_handed, own }))
@@ -897,13 +913,6 @@ fn do_top(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> 
         args.ctx.push_frame(frame);
     }
     for (ei, ev) in ents.vals.iter().enumerate() {
-        let item = if eager {
-            ev.deep_copy(2, args.pos())?
-        } else {
-            ev.check_copy_depth(2, args.pos())?;
-            ev.clone()
-        };
-
         let k_val = if !framed {
             ev.clone()
         } else {
@@ -912,6 +921,14 @@ fn do_top(args: &mut Args, forms: &'static [Form], forced_dir: Option<&str>) -> 
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
             args.eval_node(body_opt.as_ref().unwrap())?
+        };
+        // Collected once its key is computed (spec §3.4), as do_sort does: a
+        // key that writes into its own element is held by the copy.
+        let item = if eager {
+            ev.deep_copy(2, args.pos())?
+        } else {
+            ev.check_copy_depth(2, args.pos())?;
+            ev.clone()
         };
         indexed.push(SortItem {
             item,
@@ -978,23 +995,17 @@ struct BucketGroup {
 }
 
 /// Whether evaluating `node` might write: an assignment, or a call of an
-/// application's function (the host may do anything) -- one registered as a
-/// host function or not in the builtin manifest -- anywhere inside it. The one
-/// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
-/// the parse depth cap). Traversal policy: scope-blind, every child.
+/// application's function (the host may do anything) -- anything but a shipped
+/// builtin, however it was installed (crate::builtins::call_may_have_effects)
+/// -- anywhere inside it. The one answer SORT/TOP keys and BUCKET keys both ask
+/// (recursion is bounded by the parse depth cap). Traversal policy:
+/// scope-blind, every child.
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;
     }
-    if node.t == NodeType::Call {
-        let host = match &node.spec {
-            Some(spec) => matches!(spec.func, crate::builtins::SpecFn::Host(_)),
-            None => crate::builtins::lookup_spec(&node.s)
-                .is_some_and(|spec| matches!(spec.func, crate::builtins::SpecFn::Host(_))),
-        };
-        if host || crate::manifest::lookup_builtin(&node.s).is_none() {
-            return true;
-        }
+    if node.t == NodeType::Call && crate::builtins::call_may_have_effects(node) {
+        return true;
     }
     node.children().any(may_write)
 }
@@ -1402,6 +1413,46 @@ fn coerce_join_operand(numeric: bool, v: &Value, pos: Pos) -> Result<(), SelErro
     Ok(())
 }
 
+#[cfg(test)]
+thread_local! {
+    // Per right_null_rejects call: how many right rows it rejected, or None
+    // when it declined.
+    pub(crate) static RIGHT_NULL_SEEN: std::cell::RefCell<Vec<Option<usize>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Equi-LINK_LEFT, once every right key was computed: marks rejected the right
+/// rows a FILTER that opens with IS_NULL(_["member"]["field"]) drops wherever
+/// they are joined, and answers whether the join could tell. The member must
+/// be one of this join's right binder keys -- the binder, its lower case or
+/// `_2`, each bound in every joined row to the right row as bucketed (spec
+/// §7.4, join_plan's joined_layout) -- and the two binders must not be spelled
+/// alike. A row is rejected only when the read certainly yields a non-NULL
+/// value: one without the field (E_NO_KEY in the FILTER) or with a NULL there
+/// is kept, for the FILTER to decide. Its joined rows are then never built;
+/// its left row stays matched, so it gets no null-extended row in their place.
+fn right_null_rejects(
+    b1: &str,
+    b2: &str,
+    right_null: &JoinRightNull,
+    buckets: &mut HashMap<JoinKey, Vec<(Value, bool)>>,
+) -> bool {
+    if b1.eq_ignore_ascii_case(b2) || !binder_keys(b2, "_2").contains(&right_null.member) {
+        #[cfg(test)]
+        RIGHT_NULL_SEEN.with(|seen| seen.borrow_mut().push(None));
+        return false;
+    }
+    for rows in buckets.values_mut() {
+        for (right, rejected) in rows.iter_mut() {
+            if right.get(&right_null.field).is_some_and(|value| !value.is_null()) {
+                *rejected = true;
+            }
+        }
+    }
+    #[cfg(test)]
+    RIGHT_NULL_SEEN.with(|seen| seen.borrow_mut().push(Some(buckets.values().flatten().filter(|row| row.1).count())));
+    true
+}
+
 fn is_join_or_filter(n: &Node) -> bool {
     n.t == NodeType::Call && matches!(n.s.as_str(), "LINK" | "LINK_LEFT" | "FILTER")
 }
@@ -1483,7 +1534,10 @@ impl LinkState<'_> {
 }
 
 fn do_link(args: &mut Args, left_join: bool) -> Result<Value, SelError> {
-    let mut st = link_head(args, left_join)?;
+    // Taken with the pre-filter, before anything is evaluated (link_head),
+    // and kept here rather than in the state: a pointer in this frame.
+    let mut right_null = args.ctx.join_right_null.take();
+    let mut st = link_head(args, left_join, &mut right_null)?;
     if st.deep_path {
         // Reading the right source first is unobservable only when it
         // succeeds: when it raises, the left source -- as written, with
@@ -1502,14 +1556,18 @@ fn do_link(args: &mut Args, left_join: bool) -> Result<Value, SelError> {
     }
     let left_val = args.val(0)?;
     let right_val = args.val(1)?;
-    link_body(args, st, left_val, right_val)
+    link_body(args, st, left_val, right_val, right_null)
 }
 
 #[inline(never)]
-fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'a>>, SelError> {
+fn link_head<'a>(
+    args: &mut Args<'a>,
+    left_join: bool,
+    right_null: &mut Option<Box<JoinRightNull>>,
+) -> Result<Box<LinkState<'a>>, SelError> {
     // Taken before anything else is evaluated, so a LINK nested in this one's
     // sources cannot pick it up by accident; it is handed down on purpose.
-    let prefilter = args.ctx.join_prefilter.take();
+    let mut prefilter = args.ctx.join_prefilter.take();
     let nodes: &'a [Node] = args.nodes;
     let left_node = &nodes[0];
     let right_node = &nodes[1];
@@ -1532,6 +1590,13 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
         b2 = args.symbol(i)?;
     }
     let predicate_node: &'a Node = &nodes[roles.body.expect("a LINK form has a predicate")];
+    // A predicate that may write can change a row between an early test and
+    // the FILTER's read of it (spec §7.4): then nothing is tested early here,
+    // and nothing is handed down.
+    if (prefilter.is_some() || right_null.is_some()) && may_write(predicate_node) {
+        prefilter = None;
+        *right_null = None;
+    }
     let b1_names = vec![b1.clone(), "_1".to_string()];
     let b2_names = vec![b2.clone(), "_2".to_string()];
 
@@ -1635,6 +1700,9 @@ fn link_body<'a>(
     st: Box<LinkState<'a>>,
     mut left_val: Value,
     right_val: Value,
+    // What a FILTER over this LINK_LEFT that opens with IS_NULL of a right
+    // member's field left (right_null_rejects).
+    right_null: Option<Box<JoinRightNull>>,
 ) -> Result<Value, SelError> {
     let LinkState {
         left_join,
@@ -1839,7 +1907,7 @@ fn link_body<'a>(
 
             // The right rows the right conjuncts reject, once each, after
             // every right key was computed.
-            let rejecting = !right_prefix.is_empty();
+            let mut rejecting = !right_prefix.is_empty();
             if rejecting {
                 let mut frame = Frame::new();
                 for b in &binders {
@@ -1863,6 +1931,24 @@ fn link_body<'a>(
                     }
                 }
                 report.errored = report.errored || before;
+            }
+
+            // A LINK_LEFT rejects right rows only for a FILTER that opens with
+            // IS_NULL (right_null_rejects), and then drops no left row:
+            // `position` counts every joined row as written, built or not, and
+            // the collection limit is held to that count, where the join as
+            // written would have raised (spec §6.4).
+            let mut logical = false;
+            let mut deep = deep;
+            if let Some(ref rn) = right_null {
+                if left_join && !has_prefilter && right_null_rejects(&b1, &b2, rn, &mut buckets) {
+                    logical = true;
+                    rejecting = true;
+                    // Whether nothing observes the FILTER's keys: then the
+                    // kept rows need not carry the positions the rows as
+                    // written had.
+                    deep = rn.deep;
+                }
             }
 
             // A FILTER keeps its input's keys, so the rows dropped here still
@@ -1955,13 +2041,21 @@ fn link_body<'a>(
                     // A left row kept on an error meets every right row: its
                     // joined rows raise in the FILTER, in order.
                     let skip = rejecting && asked == Verdict::Keep;
+                    // Its matches are all joined rows as written, rejected or
+                    // not: a left row whose matches are all rejected is still
+                    // matched, and gets no null-extended row.
+                    if logical {
+                        cap_collection((position - 1 + rows.len()) as u128, args.pos())?;
+                    }
                     for (right, rejected) in rows {
                         if skip && *rejected {
                             dropped = true;
                             position += 1;
                             continue;
                         }
-                        cap_collection(if numbered { position } else { output.len() + 1 } as u128, args.pos())?;
+                        if !logical {
+                            cap_collection(if numbered { position } else { output.len() + 1 } as u128, args.pos())?;
+                        }
                         output.push(projector.project(&left, Some(right)));
                         if numbered {
                             positions.push(position as u32);
@@ -1969,7 +2063,7 @@ fn link_body<'a>(
                         position += 1;
                     }
                 } else if left_join {
-                    cap_collection(if numbered { position } else { output.len() + 1 } as u128, args.pos())?;
+                    cap_collection(if numbered || logical { position } else { output.len() + 1 } as u128, args.pos())?;
                     output.push(projector.project(&left, None));
                     if numbered {
                         positions.push(position as u32);
@@ -2124,3 +2218,168 @@ mod alias_tests {
     }
 }
 
+
+#[cfg(test)]
+mod right_null_tests {
+    use super::*;
+
+    const CONTEXT: &str = r#"RECORD(
+        "P", LIST(RECORD("id", 1, "name", "a"), RECORD("id", 2, "name", "b"), RECORD("id", 3, "name", 5),
+                  RECORD("id", 4, "name", "d")),
+        "I", LIST(RECORD("id", 10, "product_id", 1), RECORD("id", NULL, "product_id", 1),
+                  RECORD("id", 12, "product_id", 3), RECORD("product_id", 9)))"#;
+
+    fn seen() -> Vec<Option<usize>> {
+        RIGHT_NULL_SEEN.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
+    }
+
+    /// What `source` answers, as written and with its join bound to a helper
+    /// variable first (`J = …; J .> FILTER(…)`, where no FILTER sits on a LINK):
+    /// the dump, or the error code and where it points -- in the join or in the
+    /// FILTER, by its offset there, since the two forms differ in length.
+    fn both_forms(source: &str) -> (String, String) {
+        both_forms_in(CONTEXT, source)
+    }
+
+    fn both_forms_in(context: &str, source: &str) -> (String, String) {
+        let (head, tail) = source.rsplit_once(" .> FILTER(").unwrap();
+        let go = |src: &str, head_at: usize| {
+            let context = crate::evaluate(context, None).unwrap();
+            match crate::compile(src).and_then(|mut program| program.run(Some(context))) {
+                Ok(value) => format!("ok {}", value.dump().unwrap()),
+                Err(error) => {
+                    let filter_at = src.rfind(&format!("FILTER({tail}")).unwrap();
+                    let at = error.pos.offset;
+                    let place = if at >= filter_at {
+                        format!("filter+{}", at - filter_at)
+                    } else {
+                        format!("join+{}", at - head_at)
+                    };
+                    format!("err {} {}:{place}", error.code, error.pos.line)
+                }
+            }
+        };
+        (go(&format!("{head} .> FILTER({tail}"), 0), go(&format!("J = {head}; J .> FILTER({tail}"), 4))
+    }
+
+    const LEFT: &str = r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"])"#;
+
+    #[test]
+    fn rejection_keeps_results_keys_and_errors() {
+        // A FILTER that opens with IS_NULL of a LINK_LEFT's right member lets
+        // the join skip building the joined rows of the right rows that
+        // conjunct is FALSE on; every shape answers -- rows, keys, errors and
+        // their places -- what the join bound to a helper variable answers.
+        for filter in [
+            r#"FILTER(IS_NULL(_["i"]["id"]))"#,
+            r#"FILTER(IS_NULL(_["I"]["id"])) .> MAP(_K)"#,
+            r#"FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2")"#,
+            r#"FILTER(r, IS_NULL(r["i"]["id"]) AND r["p"]["name"] > 1)"#,
+            r#"FILTER(IS_NULL(_["i"]["id"]) AND _["p"]["name"] $!= "b") .> MAP(_["p"]["id"])"#,
+            r#"FILTER(IS_NULL(_["i"]["product_id"]))"#,
+            r#"FILTER(IS_NULL(_["i"]["sku"]))"#,
+        ] {
+            let source = format!("{LEFT} .> {filter}");
+            seen();
+            let (as_written, through_a_variable) = both_forms(&source);
+            assert_eq!(as_written, through_a_variable, "{source}");
+            // The path was taken; it rejects rows only where the field is
+            // there and not NULL (no item has a sku: every row is the FILTER's
+            // to raise on).
+            let seen = seen();
+            assert!(matches!(seen.first(), Some(Some(n)) if (*n > 0) == !source.contains("sku")), "{source}: {seen:?}");
+        }
+    }
+
+    #[test]
+    fn the_hint_is_the_join_under_the_filter_s_alone() {
+        // `_2` is a right binder key of both joins: the hint is the outer
+        // one's, and the inner one -- its left source, which the evaluator
+        // would otherwise run as the first stage of a pipeline -- never sees
+        // it.
+        let context = r#"RECORD(
+            "A", LIST(RECORD("id", 2, "bid", 4, "cid", 2), RECORD("id", 4, "bid", 3, "cid", 3)),
+            "B", LIST(RECORD("id", 2, "cid", 1), RECORD("id", 4, "cid", 3), RECORD("id", 4, "cid", 4)),
+            "C", LIST(RECORD("id", 3, "sku", "P")))"#;
+        let source = r#"A .> LINK_LEFT(B, _1["bid"] == _2["id"]) .> LINK_LEFT(C, L, R, L["B"]["cid"] == R["id"]) .> FILTER(IS_NULL(_["_2"]["id"]))"#;
+        seen();
+        let (as_written, through_a_variable) = both_forms_in(context, source);
+        assert_eq!(as_written, through_a_variable);
+        assert_eq!(seen(), [Some(1)]);
+    }
+
+    #[test]
+    fn declines_what_is_not_the_right_row() {
+        for source in [
+            // not a right binder key of this join: the left one, a mixed-case
+            // name, a relation name under explicit binders
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["p"]["id"]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["iI"]["id"]))"#,
+            r#"LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))"#,
+            // binders spelled alike
+            r#"LINK_LEFT(P, I, X, x, X["id"] == x["product_id"]) .> FILTER(IS_NULL(_["x"]["id"]))"#,
+        ] {
+            seen();
+            let (as_written, through_a_variable) = both_forms(source);
+            assert_eq!(as_written, through_a_variable, "{source}");
+            let seen = seen();
+            assert!(seen.is_empty() || seen == [None], "{source}: {seen:?}");
+        }
+    }
+
+    #[test]
+    fn is_offered_only_for_its_shape() {
+        for source in [
+            // not IS_NULL first, not a literal member or field, not the
+            // FILTER's own element
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(TRUE AND IS_NULL(_["i"]["id"]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(NOT IS_NULL(_["i"]["id"]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_[LOWER("I")]["id"]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"][LOWER("ID")]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(r, IS_NULL(_["i"]["id"]))"#,
+            // an inner join, and a FILTER handed conjuncts by a join above
+            r#"P .> LINK(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))"#,
+            r#"P .> LINK_LEFT(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"])) .> LINK(I, L, R, L["p"]["id"] == R["product_id"]) .> FILTER(_["p"]["id"] > 0) .> MAP(1)"#,
+        ] {
+            seen();
+            let context = crate::evaluate(CONTEXT, None).unwrap();
+            let _ = crate::compile(source).and_then(|mut program| program.run(Some(context)));
+            assert_eq!(seen(), [], "{source}");
+        }
+    }
+
+    #[test]
+    fn holds_the_real_collection_limit() {
+        // The join as written builds every matched row before the FILTER
+        // drops it, and raises E_RANGE when they are more than MAX_COLLECTION:
+        // a row the rejection never builds still counts, at the same place.
+        let side = 1000;
+        assert_eq!(side * side, crate::limits::MAX_COLLECTION);
+        let rows = |n: usize, fields: &[(&str, i64)]| {
+            Value::list((0..n).map(|_| Value::record_from_entries(
+                fields.iter().map(|(k, v)| Entry { key: k.to_string(), val: Value::int(*v) }).collect(),
+            )).collect())
+        };
+        let source = r#"P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))"#;
+        let run = |left: usize| {
+            let context = Value::record_from_entries(vec![
+                Entry { key: "I".into(), val: rows(side, &[("id", 5), ("k", 1)]) },
+                Entry { key: "P".into(), val: rows(left, &[("id", 1)]) },
+            ]);
+            crate::compile(source).unwrap().run(Some(context))
+        };
+        assert_eq!(run(side).unwrap().dump().unwrap(), "-");
+        let error = run(side + 1).unwrap_err();
+        assert_eq!((error.code, error.pos.col), ("E_RANGE", source.find("LINK_LEFT").unwrap() + 1));
+    }
+
+    #[test]
+    fn a_key_writes_only_through_a_function_that_is_not_shipped() {
+        // SORT/TOP/BUCKET copy what they collect before the next key may
+        // write (may_write) only when a key can: never over shipped builtins.
+        let key = |source: &str| crate::compile(source).unwrap().ast().clone();
+        assert!(!may_write(&key(r#"ABS(_["k"]) + COUNT(LIST(1))"#)));
+        assert!(may_write(&key(r#"ABS(T_POKE())"#)));
+        assert!(may_write(&key(r#"(X = 1; 2)"#)));
+    }
+}

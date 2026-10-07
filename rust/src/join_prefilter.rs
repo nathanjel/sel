@@ -58,6 +58,20 @@ pub struct JoinPrefilter {
     pub obligations: Vec<JoinObligation>,
 }
 
+/// What a FILTER directly over a LINK_LEFT hands the join when its predicate
+/// opens with `IS_NULL(_["member"]["field"])` (right_null_test): the join may
+/// skip building the joined rows of the right rows that conjunct is FALSE on
+/// (crate::builtins::structure, right_null_rejects). Nothing comes back: the
+/// FILTER still runs its whole predicate over every row the join builds.
+#[derive(Clone, Debug)]
+pub struct JoinRightNull {
+    pub member: String,
+    pub field: String,
+    /// Nothing observes the FILTER's keys: not the step after it (its body's
+    /// `keys_unobserved`), and not the body itself (no `_K` in it).
+    pub deep: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct JoinReport {
     pub applied: HashSet<usize>,
@@ -96,15 +110,11 @@ pub fn join_pure_source(node: &Node) -> bool {
         NodeType::Un => node.l.as_ref().is_none_or(|l| join_pure_source(l)),
         NodeType::List => node.items.iter().all(join_pure_source),
         NodeType::Call => {
-            // A host's own function may do anything (JS, Python): only the
-            // shipped builtins are pure.
-            if node.s == "ABORT" {
+            // An application's function may do anything, however it was
+            // installed (a define()d native included): only the shipped
+            // builtins are pure (crate::builtins::call_may_have_effects).
+            if node.s == "ABORT" || crate::builtins::call_may_have_effects(node) {
                 return false;
-            }
-            let spec = node.spec.clone().or_else(|| crate::builtins::lookup_spec(&node.s));
-            match spec {
-                Some(spec) if matches!(spec.func, crate::builtins::SpecFn::Native(_)) => {}
-                _ => return false,
             }
             node.items.iter().all(join_pure_source)
         }
@@ -223,6 +233,31 @@ pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {
         });
     }
     out
+}
+
+/// `(member, field)` when `conjunct` is `IS_NULL(binder["member"]["field"])`
+/// -- the shipped IS_NULL of a literal field of a literal member of the
+/// FILTER's element, the binder matched as leading_field_conjuncts matches it
+/// -- else None. Over a LINK_LEFT, a member that is one of the join's right
+/// binder keys is the right row (spec §7.4).
+pub fn right_null_test(conjunct: &Node, binder: &str) -> Option<(String, String)> {
+    if conjunct.t != NodeType::Call
+        || conjunct.s != "IS_NULL"
+        || conjunct.items.len() != 1
+        || crate::builtins::call_may_have_effects(conjunct)
+    {
+        return None;
+    }
+    let literal_key = |n: &Node| match (n.t, n.r.as_deref()) {
+        (NodeType::Index, Some(key)) if key.t == NodeType::Text => Some(key.s.clone()),
+        _ => None,
+    };
+    let field = &conjunct.items[0];
+    let field_key = literal_key(field)?;
+    let member = field.l.as_deref()?;
+    let member_key = literal_key(member)?;
+    let element = member.l.as_deref()?;
+    (element.t == NodeType::Var && element.s == binder).then_some((member_key, field_key))
 }
 
 pub fn join_read_self(node: &Node, names: &HashSet<String>, binder: &str) -> Node {

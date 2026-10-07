@@ -176,9 +176,10 @@ impl Node {
 // - assignment targets: whether a target's index expressions are read
 //   (they run before the store, SPEC §5.7) and whether its root is a read
 //   (only a compound `+=` reads it) or a definition.
-// - application calls: a call the manifest does not list, or one registered
-//   as a host function, may do anything (crate::builtins::structure's
-//   may_write); a walker that asks "can this write?" counts it.
+// - application calls: any call but a shipped builtin's own definition --
+//   one registered as a host function, a define() beside the manifest's, a
+//   Spec a node carries -- may do anything; a walker that asks "can this
+//   write?" asks crate::builtins::call_may_have_effects, the one classifier.
 // - builtins are recognised by name (the manifest), never by where their
 //   implementation lives, so a vendored copy of the crate classifies alike.
 // The scope-aware walkers: program::collect_dependencies, sql::hybrid's

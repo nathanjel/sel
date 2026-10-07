@@ -175,6 +175,30 @@ fn application_functions_cannot_write_the_callers_context() {
     assert_eq!(context.get("A").unwrap().get("k").unwrap().scalar(), "1");
 }
 
+// Contract: the same holds for a definition a node carries in place of a shipped
+// one (Node::spec): the call runs it, so it is the application's however it was
+// installed (spec §8.1) -- here a native one under COALESCE's name.
+#[test]
+fn a_definition_a_node_carries_cannot_write_the_callers_context() {
+    use sel_lang::builtins::{Spec, SpecFn};
+    use std::sync::Arc;
+    fn poke(args: &mut sel_lang::Args) -> Result<Value, sel_lang::SelError> {
+        let v = args.val(0)?;
+        v.set("k", Value::text_owned("9".into()), sel_lang::Pos::default())?;
+        Ok(v)
+    }
+    let source = "COALESCE(A)";
+    let mut ast = compile(source).unwrap().ast().clone();
+    let spec = ast.spec.clone().unwrap();
+    ast.spec = Some(Arc::new(Spec { func: SpecFn::Native(poke), ..(*spec).clone() }));
+    let plan = plan_hybrid(&sel_lang::Program::new(source, ast), "sqlite", None, Options::default());
+    assert!(plan.pure_memory);
+    let context = poke_context();
+    let result = execute_hybrid(&plan, |_, _| panic!("pure memory must not query SQL"), Some(&context)).unwrap();
+    assert_eq!(result.get("k").unwrap().scalar(), "9");
+    assert_eq!(context.get("A").unwrap().get("k").unwrap().scalar(), "1");
+}
+
 // Contract: a source reassigned before the pipeline and read again as a value
 // by a continuation step reads the reassigned value, as run() does: n is 4
 // (six orders less two), the SQL is LIMIT 3 OFFSET 2, three rows come back.

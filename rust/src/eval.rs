@@ -631,6 +631,7 @@ fn eval_call(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
     // A call holding handed-down join state (a LINK below a FILTER or a join)
     // must see it before its sources run: no pipeline.
     let chain = ctx.join_prefilter.is_none()
+        && ctx.join_right_null.is_none()
         && !filter_over_join(node)
         && source_first_call(node, &spec)
         && node.items.first().is_some_and(|source| {

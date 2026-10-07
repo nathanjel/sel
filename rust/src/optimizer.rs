@@ -774,12 +774,15 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
 // This proof concerns mutation, not errors. FILTER still completes and checks
 // every selected row's copy depth before MAP starts, preserving error order.
 // The call allow-list is this proof's own (builtins known to build or read
-// without aliasing their arguments), not a manifest class.
+// without aliasing their arguments), not a manifest class; a call on it must
+// still be the shipped builtin, not a definition of the application's that a
+// node carries under its name (crate::builtins::call_may_have_effects).
 fn read_only_expression(node: &Node) -> bool {
     if node.t == NodeType::Assign { return false; }
-    if node.t == NodeType::Call && !matches!(node.s.as_str(),
+    if node.t == NodeType::Call && (!matches!(node.s.as_str(),
         "RECORD" | "LIST" | "IF" | "COND" | "COALESCE" | "ABS" | "SIGN" |
-        "ROUND" | "CEIL" | "FLOOR" | "TRUNC" | "POWER" | "MIN" | "MAX") {
+        "ROUND" | "CEIL" | "FLOOR" | "TRUNC" | "POWER" | "MIN" | "MAX")
+        || crate::builtins::call_may_have_effects(node)) {
         return false;
     }
     node.l.as_ref().is_none_or(|n| read_only_expression(n))

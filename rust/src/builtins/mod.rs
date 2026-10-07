@@ -113,10 +113,51 @@ fn define(
 }
 
 /// A builtin is whatever registry() registers natively -- core, and any builtin
-/// define()d beside it -- not only what the manifest lists.
+/// define()d beside it -- not only what the manifest lists. This is the
+/// registration question (register_function's replacement rule, host_arity),
+/// never the effects one: see may_have_effects.
 fn is_builtin(key: &str) -> bool {
     lookup_builtin(key).is_some()
         || registry().read().unwrap().get(key).is_some_and(|s| matches!(s.func, SpecFn::Native(_)))
+}
+
+/// The effects classification every analysis asks (spec/SPEC.md §8.1): whether
+/// a call to `name` may keep, read or change values beyond its result, so that
+/// no copy may be left out around it and nothing may be evaluated out of its
+/// written order across it. Only a shipped builtin -- a name the manifest
+/// lists, which registry() defines at startup and nothing replaces
+/// (register_function refuses a builtin's name, define() a second definition)
+/// -- is assumed not to. Every other function is the application's, however it
+/// was installed: register_function, or a define() beside the manifest's,
+/// strict, lazy or binding. Defining a function below the public API is not a
+/// declaration that it is pure, and SpecFn::Native says only how it is called.
+pub fn may_have_effects(name: &str) -> bool {
+    // Names reach here canonical (upper case) from the parser: no allocation
+    // unless one does not.
+    lookup_builtin(name).is_none()
+        && (!name.bytes().any(|b| b.is_ascii_lowercase()) || lookup_builtin(&name.to_ascii_uppercase()).is_none())
+}
+
+/// may_have_effects of what a call node runs: the definition it carries
+/// (Node::spec, which the evaluator calls), else the registry's for its name.
+/// A carried definition is shipped only when it is the very one registry()
+/// made for a manifest name at startup; a Spec built beside it -- host or
+/// native, under any name -- is the application's.
+pub fn call_may_have_effects(node: &crate::ast::Node) -> bool {
+    match &node.spec {
+        Some(spec) => !shipped_specs().get(spec.name.as_str()).is_some_and(|s| Arc::ptr_eq(s, spec)),
+        None => may_have_effects(&node.s),
+    }
+}
+
+/// The definitions registry() made for the manifest's names, which nothing
+/// replaces afterwards: read once, without the registry's lock.
+fn shipped_specs() -> &'static HashMap<&'static str, Arc<Spec>> {
+    static SHIPPED: OnceLock<HashMap<&'static str, Arc<Spec>>> = OnceLock::new();
+    SHIPPED.get_or_init(|| {
+        let reg = registry().read().unwrap();
+        crate::manifest::builtins::BUILTINS.iter().map(|(name, _)| (*name, reg[*name].clone())).collect()
+    })
 }
 
 fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
@@ -218,6 +259,14 @@ fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
         // is a builtin like any other.
         #[cfg(test)]
         define(&mut m, "UNLISTED_ANY", 2, Some(3), true, true, structure::fn_any);
+        // And three that write into the context, strict, lazy and binding: a
+        // define()d function is no less the application's (may_have_effects).
+        #[cfg(test)]
+        {
+            define(&mut m, "T_POKE", 0, Some(0), false, false, tests::poke);
+            define(&mut m, "T_POKE_LAZY", 0, Some(0), true, false, tests::poke);
+            define(&mut m, "T_POKE_EACH", 2, Some(3), true, true, tests::poke);
+        }
 
         // spec/builtins.md: once registration is complete a host refuses to
         // start with a manifest name it never defined (register_native() above
@@ -334,6 +383,104 @@ mod tests {
         assert!(host_arity("UNLISTED_ANY").is_none());
         reset_host_functions();
         assert!(lookup_spec("UNLISTED_ANY").is_some());
+    }
+
+    /// T_POKE, T_POKE_LAZY and T_POKE_EACH, registry()'s test-only define()s: a
+    /// write an application's function may make (spec §3.4) -- the context's
+    /// X[1]["k"] becomes 9 -- and the answer "1".
+    pub(super) fn poke(args: &mut Args) -> Result<Value, SelError> {
+        if let Some(first) = args.ctx.root.get("X").and_then(|x| x.get("1")) {
+            first.set("k", Value::int(9), args.pos())?;
+        }
+        Ok(Value::text_owned("1".into()))
+    }
+
+    fn poke_context() -> Value {
+        crate::evaluate(r#"RECORD("X", LIST(RECORD("k", 1), RECORD("k", 2)), "Y", LIST(RECORD("j", 1, "b", "1")))"#, None)
+            .unwrap()
+    }
+
+    /// Programs around `call`, a call that pokes, with what each answers when
+    /// no copy was left out around the call and nothing ran out of its
+    /// written order: FILTER's rows are copies (the brief's probe; FILTER
+    /// copies outside a borrowing pipeline whatever it calls), TOP_BY collects
+    /// X[1] before the second key writes it (structure's may_write), and the
+    /// outer LINK reads its left source before the right one that pokes
+    /// (join_pure_source).
+    fn poke_probes(call: &str) -> [(String, &'static str); 3] {
+        [
+            (format!(r#"FILTER(X, TRUE)[{call}]["k"]"#), r#"t"1""#),
+            (format!(r#"TOP_BY(X, IF(_["k"] == 2, {call}, "0"), 2)[1]["k"]"#), r#"t"1""#),
+            (
+                format!(r#"X .> LINK(Y, _1["k"] == _2["j"]) .> LINK(LIST(RECORD("b", {call})), _["b"] == _2["b"]) .> FILTER(_["k"] == 1) .> MAP(1)"#),
+                r#"-{"1"=t"1"}"#,
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_function_defined_beside_the_manifest_brings_the_copies_back() {
+        // Spec §8.1: defining a function below the public API is not a
+        // declaration that it is pure -- strict, lazy or binding (the
+        // `F(LIST(1), _)` form of examples/fn-complex).
+        let mut wrong = Vec::new();
+        for call in ["T_POKE()", "T_POKE_LAZY()", "T_POKE_EACH(LIST(1), _)"] {
+            for (source, expected) in poke_probes(call) {
+                let out = crate::compile(&source).unwrap().run(Some(poke_context())).unwrap().dump().unwrap();
+                if out != expected {
+                    wrong.push(format!("{source} => {out}"));
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[cfg(feature = "sql")]
+    #[test]
+    fn a_function_defined_beside_the_manifest_cannot_write_the_hybrid_callers_context() {
+        use crate::sql::{execute_hybrid, plan_hybrid, Options};
+        for call in ["T_POKE()", "T_POKE_LAZY()", "T_POKE_EACH(LIST(1), _)"] {
+            let plan = plan_hybrid(&crate::compile(call).unwrap(), "sqlite", None, Options::default());
+            assert!(plan.pure_memory, "{call}");
+            let caller = poke_context();
+            let out = execute_hybrid(&plan, |_, _| panic!("pure memory must not query SQL"), Some(&caller)).unwrap();
+            assert_eq!(out.scalar(), "1", "{call}");
+            assert_eq!(caller.get("X").unwrap().get("1").unwrap().get("k").unwrap().scalar(), "1", "{call}");
+        }
+    }
+
+    #[test]
+    fn only_a_shipped_builtin_is_assumed_to_have_no_effects() {
+        assert!(!may_have_effects("FILTER"));
+        assert!(!may_have_effects("is_null"));
+        assert!(may_have_effects("T_NOT_DEFINED_ANYWHERE"));
+        // A define() beside the manifest is a builtin for registration (no SQL
+        // arity, not replaceable), but no less able to write.
+        for name in ["T_POKE", "t_poke_lazy", "T_POKE_EACH", "UNLISTED_ANY"] {
+            assert!(may_have_effects(name), "{name}");
+            assert!(host_arity(name).is_none(), "{name}");
+        }
+        // What a node runs is the definition it carries: registry()'s own for
+        // a shipped name, or one built beside it under the same name.
+        let program = crate::compile("IS_NULL(1)").unwrap();
+        assert!(!call_may_have_effects(program.ast()));
+        let mut bare = program.ast().clone();
+        bare.spec = None;
+        assert!(!call_may_have_effects(&bare));
+        let mut carried = program.ast().clone();
+        carried.spec = Some(Arc::new((**carried.spec.as_ref().unwrap()).clone()));
+        assert!(call_may_have_effects(&carried));
+    }
+
+    #[test]
+    fn a_shipped_builtin_still_leaves_the_copies_out() {
+        // A FILTER lends its rows to the MAP after it when both bodies call
+        // only shipped builtins (the optimiser's read_only_expression), and a
+        // join reads a shipped-only right source first.
+        let mut program = crate::compile(r#"X .> FILTER(_["k"] > 0) .> MAP(RECORD("v", _["k"]))"#).unwrap();
+        assert!(program.physical_ast().items[0].borrowed_filter);
+        assert!(crate::join_prefilter::join_pure_source(crate::compile(r#"LIST(RECORD("b", ABS(1)))"#).unwrap().ast()));
+        assert!(!crate::join_prefilter::join_pure_source(crate::compile(r#"LIST(RECORD("b", T_POKE()))"#).unwrap().ast()));
     }
 
     #[test]

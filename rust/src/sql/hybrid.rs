@@ -1304,9 +1304,10 @@ pub fn plan_hybrid(
 /// caller's variables; the ones the continuation writes into through a path
 /// (`X["k"] = ...`, anywhere in it) are deep copies, the rest are the caller's
 /// own values, shared, since nothing else in a builtin-only program writes. A
-/// program that calls an application function (one the manifest does not
-/// list) could write anything it is handed, so it gets a deep copy of the
-/// whole context, as does a root that is not a plain record.
+/// program that calls an application function (anything but a shipped
+/// builtin, however it was installed: crate::builtins::call_may_have_effects)
+/// could write anything it is handed, so it gets a deep copy of the whole
+/// context, as does a root that is not a plain record.
 fn continuation_root(caller: &Value, program: &Node) -> Result<Value, SelError> {
     let mut assigned = HashSet::new();
     let mut calls_application = false;
@@ -1345,7 +1346,7 @@ fn writes_of(node: &Node, assigned: &mut HashSet<String>, calls_application: &mu
                     target = t.l.as_deref();
                 }
             }
-            NodeType::Call if crate::manifest::lookup_builtin(&n.s).is_none() => *calls_application = true,
+            NodeType::Call if crate::builtins::call_may_have_effects(n) => *calls_application = true,
             _ => {}
         }
         pending.extend(n.children());
