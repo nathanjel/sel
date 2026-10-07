@@ -31,10 +31,10 @@ final class Context
     public ?array $joinPrefilterReport = null;
     /**
      * A FILTER directly over a LINK_LEFT whose predicate opens with
-     * IS_NULL(_["member"]["field"]) hands the join [member, field, whether
-     * nothing observes the joined rows' keys -- neither the FILTER's body nor
-     * the step after it] here: the join may skip building the joined rows of
-     * the right rows that conjunct is FALSE on
+     * IS_NULL(_["member"]["field"]) hands the join [member, field, deep --
+     * whether nothing observes the joined rows' keys, neither the FILTER's
+     * body nor the step after it] here: the join may skip building the
+     * joined rows of the right rows that conjunct is FALSE on
      * (Builtins\Structure::rightNullRejects).
      * @var array{0: string, 1: string, 2: bool}|null
      */

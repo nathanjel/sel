@@ -588,7 +588,10 @@ final class Core
                     $blocked = $own !== [] && $own[0]['fields'] === null && $own[0]['total'] === null;
                     $stages = $blocked ? [] : [[$binder, $own, 0]];
                     if ($handed !== null && !$blocked) foreach ($handed[0] as $stage) $stages[] = $stage;
-                    $deep = $handed === null ? !empty($body['keysUnobserved']) : true;
+                    // A body that reads _K observes the keys itself, whatever
+                    // the step after it does: rows dropped below must keep
+                    // their positions then.
+                    $deep = ($handed === null ? !empty($body['keysUnobserved']) : true) && !self::containsVar($body, '_K');
                     if ($stages !== []) {
                         $ctx->joinPrefilter = [$stages, $deep, $handed === null ? [] : $handed[2], $handed === null ? [] : $handed[3]];
                     } elseif ($handed === null && $src['name'] === 'LINK_LEFT' && $own !== []) {
@@ -597,13 +600,9 @@ final class Core
                         // right rows it is FALSE on before building their joined
                         // rows. Nothing is reported back -- the null-extended rows
                         // were never tested -- so the whole predicate still runs
-                        // over every row the join builds. A body that reads _K
-                        // sees the joined rows' keys itself, whatever step
-                        // follows: then the join numbers the rows it builds.
+                        // over every row the join builds.
                         $test = self::rightNullTest($own[0]['node'], $binder);
-                        if ($test !== null) {
-                            $ctx->joinRightNull = [$test[0], $test[1], $deep && !self::containsVar($body, '_K')];
-                        }
+                        if ($test !== null) $ctx->joinRightNull = [$test[0], $test[1], $deep];
                     }
                 }
                 try {
