@@ -4571,6 +4571,15 @@ struct JoinReport {
   bool errored = false;
   bool dropped = false;
 };
+// A FILTER directly over a LINK_LEFT whose predicate opens with
+// IS_NULL(_["member"]["field"]) hands the join this: the join may skip
+// building the joined rows of the right rows that conjunct is FALSE on
+// (join_right_null_rejects). Nothing is reported back.
+struct JoinRightNull {
+  std::string member;
+  std::string field;
+  bool deep = false;                    // nothing observes the FILTER's keys
+};
 
 // Context, Args and eval_node are at sel:: scope rather than in the anonymous
 // namespace above, and not by preference: Spec's `fn` is a
@@ -4610,6 +4619,9 @@ struct Context {
   // an error, and whether it dropped any (SEL-0052, SEL-0054).
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
+  // A FILTER over a LINK_LEFT that opens with IS_NULL of a right member's
+  // field hands the join (member, field, keys unobserved) here.
+  std::optional<JoinRightNull> join_right_null;
   // Nothing in the tree being evaluated can write: it holds no assignment and
   // no call to an application's function (may_have_effects; Program::run
   // decides it once per program, writes_nothing). Assignment is the one way a
@@ -6657,11 +6669,37 @@ bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSi
   return true;
 }
 
+// Equi-LINK_LEFT: the right rows a FILTER that opens with
+// IS_NULL(_["member"]["field"]) drops wherever they are joined, into
+// REJECTED; false when the join cannot tell. MEMBER must be one of this
+// join's right binder keys -- the binder, its lower case or `_2`, each bound
+// in every joined row to the right row as bucketed (spec §7.4) -- and the two
+// binders must not be spelled alike. A row is rejected only when the read
+// certainly yields a non-NULL value: one without the field (E_NO_KEY in the
+// FILTER) or with a NULL there is kept, for the FILTER to decide. Its joined
+// rows are then never built; its left row stays matched, so it gets no
+// null-extended row in their place.
+template <typename Buckets>
+bool join_right_null_rejects(const JoinRightNull& hint, const std::string& b1, const std::string& b2,
+                             const Buckets& buckets, std::unordered_set<const void*>& rejected) {
+  if (ascii_upper(b1) == ascii_upper(b2)) return false;
+  if (hint.member != b2 && hint.member != ascii_lower(b2) && hint.member != "_2") return false;
+  for (const auto& [key, bucket] : buckets) {
+    for (const Value& right : bucket) {
+      const Value* value = right.get(hint.field);
+      if (value && !value->is_null()) rejected.insert(Internals::identity(right));
+    }
+  }
+  return true;
+}
+
 Value do_link(Args& a, Context& ctx, bool left_join) {
   // Taken before anything else is evaluated, so a LINK nested in this one's
   // sources cannot pick it up by accident; it is handed down on purpose below.
   std::optional<JoinPrefilter> prefilter = std::move(ctx.join_prefilter);
   ctx.join_prefilter.reset();
+  std::optional<JoinRightNull> right_null = std::move(ctx.join_right_null);
+  ctx.join_right_null.reset();
   const int count = a.count();
   if (count != 3 && count != 5) unreachable_arity(a.name());
   const Node& left_node = a.node(0);
@@ -6943,8 +6981,15 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // key was computed. They stay in their buckets: a left row still counts
     // them towards the numbering, and one kept on an error joins them.
     std::unordered_set<const void*> rejected;
-    const bool rejecting = !right_prefix.empty();
-    if (rejecting) {
+    // A LINK_LEFT rejects right rows only for a FILTER that opens with
+    // IS_NULL (join_right_null_rejects), and then drops no left row: the
+    // position counts every joined row as written, built or not, and the
+    // collection limit is held to that count, where the join as written would
+    // have raised (spec §6.4).
+    const bool logical = right_null && left_join && !prefilter &&
+                         join_right_null_rejects(*right_null, b1, b2, buckets, rejected);
+    const bool rejecting = !right_prefix.empty() || logical;
+    if (!right_prefix.empty()) {
       std::vector<std::pair<std::string, Value>> right_frame;
       for (const std::string& binder : binders) right_frame.emplace_back(binder, Value::none());
       const bool before = report.errored;
@@ -6964,7 +7009,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // rows a dropped row stood for), unless nothing observes it (deep). When
     // the join key is a literal field of the row, a row that HAS it may be
     // rejected before its key is computed.
-    const bool numbered = (!prefix.empty() || rejecting) && !deep;
+    const bool numbered = (!prefix.empty() || rejecting) && !(logical ? right_null->deep : deep);
     std::vector<Value::Entry> keyed;
     bool dropped = false;
     std::size_t position = 1;
@@ -7026,9 +7071,12 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           return;
         }
         const auto emit = [&](Value joined) {
-          // The rows a join builds are capped as they appear (spec §6.4).
-          cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1,
-                         a.pos());
+          // The rows a join builds are capped as they appear (spec §6.4), or,
+          // when it skips some it would have built, as the rows as written
+          // count (logical, checked below before they are built).
+          if (!logical) {
+            cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1, a.pos());
+          }
           if (numbered) keyed.emplace_back(std::to_string(position), std::move(joined));
           else output.push_back(std::move(joined));
           ++position;
@@ -7037,6 +7085,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           // A left row kept on an error meets every right row: its joined
           // rows raise in the FILTER, in order, where they would have.
           const bool skip = rejecting && asked == 0;
+          if (logical) cap_collection(static_cast<u128>(position - 1 + it->second.size()), a.pos());
           for (const Value& right : it->second) {
             if (skip && rejected.count(Internals::identity(right))) {
               dropped = true;
@@ -7046,6 +7095,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
             emit(projector(row, &right));
           }
         } else if (left_join) {
+          if (logical) cap_collection(static_cast<u128>(position), a.pos());
           emit(projector(row, nullptr));
         }
       });
@@ -7350,6 +7400,26 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
     out.push_back(std::move(entry));
   }
   return out;
+}
+
+// What a FILTER over a LINK_LEFT hands its join (JoinRightNull) when CONJUNCT
+// is `IS_NULL(binder["member"]["field"])` -- the shipped IS_NULL of a literal
+// field of a literal member of the FILTER's element, the element matched as
+// leading_field_conjuncts matches it. Over a LINK_LEFT, a member that is one
+// of the join's right binder keys is the right row (spec §7.4).
+std::optional<JoinRightNull> join_right_null_test(const Node* conjunct, const std::string& binder, bool deep) {
+  if (!conjunct || conjunct->t != NT::Call || conjunct->s != "IS_NULL" || conjunct->items.size() != 1 ||
+      may_have_effects(conjunct->spec)) {
+    return std::nullopt;
+  }
+  const Node* field = conjunct->items.front().get();
+  if (!field || field->t != NT::Index || !field->r || field->r->t != NT::Text) return std::nullopt;
+  const Node* member = field->l.get();
+  if (!member || member->t != NT::Index || !member->r || member->r->t != NT::Text || !member->l ||
+      member->l->t != NT::Var || member->l->s != binder) {
+    return std::nullopt;
+  }
+  return JoinRightNull{member->r->s, field->r->s, deep};
 }
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
@@ -7875,15 +7945,27 @@ void register_aggregates() {
                     pre.obligations = handed->obligations;
                   }
                   pre.deep = handed ? true : written.keys_unobserved;
-                  if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
+                  if (!pre.stages.empty()) {
+                    ctx.join_prefilter = std::move(pre);
+                  } else if (!handed && src.s == "LINK_LEFT") {
+                    // A predicate that opens with IS_NULL of a right member's
+                    // field (S6's unsold products): the join may reject the
+                    // right rows it is FALSE on before building their joined
+                    // rows. Nothing is reported back -- the null-extended rows
+                    // were never tested -- so the whole predicate still runs
+                    // over every row the join builds.
+                    ctx.join_right_null = join_right_null_test(own_nodes.front(), binder, pre.deep);
+                  }
                 }
                 try {
                   (void)a.val(0);
                 } catch (...) {
                   ctx.join_prefilter.reset();
+                  ctx.join_right_null.reset();
                   throw;
                 }
                 ctx.join_prefilter.reset();
+                ctx.join_right_null.reset();
                 // The join's report -- which conjuncts every row that came up
                 // has passed, whether a row was kept on an error, and whether
                 // any row was dropped -- goes up as it is.
