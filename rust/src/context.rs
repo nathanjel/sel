@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::join_prefilter::{JoinPrefilter, JoinReport};
+use crate::join_prefilter::{JoinPrefilter, JoinReport, JoinRightNull};
 use crate::value::Value;
 
 /// One scope of binder names (`_`, `_K`, a named binder, a LINK's table
@@ -54,6 +54,9 @@ pub struct Context {
     pub depth: usize,
     pub join_prefilter: Option<JoinPrefilter>,
     pub join_prefilter_report: Option<JoinReport>,
+    /// A FILTER directly over a LINK_LEFT, opening with
+    /// IS_NULL(_["member"]["field"]), leaves this for the join to take.
+    pub join_right_null: Option<Box<JoinRightNull>>,
 }
 
 impl Context {
@@ -64,6 +67,7 @@ impl Context {
             depth: 0,
             join_prefilter: None,
             join_prefilter_report: None,
+            join_right_null: None,
         }
     }
 
