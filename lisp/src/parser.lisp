@@ -48,9 +48,15 @@
 (declaim (inline shipped-call-p))
 (defun shipped-call-p (node)
   "Whether the call NODE names a function the library ships -- the one answer to
-\"may this call do something other than return a value?\" (an application's
-function may write into its argument, or anything else). Read from the spec the
-node was compiled with, so it costs no table lookup."
+\"may this call do something other than return a value?\" that every analysis
+asks: the copies left out (NODE-MAY-WRITE-P), the join's sources evaluated out
+of order (JOIN-PURE-SOURCE-P, LINK-PRED-PURE-P), the IS_NULL a LINK_LEFT may
+test on its right rows (RIGHT-NULL-TEST), the hybrid continuation's context
+(CONTINUATION-EFFECTS). Shipped is a name spec/builtins.json knows,
+defined by the library itself while it loaded (SPEC-SHIPPED); any other
+function is an application's, however it was installed, and may write into its
+argument or anything else it can reach (spec §8.1). Read from the spec the node
+was compiled with, so it costs no table lookup."
   (let ((spec (node-spec node)))
     (and spec (spec-shipped spec))))
 

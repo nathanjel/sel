@@ -22,7 +22,8 @@
 ;;; Whether evaluating NODE might write into a value: it holds an assignment or
 ;;; calls a function the library does not ship (SHIPPED-CALL-P). A collector copies an element when it collects it
 ;;; (SPEC 3.4); while nothing below the body can write, deferring the copy to the
-;;; end is unobservable, so only a body that might write copies at collection.
+;;; end is unobservable, so only a body that might write copies at collection --
+;;; and only a body that cannot leaves a fresh source's elements uncopied.
 ;;; Iterative: a body can be a flat chain as long as the source.
 (defun node-may-write-p (node)
   (let ((stack (list node)))
@@ -180,12 +181,32 @@ stops the walk and becomes the result."
 ;;; join directly under this FILTER, change its keys, so they are allowed only
 ;;; where nothing observes them (KEYS-UNOBSERVED, stamped by the physical
 ;;; optimiser). A stage is (binder jconjs above): ABOVE counts the joins
-;;; between its FILTER and the join testing it. The two helpers run once per
+;;; between its FILTER and the join testing it. The helpers run once per
 ;;; FILTER call, and only over a join.
+
+(defun right-null-test (conjunct binder)
+  "(member . field) when CONJUNCT is `IS_NULL(binder[\"member\"][\"field\"])` --
+the shipped IS_NULL of a literal field of a literal member of the FILTER's
+element -- else NIL. Over a LINK_LEFT, a member that is one of the join's right
+binder keys is the right row (spec §7.4), and the join may skip building the
+joined rows of the right rows the conjunct is FALSE on (structure.lisp,
+RIGHT-NULL-REJECTS)."
+  (when (and conjunct (eq (node-kind conjunct) :call) (string= (node-s conjunct) "IS_NULL")
+             (= (length (node-items conjunct)) 1) (shipped-call-p conjunct))
+    (let* ((field (first (node-items conjunct)))
+           (row (and field (eq (node-kind field) :index) (node-l field))))
+      (when (and row (node-r field) (eq (node-kind (node-r field)) :text)
+                 (eq (node-kind row) :index)
+                 (node-r row) (eq (node-kind (node-r row)) :text)
+                 (node-l row) (eq (node-kind (node-l row)) :var)
+                 (string= (node-s (node-l row)) binder))
+        (cons (node-s (node-r row)) (node-s (node-r field)))))))
 
 (defun filter-offer-to-join (a ctx written handed)
   "This FILTER's leading field conjuncts, put in CTX's prefilter together with
-the HANDED stages for the join below; returns them."
+the HANDED stages for the join below; returns them. With none to put there, a
+LINK_LEFT directly below may be handed the predicate's leading IS_NULL of a
+right member's field instead (RIGHT-NULL-TEST)."
   (let* ((binder (if (= (args-count a) 3) (args-symbol a 1) "_"))
          (own (leading-field-conjuncts written binder))
          ;; A first conjunct that is neither a field test nor total ends every
@@ -194,13 +215,29 @@ the HANDED stages for the join below; returns them."
                     (and c (not (jconj-field-only c)) (not (jconj-has-total c)))))
          (stages (unless blocked
                    (cons (list binder own 0)
-                         (and handed (join-prefilter-stages handed))))))
-    (when stages
-      (setf (context-join-prefilter ctx)
-            (make-join-prefilter :stages stages
-                                 :deep (if handed t (and (node-keys-unobserved written) t))
-                                 :above (and handed (join-prefilter-above handed))
-                                 :obligations (and handed (join-prefilter-obligations handed)))))
+                         (and handed (join-prefilter-stages handed)))))
+         (deep (if handed t (and (node-keys-unobserved written) t))))
+    (cond (stages
+           (setf (context-join-prefilter ctx)
+                 (make-join-prefilter :stages stages
+                                      :deep deep
+                                      :above (and handed (join-prefilter-above handed))
+                                      :obligations (and handed (join-prefilter-obligations handed)))))
+          ((and (null handed) own (string= (node-s (args-node a 0)) "LINK_LEFT"))
+           ;; A predicate that opens with IS_NULL of a right member's field
+           ;; (S6's unsold products): the join may reject the right rows it is
+           ;; FALSE on before building their joined rows. Nothing is reported
+           ;; back -- the null-extended rows were never tested -- so the whole
+           ;; predicate still runs over every row the join builds.
+           (let ((test (right-null-test (jconj-node (first own)) binder)))
+             (when test
+               ;; The rows the join leaves out shift the keys of the rows after
+               ;; them unless it numbers the rows as written: it need not only
+               ;; where no later step sees the keys (DEEP) and the predicate
+               ;; does not read them either -- its `_K` is the joined row's key.
+               (setf (context-join-right-null ctx)
+                     (list (car test) (cdr test)
+                           (and deep (not (node-contains-var-p written "_K")))))))))
     own))
 
 (defun filter-unapplied-body (own report)
@@ -225,13 +262,18 @@ the source's order; NIL when it applied them all."
            (written (args-node a (1- (args-count a))))
            (handed (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
            (src (args-node a 0))
-           (src-fresh (node-fresh-p src))
+           ;; A source built fresh holds elements nothing else does, so the
+           ;; ones kept need no copy -- unless the predicate may write: an
+           ;; application's function it hands an element to may keep it, and
+           ;; change it on a later row, after it was collected (SPEC 3.4).
+           (src-fresh (and (node-fresh-p src) (not (node-may-write-p written))))
            (over-join (and src (eq (node-kind src) :call)
                            (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=)
                            t))
            (own (when over-join (filter-offer-to-join a ctx written handed))))
       (unwind-protect (args-val a 0)
-        (setf (context-join-prefilter ctx) nil))
+        (setf (context-join-prefilter ctx) nil
+              (context-join-right-null ctx) nil))
       ;; The join's report -- which conjuncts every row that came up has
       ;; passed, whether a row was kept on an error, and whether any row was
       ;; dropped -- goes up as it is.
@@ -421,8 +463,7 @@ sort, and FORCED-DIR is SORT's and SORT_DESC's own direction."
       (values binder (and key (args-node a key)) direction))))
 
 (defun do-sort (a ctx forced-dir forms)
-  (let* ((val (args-val a 0))
-         (fresh (node-fresh-p (args-node a 0))))
+  (let ((val (args-val a 0)))
     (multiple-value-bind (binder body direction) (decode-sort-call a forms forced-dir nil)
       ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
       ;; NULL and an empty list have nothing to sort; the direction was checked
@@ -431,7 +472,10 @@ sort, and FORCED-DIR is SORT's and SORT_DESC's own direction."
         (return-from do-sort (make-list-value nil)))
       (let ((val (snapshot-source val))
             (desc (string= direction "DESC"))
-            (indexed '()))
+            (indexed '())
+            ;; As FILTER's: a key that may write may keep an element of a fresh
+            ;; source and change it after it was collected.
+            (fresh (and (node-fresh-p (args-node a 0)) (not (node-may-write-p body)))))
         (if (null body)
             (do-elements (item i) val
               (push (make-copied-sort-item item item i fresh) indexed))

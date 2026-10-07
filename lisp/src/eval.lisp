@@ -16,7 +16,12 @@
   ;; it kept a row on an error and whether it dropped any, a JOIN-REPORT
   ;; (builtins/structure.lisp, DO-LINK; SEL-0052, SEL-0054).
   (join-prefilter nil)
-  (join-prefilter-report nil))
+  (join-prefilter-report nil)
+  ;; A FILTER directly over a LINK_LEFT whose predicate opens with
+  ;; IS_NULL(_["member"]["field"]) hands the join (member field keys-unobserved)
+  ;; here: the join may skip building the joined rows of the right rows that
+  ;; conjunct is FALSE on (builtins/structure.lisp, RIGHT-NULL-REJECTS).
+  (join-right-null nil))
 
 ;;; The arithmetic operators on decimals, by BINARY-OP-CODE's keyword: one
 ;;; dispatch for EVAL-BINARY, compound assignment and the optimiser's constant
