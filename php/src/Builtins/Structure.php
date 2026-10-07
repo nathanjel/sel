@@ -1062,6 +1062,37 @@ final class Structure
     }
 
     /**
+     * Equi-LINK_LEFT: the right rows a FILTER that opens with
+     * IS_NULL(_["member"]["field"]) drops wherever they are joined, by
+     * spl_object_id as the inner join's right rejection keys them, or null
+     * when the join cannot tell. The member must be one of this join's right
+     * binder keys -- the binder, its lower case or `_2`, each bound in every
+     * joined row to the right row as bucketed (spec §7.4, makeJoinedRow) --
+     * and the two binders must not be spelled alike. A row is rejected only
+     * when the read certainly yields a non-NULL value: one without the field
+     * (E_NO_KEY in the FILTER) or with a NULL there is kept, for the FILTER to
+     * decide. Its joined rows are then never built; its left row stays
+     * matched, so it gets no null-extended row in their place.
+     *
+     * @param array{0:string,1:string,2:bool} $rightNull
+     * @param array<int|string, list<Value>> $buckets
+     * @return array<int,true>|null
+     */
+    private static function rightNullRejects(string $b1, string $b2, array $rightNull, array $buckets): ?array
+    {
+        [$member, $field] = $rightNull;
+        if (Utf8::upper($b1) === Utf8::upper($b2) || !in_array($member, self::binderKeys($b2, '_2'), true)) return null;
+        $rejected = [];
+        foreach ($buckets as $bucket) {
+            foreach ($bucket as $right) {
+                $value = $right->get($field);
+                if ($value !== null && !$value->isNull()) $rejected[spl_object_id($right)] = true;
+            }
+        }
+        return $rejected;
+    }
+
+    /**
      * Whether $node reads the element bound to $binders only as `r["f"]`
      * with f, upper-cased, not $avoid: then it reads the same on the element
      * as it arrives and on the element extended with its relation's name
@@ -1221,6 +1252,8 @@ final class Structure
         // purpose below.
         $prefilter = $ctx->joinPrefilter;
         $ctx->joinPrefilter = null;
+        $rightNull = $ctx->joinRightNull;
+        $ctx->joinRightNull = null;
         $count = $a->count();
         // The manifest refuses any other count when the program is compiled.
         if ($count !== 3 && $count !== 5) throw new \LogicException("unreachable: {$a->name} with {$count} arguments");
@@ -1475,6 +1508,12 @@ final class Structure
                 if ($errored) $prefix = array_slice($prefix, 0, $leftBeforeRight);
                 $errored = $errored || $before;
             }
+            if ($rightNull !== null && $leftJoin && $prefilter === null) {
+                $rejected = self::rightNullRejects($b1, $b2, $rightNull, $buckets);
+                // Whether nothing observes the FILTER's keys: then the kept
+                // rows need not carry the positions the rows as written had.
+                $deep = $rightNull[2];
+            }
 
             $leftAllowed = self::binderNames($b1, '_1');
             $leftExtractor = self::compileEquiKeyExtractor($equi['left'], $leftAllowed, $equi['numeric'], $sampleLeft);
@@ -1487,6 +1526,12 @@ final class Structure
                 // before its key is computed.
                 $keys = $deep ? null : [];
                 $position = 1;
+                // A LINK_LEFT rejects right rows only for a FILTER that opens
+                // with IS_NULL (rightNullRejects), and then drops no left row:
+                // $position counts every joined row as written, built or not,
+                // and the collection limit is held to that count, where the
+                // join as written would have raised (spec §6.4).
+                $logical = $leftJoin && $rejected !== null;
                 $fastField = null;
                 $el = $equi['left'];
                 if ($prefix !== [] && $deep && $el['t'] === 'index' && isset($el['obj']) && $el['obj']['t'] === 'var'
@@ -1581,6 +1626,7 @@ final class Structure
                                 $project->many($row, $matches, $output);
                                 $position += count($matches);
                             } else {
+                                if ($logical) $project->limitRows($position - 1 + count($matches));
                                 foreach ($matches as $right) {
                                     if ($skip !== null && isset($skip[spl_object_id($right)])) {
                                         $dropped = true;
@@ -1593,6 +1639,7 @@ final class Structure
                                 }
                             }
                         } elseif ($leftJoin) {
+                            if ($logical) $project->limitRows($position);
                             $output[] = $project($row, null);
                             if ($keys !== null) $keys[] = (string) $position;
                             $position++;
@@ -1602,7 +1649,7 @@ final class Structure
                     unset($top);
                     $ctx->popFrame();
                 }
-                $ctx->joinPrefilterReport = [$appliedIds, $errored, $dropped];
+                if ($prefilter !== null) $ctx->joinPrefilterReport = [$appliedIds, $errored, $dropped];
                 if ($keys !== null && count($keys) !== $position - 1) return Value::list($output, $keys);
                 return Value::list($output);
             }
@@ -1963,6 +2010,18 @@ final class JoinProjector
     {
         $this->emitted = 0;
         $this->limitPos = $pos;
+    }
+
+    /**
+     * The joined rows as written so far, built or not: a LINK_LEFT that skips
+     * building some of them still holds them to the cap where the join as
+     * written would have (Structure::rightNullRejects).
+     */
+    public function limitRows(int $rows): void
+    {
+        if ($rows > Limits::MAX_COLLECTION) {
+            Budget::checkCollection($rows, $this->limitPos, 'the LINK result');
+        }
     }
 
     private function tick(int $rows): void

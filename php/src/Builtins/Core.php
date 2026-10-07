@@ -362,6 +362,33 @@ final class Core
     }
 
     /**
+     * [member, field] when $conjunct is `IS_NULL(binder["member"]["field"])` --
+     * the shipped IS_NULL of a literal field of a literal member of the
+     * FILTER's element, the binder exactly as named -- else null. Over a
+     * LINK_LEFT, a member that is one of the join's right binder keys is the
+     * right row (spec §7.4), and the join may skip building the joined rows of
+     * the right rows the conjunct is FALSE on (Structure::rightNullRejects).
+     *
+     * @param array<string,mixed>|null $conjunct
+     * @return array{0:string,1:string}|null
+     */
+    private static function rightNullTest(?array $conjunct, string $binder): ?array
+    {
+        if ($conjunct === null || $conjunct['t'] !== 'call' || $conjunct['name'] !== 'IS_NULL'
+                || count($conjunct['args']) !== 1 || Registry::mayHaveEffects('IS_NULL')) {
+            return null;
+        }
+        $field = $conjunct['args'][0];
+        if ($field === null || $field['t'] !== 'index' || ($field['idx']['t'] ?? null) !== 'text') return null;
+        $member = $field['obj'] ?? null;
+        if ($member === null || $member['t'] !== 'index' || ($member['idx']['t'] ?? null) !== 'text'
+                || ($member['obj']['t'] ?? null) !== 'var' || $member['obj']['name'] !== $binder) {
+            return null;
+        }
+        return [(string) $member['idx']['v'], (string) $field['idx']['v']];
+    }
+
+    /**
      * Runs $visit per element with the binder and _K in scope. Returning a Value
      * from $visit stops the walk and becomes the result.
      */
@@ -564,12 +591,26 @@ final class Core
                     $deep = $handed === null ? !empty($body['keysUnobserved']) : true;
                     if ($stages !== []) {
                         $ctx->joinPrefilter = [$stages, $deep, $handed === null ? [] : $handed[2], $handed === null ? [] : $handed[3]];
+                    } elseif ($handed === null && $src['name'] === 'LINK_LEFT' && $own !== []) {
+                        // A predicate that opens with IS_NULL of a right member's
+                        // field (S6's unsold products): the join may reject the
+                        // right rows it is FALSE on before building their joined
+                        // rows. Nothing is reported back -- the null-extended rows
+                        // were never tested -- so the whole predicate still runs
+                        // over every row the join builds. A body that reads _K
+                        // sees the joined rows' keys itself, whatever step
+                        // follows: then the join numbers the rows it builds.
+                        $test = self::rightNullTest($own[0]['node'], $binder);
+                        if ($test !== null) {
+                            $ctx->joinRightNull = [$test[0], $test[1], $deep && !self::containsVar($body, '_K')];
+                        }
                     }
                 }
                 try {
                     $source = $a->val(0);
                 } finally {
                     $ctx->joinPrefilter = null;
+                    $ctx->joinRightNull = null;
                 }
                 // The join's report -- which conjuncts every row that came up
                 // has passed, whether a row was kept on an error, and whether
