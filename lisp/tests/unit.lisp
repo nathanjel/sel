@@ -3578,3 +3578,27 @@ right rows it rejected (NIL when it declined), in call order."
         (sel:sel-error (e)
           (is (string= "E_RANGE" (sel:sel-error-code e)))
           (is (= (1+ (search "LINK_LEFT" src)) (sel:sel-error-col e))))))))
+
+(test a-join-whose-key-may-write-tests-nothing-early
+  ;; The left key runs after the right rows were tested; a function SEL does
+  ;; not ship may change a right row there (spec §7.4, §8.1), which the FILTER
+  ;; then reads -- the item under `_2` is the element itself. Compared with
+  ;; the same predicate behind a leading TRUE, which no join tests early.
+  (dolist (shape '(("LINK_LEFT(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"])" "IS_NULL(_[\"_2\"][\"id\"])" nil)
+                  ("LINK(P, I, _1, _2, T_MUT(_1[\"id\"]) == _2[\"product_id\"])" "_[\"_2\"][\"id\"] < 8" "5")))
+    (destructuring-bind (join predicate value) shape
+      (flet ((answer (src)
+               (let* ((ctx (sel:evaluate "RECORD('P', LIST(RECORD('id', 1), RECORD('id', 2)),
+                                                 'I', LIST(RECORD('id', 10, 'product_id', 1),
+                                                           RECORD('id', 11, 'product_id', 2)))"))
+                      (item (sel:value-get (sel:value-get ctx "I") "2")))
+                 (sel:register-function "T_MUT" 1 1
+                                        (lambda (a)
+                                          (sel:value-set item "id" (if value (sel:make-text value) (sel:make-none)))
+                                          (sel:args-val a 0)))
+                 (unwind-protect (sel:value-dump (sel:run (sel:compile-source src) ctx))
+                   (sel::unregister-function "T_MUT")))))
+        (let ((as-written (answer (format nil "~a .> FILTER(~a) .> MAP(_[\"_1\"][\"id\"])" join predicate))))
+          (is (string= as-written (answer (format nil "~a .> FILTER(TRUE AND ~a) .> MAP(_[\"_1\"][\"id\"])" join predicate)))
+              "~a" join)
+          (is (string= "-{\"1\"=t\"2\"}" as-written) "~a: ~a" join as-written))))))

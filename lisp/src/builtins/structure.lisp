@@ -1109,6 +1109,13 @@ carry is promoted from neither, spec §7.4)."
   (let* ((prefilter (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
          (right-null (prog1 (context-join-right-null ctx) (setf (context-join-right-null ctx) nil)))
          (count (args-count a))
+         (pred-node (args-node a (if (= count 5) 4 2)))
+         ;; A predicate that may write can change a row between an early test
+         ;; and the FILTER's read of it (spec §7.4): then nothing is tested
+         ;; early here, and nothing is handed down.
+         (writes (and (or prefilter right-null) (node-may-write-p pred-node)))
+         (prefilter (unless writes prefilter))
+         (right-null (unless writes right-null))
          (stages (and prefilter (join-prefilter-stages prefilter)))
          (deep (and prefilter (join-prefilter-deep prefilter)))
          (above (and prefilter (join-prefilter-above prefilter)))
@@ -1135,7 +1142,6 @@ carry is promoted from neither, spec §7.4)."
          (jb2 (if (= count 5) (args-symbol a 3) (or (single-relation-name node1) "_2")))
          (b1-names (list jb1 "_1"))
          (b2-names (list jb2 "_2"))
-         (pred-node (args-node a (if (= count 5) 4 2)))
          (obligations (and prefilter (join-prefilter-obligations prefilter)))
          (jequi-left (nth-value 0 (try-extract-equi-keys pred-node jb1 jb2)))
          (right-side nil)

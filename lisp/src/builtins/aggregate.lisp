@@ -267,8 +267,13 @@ the source's order; NIL when it applied them all."
            ;; application's function it hands an element to may keep it, and
            ;; change it on a later row, after it was collected (SPEC 3.4).
            (src-fresh (and (node-fresh-p src) (not (node-may-write-p written))))
+           ;; An early test holds only while nothing can change what it read
+           ;; before this FILTER reads it (SPEC 7.4): a predicate that may
+           ;; write -- an assignment, or a call SEL does not ship -- is offered
+           ;; to no join, and the conjuncts handed from above stop here too.
            (over-join (and src (eq (node-kind src) :call)
                            (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=)
+                           (not (node-may-write-p written))
                            t))
            (own (when over-join (filter-offer-to-join a ctx written handed))))
       (unwind-protect (args-val a 0)
