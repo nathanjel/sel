@@ -1117,7 +1117,7 @@ final class Hybrid
     /**
      * The top-level names a program assigns to, or null when the whole context
      * must be copied: an assignment whose root is not a name, or a call of any
-     * function outside the builtin manifest. The answer is kept per Program and
+     * function outside the builtin manifest (Registry::mayHaveEffects). The answer is kept per Program and
      * per tree: a caller may replace the whole $ast (Program::$ast), and the
      * identity check below is what notices. Only a small tree is kept as the
      * key: the cache's share of $ast would make Program::__destruct dismantle a
@@ -1150,7 +1150,7 @@ final class Hybrid
                 } else {
                     $ok = false;
                 }
-            } elseif ($t === 'call' && !isset(BuiltinManifest::BUILTINS[$n['name'] ?? ''])) {
+            } elseif ($t === 'call' && Registry::mayHaveEffects((string) ($n['name'] ?? ''))) {
                 $ok = false;
             }
             foreach ($n as $k => $child) {

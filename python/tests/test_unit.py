@@ -1160,6 +1160,37 @@ def test_left_join_right_null_is_offered_only_for_its_shape(monkeypatch, src):
     assert seen == []
 
 
+@pytest.mark.parametrize('pipeline, value', [
+    ('LINK_LEFT(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"]))', None),
+    ('LINK(P, I, _1, _2, T_MUT(_1["id"]) == _2["product_id"]) .> FILTER(_["_2"]["id"] < 8)', '5'),
+])
+def test_a_join_whose_key_may_write_tests_nothing_early(pipeline, value):
+    """The left key runs after the right rows were tested; a function SEL does
+    not ship may change a right row there (SPEC 7.4, 8.1), which the FILTER
+    then reads -- the item under `_2` is the element itself. Compared with
+    the same predicate behind a leading TRUE, which no join tests early."""
+    from sel import register_function, registry
+
+    def run(src):
+        ctx = Value.from_native({'P': [{'id': 1}, {'id': 2}],
+                                 'I': [{'id': 10, 'product_id': 1}, {'id': 11, 'product_id': 2}]})
+        item = ctx.get('I').get('2')
+
+        def mutate(args):
+            item.set('id', Value.none() if value is None else Value.text(value))
+            return args.val(0)
+        register_function("T_MUT", 1, 1, mutate)
+        try:
+            return sel_compile(src).run(ctx).dump()
+        finally:
+            registry._table.pop('T_MUT', None)
+            registry._host.discard('T_MUT')
+    as_written = run(pipeline + ' .> MAP(_["_1"]["id"])')
+    head, tail = pipeline.split(' .> FILTER(')
+    assert as_written == run(head + ' .> FILTER(TRUE AND ' + tail + ' .> MAP(_["_1"]["id"])')
+    assert as_written == '-{"1"=t"2"}'
+
+
 def test_left_join_right_null_counts_the_rows_it_does_not_build(monkeypatch):
     """The join as written builds every matched row before the FILTER drops
     it, and raises E_RANGE when they are more than MAX_COLLECTION: a row the

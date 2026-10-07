@@ -1249,6 +1249,117 @@ $expect('collectors copy only where a write could tell (Context::$writeFree): a 
     }
     return true;
 });
+$expect('a function outside the manifest may write however it was installed (SPEC 8.1, Registry::mayHaveEffects): define()d strict, lazy or binding, or a replaced registration, brings the copies back', function () {
+    $ctx = Value::fromNative(['X' => [['k' => 1], ['k' => 2]]]);
+    $x1 = $ctx->get('X')->get('1');
+    $poke = static function () use ($x1): Value { $x1->set('k', Value::int(9)); return Value::text('1'); };
+    $through = static function (string $src) use ($ctx, $x1): string {
+        try { return \Sel\Sel::compile($src)->run($ctx)->asText(); } finally { $x1->set('k', Value::int(1)); }
+    };
+    // Defining a function below the public API is not a declaration that it is pure.
+    \Sel\Registry::define(['name' => 'T_POKE_LOW', 'min' => 0, 'max' => 0, 'fn' => $poke]);
+    \Sel\Registry::define(['name' => 'T_POKE_LAZY', 'min' => 0, 'max' => 0, 'lazy' => true, 'fn' => $poke]);
+    \Sel\Registry::define(['name' => 'T_POKE_EACH', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true, 'fn' => $poke]);
+    \Sel\Sel::registerFunction('T_POKE_AGAIN', 0, 0, static fn (): Value => Value::text('1'));
+    \Sel\Sel::registerFunction('T_POKE_AGAIN', 0, 0, $poke);
+    $reached = [];
+    foreach (['T_POKE_LOW()', 'T_POKE_LAZY()', 'T_POKE_EACH(LIST(1), _)', 'T_POKE_AGAIN()'] as $call) {
+        $got = $through("FILTER(X, TRUE)[{$call}][\"k\"]");
+        if ($got !== '1') $reached[] = "{$call} ({$got})";
+    }
+    if ($reached !== []) return "a write reached FILTER's result through " . implode(', ', $reached);
+    // Only a shipped builtin is assumed to have none: a program calling one alone stays write-free.
+    if (\Sel\Sel::compile('FILTER(X, TRUE)[ABS(1)]')->run($ctx) !== $x1) return 'a shipped builtin brought the copies back';
+    foreach (['FILTER' => false, 'is_null' => false, 'T_POKE_LOW' => true, 't_poke_each' => true, 'T_POKE_AGAIN' => true,
+              'T_NOT_DEFINED_ANYWHERE' => true] as $name => $effects) {
+        if (\Sel\Registry::mayHaveEffects($name) !== $effects) return "mayHaveEffects($name)";
+    }
+    // Registration stays its own question: a define()d function has no SQL arity, a registered one has.
+    if (\Sel\Registry::hostArity('T_POKE_LOW') !== null || \Sel\Registry::hostArity('T_POKE_AGAIN') !== [0, 0]) return 'hostArity';
+    return true;
+});
+// A FILTER that opens with IS_NULL of a LINK_LEFT's right member lets the join
+// skip building the joined rows of the right rows that conjunct is FALSE on
+// (Structure::rightNullRejects): every shape answers -- rows, keys, errors and
+// their places -- what the join bound to a helper variable first answers.
+$joinedTwice = static function (string $src, array $ctx): array {
+    $cut = strrpos($src, ' .> FILTER(');
+    $head = substr($src, 0, $cut);
+    $tail = substr($src, $cut + 4);
+    $go = static function (string $s, int $headAt) use ($tail, $ctx): string {
+        try { return 'ok ' . \Sel\Sel::compile($s)->run($ctx)->dump(); }
+        catch (SelError $e) {
+            // An error's column, as (segment, offset): the join, or the FILTER on.
+            $filterAt = strrpos($s, $tail);
+            $at = $e->col - 1;
+            return "err {$e->code} {$e->line}:" . ($at >= $filterAt ? 'filter+' . ($at - $filterAt) : 'join+' . ($at - $headAt));
+        }
+    };
+    return [$go("{$head} .> {$tail}", 0), $go("J = {$head}; J .> {$tail}", 4)];
+};
+$expect('LINK_LEFT under a FILTER that opens with IS_NULL answers what the join through a helper variable answers', function () use ($joinedTwice) {
+    $left = 'P .> LINK_LEFT(I, _1["id"] == _2["product_id"])';
+    $rows = ['P' => [['id' => 1, 'name' => 'a'], ['id' => 2, 'name' => 'b'], ['id' => 3, 'name' => 5], ['id' => 4, 'name' => 'd']],
+             'I' => [['id' => 10, 'product_id' => 1], ['id' => null, 'product_id' => 1], ['id' => 12, 'product_id' => 3], ['product_id' => 9]]];
+    $small = ['P' => [['id' => 1], ['id' => 2]], 'I' => [['id' => 10, 'product_id' => 1]]];
+    $cases = [
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"id\"]))" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"I\"][\"id\"])) .> MAP(_K)" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"_2\"][\"id\"]) AND _K \$!= \"2\")" => $rows,
+        "{$left} .> FILTER(r, IS_NULL(r[\"i\"][\"id\"]) AND r[\"p\"][\"name\"] > 1)" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _[\"p\"][\"name\"] \$!= \"b\") .> MAP(_[\"p\"][\"id\"])" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"product_id\"]))" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"sku\"]))" => $rows,
+        // A body that reads _K sees the joined rows' keys, though the step after
+        // the FILTER renumbers (keysUnobserved): the rows are numbered as written.
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _K \$!= \"3\") .> TAKE(5)" => $rows,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _K \$!= \"3\") .> MAP(_[\"p\"][\"id\"])" => $rows,
+        // Declined: not a right binder key of this join, binders spelled alike,
+        // not IS_NULL first, not literal, not the FILTER's element, an inner
+        // join, a FILTER handed conjuncts by a join above.
+        "{$left} .> FILTER(IS_NULL(_[\"p\"][\"id\"]))" => $small,
+        "{$left} .> FILTER(IS_NULL(_[\"iI\"][\"id\"]))" => $small,
+        'LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["I"]["id"]))' => $small,
+        'LINK_LEFT(P, I, X, x, X["id"] == x["product_id"]) .> FILTER(IS_NULL(_["x"]["id"]))' => $small,
+        "{$left} .> FILTER(TRUE AND IS_NULL(_[\"i\"][\"id\"]))" => $small,
+        "{$left} .> FILTER(NOT IS_NULL(_[\"i\"][\"id\"]))" => $small,
+        "{$left} .> FILTER(IS_NULL(_[LOWER(\"I\")][\"id\"]))" => $small,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][LOWER(\"ID\")]))" => $small,
+        "{$left} .> FILTER(r, IS_NULL(_[\"i\"][\"id\"]))" => $small,
+        'P .> LINK(I, _1["id"] == _2["product_id"]) .> FILTER(IS_NULL(_["i"]["id"]))' => $small,
+        "{$left} .> FILTER(IS_NULL(_[\"i\"][\"id\"])) .> LINK(I, L, R, L[\"p\"][\"id\"] == R[\"product_id\"]) .> FILTER(_[\"p\"][\"id\"] > 0) .> MAP(1)" => $small,
+    ];
+    foreach ($cases as $src => $ctx) {
+        [$asWritten, $throughAVariable] = $joinedTwice($src, $ctx);
+        if ($asWritten !== $throughAVariable) return "{$src}: {$asWritten} vs {$throughAVariable}";
+    }
+    return true;
+});
+$expect('LINK_LEFT under a FILTER that opens with IS_NULL never builds the rows it rejects, and still counts them towards the collection limit', function () {
+    // The join as written builds every matched row before the FILTER drops it,
+    // and raises E_RANGE when they are more than MAX_COLLECTION: a row the
+    // rejection never builds still counts, at the same place.
+    $side = 1000;
+    if ($side * $side !== \Sel\Limits::MAX_COLLECTION) return 'MAX_COLLECTION is no longer 1000 x 1000';
+    $src = 'P .> LINK_LEFT(I, _1["id"] == _2["k"]) .> FILTER(IS_NULL(_["i"]["id"]))';
+    $items = array_fill(0, $side, ['id' => 5, 'k' => 1]);
+    $program = \Sel\Sel::compile($src);
+    $ctx = Value::fromNative(['I' => $items, 'P' => array_fill(0, $side, ['id' => 1])]);
+    memory_reset_peak_usage();
+    $before = memory_get_usage();
+    $at = $program->run($ctx);
+    // As written, the million joined rows took 466 MB; rejected, they are never made.
+    $grew = memory_get_peak_usage() - $before;
+    if (!$at->isList || $at->size() !== 0) return 'at the limit: ' . $at->dump();
+    if ($grew > 64 << 20) return "the rejected rows were built: the peak grew by {$grew} bytes";
+    try {
+        $program->run(['I' => $items, 'P' => array_fill(0, $side + 1, ['id' => 1])]);
+        return 'no E_RANGE past the limit';
+    } catch (SelError $e) {
+        if ($e->code !== 'E_RANGE' || $e->col !== strpos($src, 'LINK_LEFT') + 1) return "past the limit: {$e->code} at {$e->col}";
+    }
+    return true;
+});
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

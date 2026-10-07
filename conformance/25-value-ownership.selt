@@ -915,6 +915,24 @@ R = LIST(RECORD("id",1), RECORD("id",2)); TOP_BY(R, x, (IF(x["id"] == 2, (R[1]["
 num 1
 ===
 
+### name: alias.collected-copy-timing.top-by-own-key
+--- note
+The element's own key writes into it: an element is collected -- and copied
+(SPEC §3.4) -- once its key is known, so the copy holds the write. Rust copied
+the element before evaluating its key when the key could write, and answered 1.
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); TOP_BY(X, (X[1]["k"] = 9; 1), 1)[1]["k"]
+--- expect
+num 9
+===
+
+### name: alias.collected-copy-timing.top-own-key
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); TOP(X, (X[1]["k"] = 9; 1), 1)[1]["k"]
+--- expect
+num 9
+===
+
 ### name: alias.collected-copy-timing.bucket-two-argument
 --- note
 two-argument BUCKET, the write in the key: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
