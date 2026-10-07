@@ -902,6 +902,25 @@ a*a*$
     expectOk(`${what}: LINK(L, X, A, B, POKE)[3]["k"] is 9`, () =>
       assert.equal(poke(install, 'LINK(L, X, A, B, POKE)[3]["k"]', { answer: Value.bool(true) }), '9'));
   }
+  // A join evaluates its right source before its left only when neither can
+  // be seen doing it (structure.mjs, pureSource): a source calling the
+  // application's function, however defined, runs in the order written.
+  for (const [what, install] of [
+    ['registered', (name, fn) => registerFunction(name, 2, 2, fn)],
+    ['define()d', (name, fn) => define({ name, min: 2, max: 2, fn })],
+  ]) {
+    expectOk(`a join's sources calling a ${what} function run left first`, () => {
+      const order = [];
+      installs += 1;
+      const name = `T13_LOG_${installs}`;
+      install(name, (args) => { order.push(args.text(0)); return args.val(1); });
+      const src = `LINK(LINK(${name}("a", A), B, _1["id"] == _2["aid"]), ${name}("c", C), _1["id"] == _2["cid"])`
+        + ' .> FILTER(_["x"] > 0) .> MAP(1)';
+      const out = compile(src).run(Value.fromNative({ A: [{ id: 1, x: 1 }], B: [{ aid: 1 }], C: [{ cid: 1 }] }));
+      assert.equal(out.dump(), '-{"1"=t"1"}');
+      assert.deepEqual(order, ['a', 'c']);
+    });
+  }
   expectOk('only a shipped builtin is assumed to have no effects', () => {
     assert.equal(mayHaveEffects('FILTER'), false);
     assert.equal(mayHaveEffects('is_null'), false);
@@ -1195,6 +1214,7 @@ a*a*$
   const skips = (src) => recordsBuilt(src, { P, I }) < P.length * I.length;
   expectOk('LINK_LEFT right-null rejection: the joined rows are not built', () => {
     assert.ok(skips(`${left} .> FILTER(IS_NULL(_["i"]["id"]))`));
+    assert.ok(skips(`${left} .> FILTER(r, IS_NULL(r["I"]["id"]) AND r["p"]["id"] > 0)`));
     assert.ok(skips(`${left} .> FILTER(IS_NULL(_["_2"]["id"]) AND _K $!= "2") .> MAP(_K)`));
     assert.ok(skips('LINK_LEFT(P, I, L, R, L["id"] == R["product_id"]) .> FILTER(IS_NULL(_["r"]["id"]))'));
   });
