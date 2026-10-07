@@ -842,6 +842,39 @@ X = LIST(RECORD("k",1), RECORD("k",2));
 bool TRUE
 ===
 
+### name: alias.collected-copy-timing.pipeline-filter-then-map-writes
+--- note
+The step after a FILTER writes into a source element the FILTER already kept:
+the FILTER's copy (SPEC §3.4) is what that step reads, so the write does not
+reach it. A host may leave the FILTER's copy out only where the next step
+cannot write (C++ `borrow_rows`, Python `adopt_items`, PHP `borrowRows`).
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> MAP((X[2]["k"] = 9; _["k"]))
+--- expect
+tree -{"1"=t"1", "2"=t"2"}
+===
+
+### name: alias.collected-copy-timing.pipeline-filter-then-sort-writes
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> SORT_BY((X[2]["k"] = 9; _["k"]))
+--- expect
+tree -{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}
+===
+
+### name: alias.collected-copy-timing.pipeline-filter-then-top-writes
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> TOP_BY((X[2]["k"] = 9; _["k"]), 2)
+--- expect
+tree -{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}
+===
+
+### name: alias.collected-copy-timing.pipeline-filter-then-filter-writes
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); X .> FILTER(_["k"] > 0) .> FILTER((X[2]["k"] = 9; TRUE))
+--- expect
+tree -{"1"=-{"k"=t"1"}, "2"=-{"k"=t"2"}}
+===
+
 
 ### name: alias.collected-copy-timing.sort
 --- note
