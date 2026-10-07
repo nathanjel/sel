@@ -64,6 +64,11 @@ type joinApplied struct {
 	Right    bool
 }
 
+// joinPureSource reports that evaluating node can be observed only through its
+// value: no assignment, no sequence, no call to a function SEL does not ship, no
+// ABORT. Such a source may be evaluated out of order -- the right source of a
+// join before the left -- which is what lets a FILTER's conjuncts travel down a
+// chain of joins.
 func joinPureSource(node *Node) bool {
 	if node == nil {
 		return true
@@ -83,7 +88,9 @@ func joinPureSource(node *Node) bool {
 		}
 		return true
 	case NodeCall:
-		if node.S == "ABORT" {
+		// A function SEL does not ship may change what the other source reads,
+		// or see it changed (MayHaveEffects); ABORT's error is an effect too.
+		if node.S == "ABORT" || MayHaveEffects(node.S) {
 			return false
 		}
 		for _, item := range node.Items {

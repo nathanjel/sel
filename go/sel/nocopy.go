@@ -9,10 +9,11 @@ package sel
 // TOP family): the intermediate list is then never seen by the program, and the copy
 // of every kept row was the whole cost of `COUNT(FILTER(…))`, of `FILTER … .> TOP_BY`
 // and the like. The elision is made only when nothing in the expression can change a
-// value while the rows are read: no assignment and no registered host function (which
-// may mutate what it is handed) anywhere in the consumer's other arguments or in the
-// FILTER's own subtree. Then "the row at the time FILTER kept it" and "the row now"
-// are the same value, and the result cannot be told apart.
+// value while the rows are read: no assignment and no function SEL does not ship
+// (MayHaveEffects: registered or defined, it may mutate what it is handed) anywhere
+// in the consumer's other arguments or in the FILTER's own subtree. Then "the row at
+// the time FILTER kept it" and "the row now" are the same value, and the result
+// cannot be told apart.
 var noCopyConsumers = map[string]bool{
 	"COUNT": true, "SUM": true, "ALL": true, "ANY": true,
 	"MAP": true, "SORT": true, "SORT_DESC": true, "SORT_BY": true,

@@ -1067,7 +1067,7 @@ func coerceJoinOperand(numeric bool, v *Value, node *Node) {
 // cleanly to a plain scalar: any error, NULL, bad or nested key hands the whole
 // join back to the nested loop, which then raises exactly what it always did. The
 // key expressions are evaluated speculatively, which is unobservable because they
-// are refused unless assignment-free and free of host functions.
+// are refused unless assignment-free and calling shipped builtins only.
 func extractJoinEquiResidual(node *Node, b1, b2 string) (*joinEqui, []*Node) {
 	var rev []*Node
 	for node != nil && node.T == NodeBin && node.S == "AND" {

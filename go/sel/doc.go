@@ -47,7 +47,7 @@
 //
 // [Node], [NodeType] and its constants, [NewNode], [Node.Copy], [NewProgram], [Program.AST],
 // [Program.PhysicalAST], [UnwindPipeline], [BuildPipeline], [OptimizeAstLogical],
-// [OptimizeAstInMemory], [BindingForm], [HostArity], [ValidatePattern] and
+// [OptimizeAstInMemory], [BindingForm], [HostArity], [MayHaveEffects], [ValidatePattern] and
 // [ValidatePatternFlags] are exported because the SQL layer
 // (github.com/nathanjel/sel/go/sel/sql) and the module's own tools read the
 // syntax tree, and Go has no narrower visibility between packages. They are not

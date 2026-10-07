@@ -2,6 +2,7 @@ package sql
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nathanjel/sel/go/sel"
@@ -121,6 +122,39 @@ func TestHybridIsolation_LowerLevelDefinitionAPI(t *testing.T) {
 	}
 	if ctx.Get("A").Get("k").AsText(sel.Pos{}) != "1" {
 		t.Fatalf("caller context mutated via Define: expected '1', got %s", ctx.Get("A").Get("k").AsText(sel.Pos{}))
+	}
+}
+
+// SPEC §8.1: a lazy or a binding definition below the public API promises no
+// more than a strict one; the continuation still runs on a private copy.
+var definePokesOnce sync.Once
+
+func TestHybridIsolation_LazyAndBindingDefinitions(t *testing.T) {
+	definePokesOnce.Do(func() {
+		poke := func(val *sel.Value) *sel.Value {
+			val.Set("k", sel.NewText("888"))
+			return val
+		}
+		sel.Define(&sel.Spec{Name: "GO_POKE_LAZY", Min: 1, Max: 1, Lazy: true,
+			Fn: func(args *sel.Args, ctx *sel.Context) *sel.Value { return poke(args.Val(0)) }})
+		sel.Define(&sel.Spec{Name: "GO_POKE_EACH", Min: 2, Max: 3, Lazy: true, Binds: true,
+			Fn: func(args *sel.Args, ctx *sel.Context) *sel.Value { return poke(args.Val(0)) }})
+	})
+	for _, src := range []string{"GO_POKE_LAZY(A)", "GO_POKE_EACH(A, TRUE)"} {
+		ctx := sel.NewRecordFromEntries([]sel.Entry{
+			{Key: "A", Val: sel.NewRecordFromEntries([]sel.Entry{{Key: "k", Val: sel.NewText("1")}})},
+		})
+		plan := PlanHybrid(sel.MustCompile(src), "sqlite", NewBindings(nil), Options{})
+		res, err := ExecuteHybrid(plan, nil, ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Get("k").AsText(sel.Pos{}) != "888" {
+			t.Fatalf("%s: expected '888', got %s", src, res.Get("k").AsText(sel.Pos{}))
+		}
+		if ctx.Get("A").Get("k").AsText(sel.Pos{}) != "1" {
+			t.Fatalf("%s: caller context mutated: expected '1', got %s", src, ctx.Get("A").Get("k").AsText(sel.Pos{}))
+		}
 	}
 }
 
