@@ -2473,6 +2473,9 @@ void test_left_join_right_null() {
            left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _[\"p\"][\"name\"] $!= \"b\") .> MAP(_[\"p\"][\"id\"])",
            left + " .> FILTER(IS_NULL(_[\"i\"][\"product_id\"]))",
            left + " .> FILTER(IS_NULL(_[\"i\"][\"sku\"]))",
+           // A body that reads _K sees the joined rows' keys, whatever the
+           // step after it does: the kept rows keep their positions.
+           left + " .> FILTER(IS_NULL(_[\"i\"][\"id\"]) AND _K $!= \"3\") .> TAKE(5)",
            // Not the right row: the left binder, a mixed-case name, a relation
            // name under explicit binders, binders spelled alike.
            left + " .> FILTER(IS_NULL(_[\"p\"][\"id\"]))",

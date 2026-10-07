@@ -7944,7 +7944,10 @@ void register_aggregates() {
                     pre.above = handed->above;
                     pre.obligations = handed->obligations;
                   }
-                  pre.deep = handed ? true : written.keys_unobserved;
+                  // A body that reads _K observes the keys itself, whatever
+                  // the step after it does: rows dropped below must keep
+                  // their positions then.
+                  pre.deep = (handed ? true : written.keys_unobserved) && !node_contains_var(written, "_K");
                   if (!pre.stages.empty()) {
                     ctx.join_prefilter = std::move(pre);
                   } else if (!handed && src.s == "LINK_LEFT") {
