@@ -242,6 +242,13 @@ Go and Rust throughout; SPEC §5 numbering fixed.
     those programs are no longer write-free and make their copies again: PHP
     S3 821 → 963 ms; C++ S2 4.2 → 4.7 ms, S3 139 → 151 ms. Nothing was
     whitelisted to win them back.
+  - C++: a walk reads its collection in place wherever nothing it evaluates
+    per element can write, not only in a write-free program — the snapshot
+    SPEC §7.3 asks for is then the collection itself — where a program that
+    called an application's function anywhere took one for every walk in it.
+    The fact is worked out once per node and kept on it. S2 4.75 → 4.11 ms
+    (where the effects rule had taken it from 4.2), S3 152 → 146 ms, S5 −3%,
+    the other scenarios and Mandelbrot within 2%.
   - PHP: a FILTER lends its rows to a next step that copies them — a MAP,
     FILTER, sort or TOP — where neither can write, as C++ (`borrow_rows`) and
     Python (`adopt_items`) already did, so a program that is not write-free

@@ -818,6 +818,63 @@ std::string outcome_physical(const Program& prog, Value& root, bool write_free) 
 // from what it copied, and it makes none (Context::write_free): its result may hold
 // the context's own elements, as TAKE's and a bare variable's do. One that can
 // write makes every copy. Either way the copy's depth check is made.
+void test_walks_read_in_place_where_nothing_they_run_writes() {
+  selt::section("a walk reads its collection in place where nothing it runs writes");
+  // The fact is worked out once per node and kept there; a copy starts unknown.
+  const NodePtr reads = compile("FILTER(X, _[\"k\"] > 0)").physical_ast();
+  selt::ok(reads->t == NT::Call && reads->s == "FILTER", "a FILTER call");
+  const Node& body = *reads->items.back();
+  selt::ok(body.writes_nothing_fact.get() == -1, "not asked yet: unknown");
+  selt::ok(writes_nothing_cached(body) && body.writes_nothing_fact.get() == 1, "asked: kept on the node");
+  selt::ok(copy_node(reads->items.back())->writes_nothing_fact.get() == -1, "a copy starts unknown");
+  const NodePtr assigns = compile("FILTER(X, (Y = 1; TRUE))").physical_ast();
+  selt::ok(!writes_nothing_cached(*assigns->items.back()) && assigns->items.back()->writes_nothing_fact.get() == 0,
+           "a body that assigns writes");
+
+  // exclusively_held counts the handles the walk holds: an element a fresh temporary
+  // alone holds is kept, not copied, whether the walk read the collection in place
+  // (no handle of its own) or from a snapshot (one) -- and copied when the count
+  // does not add up.
+  Value coll = Value::list({Value::list({Value::integer(1)})});
+  const Value frame = collection_item(coll, 0);   // the binder's handle
+  selt::ok(Internals::identity(keep_element(coll, 0, frame, 1)) == Internals::identity(frame),
+           "read in place: the element is kept");
+  selt::ok(Internals::identity(keep_element(coll, 0, frame, 2)) != Internals::identity(frame),
+           "a snapshot handle the walk does not hold: copied");
+  {
+    const Snapshot snap = take_snapshot(coll, false, false);
+    selt::ok(!snap.live && Internals::identity(keep_element(coll, 0, frame, walk_handles(snap, 1))) ==
+                               Internals::identity(frame),
+             "from a snapshot: the element is kept");
+  }
+
+  // A program that calls an application's function is not write-free. A walk whose
+  // body calls it still visits a snapshot (spec §7.3): this one grows the very list
+  // FILTER walks, by a handle it holds, and FILTER sees the two elements it started
+  // with. Read in place, the storage moves under the walk.
+  static std::optional<Value> xs;
+  register_function("T_WALK_GROW", 1, 1, [](HostArgs& args) {
+    xs->set(std::to_string(xs->size() + 1), Value::integer(9));
+    return Value::boolean(args.val(0).as_text(Pos{}) != "");
+  });
+  register_function("T_WALK_ID", 1, 1, [](HostArgs& args) { return args.val(0); });
+  Value ctx = Value::none();
+  ctx.set("X", Value::list({Value::integer(1), Value::integer(2)}));
+  xs = *ctx.get("X");
+  selt::eq(compile("COUNT(FILTER(X, T_WALK_GROW(_)))").run(ctx).dump(), std::string("t\"2\""),
+           "a body that writes walks a snapshot");
+  selt::eq(ctx.get("X")->dump(), std::string("-{\"1\"=t\"1\", \"2\"=t\"2\", \"3\"=t\"9\", \"4\"=t\"9\"}"),
+           "the list grew by what the body added");
+  xs.reset();
+  // The walks that read in place in such a program answer what the copies answer.
+  Value rows = Value::none();
+  rows.set("X", Value::list({Value::integer(3), Value::integer(1), Value::integer(2)}));
+  selt::eq(compile("JOIN(X .> FILTER(_ > 1) .> SORT_BY(_) .> MAP(T_WALK_ID(_)), \",\")").run(rows).dump(),
+           std::string("t\"2,3\""), "FILTER and SORT_BY read in place beside a MAP that calls a host function");
+  selt::eq(compile("COUNT(LINK(X, X, _1 == _2) .> FILTER(T_WALK_ID(TRUE)))").run(rows).dump(), std::string("t\"3\""),
+           "a join's sides are read in place when its keys write nothing");
+}
+
 void test_write_free_programs_hold() {
   selt::section("a program that cannot write makes no collector copies");
   const auto setup = [] {
@@ -2955,6 +3012,7 @@ int main() {
   test_bucket_rows_alias_when_unobservable();
   test_filter_borrows_rows_for_a_read_only_next_step();
   test_pipeline_temporaries_are_kept();
+  test_walks_read_in_place_where_nothing_they_run_writes();
   test_write_free_programs_hold();
   test_only_shipped_builtins_are_assumed_harmless();
   test_filter_packed_result();

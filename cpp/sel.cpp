@@ -2375,18 +2375,19 @@ struct Internals {
   // temporary -- this aggregate's own argument and nothing else holds it, which
   // is what a pipeline hands from one stage to the next -- and the element is held
   // by nothing but that temporary's slots, the aggregate's snapshot and the
-  // `extra` handles its walk has on it (the binder's frame), with one owner for
+  // `handles` its walk has on it -- the binder's frame, and the snapshot's unless
+  // the walk read the collection in place (Snapshot::live) -- with one owner for
   // every node beneath it. Then the copy would be an independent twin of a value
   // no one can reach any more. Anything else -- a variable's list, an element an
   // earlier step aliased, a result that kept the element as its key -- says no and
   // is copied as before.
   static bool exclusively_held(const Value& coll, std::size_t index, const Value& item,
-                               std::uint32_t extra) {
+                               std::uint32_t handles) {
     const Value::Impl* c = coll.p_;
     const Value::Impl* e = item.p_;
     if (!c || !e || c->ref_count != 1 || !c->collection) return false;
     const Value::Collection& col = *c->collection;
-    std::uint32_t held = 1 + extra;                      // the snapshot's handle, the walk's
+    std::uint32_t held = handles;                        // the snapshot's handle, the walk's
     if (index < col.storage.size() && col.storage[index].p_ == e) ++held;
     if (index < col.children.size() && col.children[index].second.p_ == e) ++held;
     if (e->ref_count != held) return false;
@@ -2493,10 +2494,11 @@ Value adopt_or_clone(Value&& v, int levels, Pos pos) {
 // What an aggregate that collects ITS ELEMENTS (FILTER, SORT, BUCKET rows) keeps of
 // element `index` of `coll`: the element itself when Internals::exclusively_held
 // says the copy would be pointless (the pipeline-temporary case), a copy otherwise.
-// `extra` is the number of handles the caller's own walk holds on `item` (the
-// binder frame: one).
-Value keep_element(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
-  if (Internals::exclusively_held(coll, index, item, extra)) return item;
+// `handles` is the number of handles the caller's own walk holds on `item`: the
+// binder frame's (one) and its snapshot's (one, or none when it read the
+// collection in place: walk_handles).
+Value keep_element(const Value& coll, std::size_t index, const Value& item, std::uint32_t handles) {
+  if (Internals::exclusively_held(coll, index, item, handles)) return item;
   return item.clone();
 }
 
@@ -2522,6 +2524,15 @@ bool writes_nothing(const Node& root) {
   return true;
 }
 
+// writes_nothing, asked once per node and kept there (Node::writes_nothing_fact).
+[[gnu::noinline]] bool writes_nothing_cached(const Node& node) {
+  const signed char known = node.writes_nothing_fact.get();
+  if (known >= 0) return known == 1;
+  const bool fact = writes_nothing(node);
+  node.writes_nothing_fact.set(fact);
+  return fact;
+}
+
 // keep_element, for an aggregate that has proved the copy unobservable: every
 // body it evaluates writes nothing (so no element can change while it runs) and
 // nothing it collected can reach its result uncopied. Then an element and its
@@ -2529,8 +2540,8 @@ bool writes_nothing(const Node& root) {
 // check the copy would have made, so a too-deep element is still E_DEPTH, at the
 // same moment and position (BUCKET copying every joined row was most of
 // scale-test scenario 1's time).
-Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
-  if (Internals::exclusively_held(coll, index, item, extra)) return item;
+Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t handles) {
+  if (Internals::exclusively_held(coll, index, item, handles)) return item;
   Internals::check_clone_depth(item, 1, Pos{});
   return item;
 }
@@ -2546,9 +2557,9 @@ Value hold_or_adopt(Value&& v, int levels, Pos pos, bool write_free) {
   return std::move(v);
 }
 
-Value hold_or_keep(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra,
+Value hold_or_keep(const Value& coll, std::size_t index, const Value& item, std::uint32_t handles,
                    bool write_free) {
-  if (!write_free) return keep_element(coll, index, item, extra);
+  if (!write_free) return keep_element(coll, index, item, handles);
   Internals::check_clone_depth(item, 1, Pos{});
   return item;
 }
@@ -5657,13 +5668,16 @@ void for_each_collection_value(const Value& value, Fn&& fn) {
 // reference. Handles are shared, not deep-copied, so mutation *inside* an element
 // is still seen, as the spec says.
 //
-// In a program that cannot write (Context::write_free) nothing can change the
-// collection while it is walked, so the snapshot would be the collection itself:
-// the walk reads the collection in place (`live`). Taking it anyway was a pass
-// over every element to count a handle and another to drop it -- over a join's
-// rows, two trips to memory per row for nothing (scale scenario 6).
-// Internals::exclusively_held counts the snapshot's handle, so it is asked only
-// where a snapshot was taken (keep_element, keep_or_alias: never write-free).
+// Where nothing the walk runs can write -- the program cannot (Context::write_free),
+// or the body, key or predicate the walk evaluates per element cannot
+// (walks_in_place) -- nothing can change the collection while it is walked, so
+// the snapshot would be the collection itself: the walk reads the collection in
+// place (`live`). Taking it anyway was a pass over every element to count a
+// handle and another to drop it -- over a join's rows, two trips to memory per
+// row for nothing (scale scenario 6) -- and a program that calls an
+// application's function anywhere took it for every walk in it (scenarios 2
+// and 3). Internals::exclusively_held counts the snapshot's handle, so a walk
+// that read in place says so (walk_handles).
 struct Snapshot {
   const Value* live = nullptr;
   std::size_t count = 0;
@@ -5690,6 +5704,20 @@ Snapshot take_snapshot(const Value& value, bool want_keys, bool write_free) {
   }
   return snap;
 }
+
+// Whether a walk may read its collection in place: nothing it evaluates per
+// element -- `per_element`, or nothing at all when that is null -- can write,
+// or nothing in the program can.
+// Called once per walk, never per element: kept out of line, since sel.cpp is at
+// GCC's inline-unit-growth limit and every inlined copy is growth some hot path pays.
+[[gnu::noinline]] bool walks_in_place(const Context& ctx, const Node* per_element) {
+  return ctx.write_free || !per_element || writes_nothing_cached(*per_element);
+}
+
+// The handles a walk holds on each element, for exclusively_held: `held` of its
+// own (the binder's frame, a candidate) and the snapshot's, unless it read the
+// collection in place.
+std::uint32_t walk_handles(const Snapshot& snap, std::uint32_t held) { return held + (snap.live ? 0 : 1); }
 
 template <typename Fn>
 void for_each_snapshot_value(const Snapshot& snap, Fn&& fn) {
@@ -6879,7 +6907,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     bool right_flat = true;
     {
       RowAliaser alias_right(b2);
-      for_each_snapshot_value(take_snapshot(right_value, false, ctx.write_free), [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(right_value, false, walks_in_place(ctx, equi->right.get())), [&](const Value& item) {
         const Value row = alias_right(item);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
@@ -7050,7 +7078,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     FrameScope left_scope(ctx, std::move(frame));
     {
       RowAliaser alias_left(b1);
-      for_each_snapshot_value(take_snapshot(left_value, false, ctx.write_free), [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(left_value, false, walks_in_place(ctx, equi->left.get())), [&](const Value& item) {
         const Value row = alias_left(item);
         int asked = -1;
         if (!fast_field.empty() && row.get(fast_field) != nullptr) {
@@ -7125,8 +7153,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     {
       // Each side is listed ONCE (spec §7.3): the right side is walked again for every
       // left row, and a predicate that grows it must not give later left rows more rows.
-      const Snapshot general_left = take_snapshot(left_value, false, ctx.write_free);
-      const Snapshot general_right = take_snapshot(right_value, false, ctx.write_free);
+      const bool in_place = walks_in_place(ctx, predicate.get());
+      const Snapshot general_left = take_snapshot(left_value, false, in_place);
+      const Snapshot general_right = take_snapshot(right_value, false, in_place);
       RowAliaser alias_left(b1);
       RowAliaser alias_right(b2);
       for_each_snapshot_value(general_left, [&](const Value& item) {
@@ -7438,7 +7467,7 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   const Node& body = body_override ? *body_override : a.node(three ? 2 : 1);
   const bool needs_k = node_contains_var(body, "_K");
 
-  const Snapshot snap = take_snapshot(a.val(0), needs_k, ctx.write_free);
+  const Snapshot snap = take_snapshot(a.val(0), needs_k, walks_in_place(ctx, &body));
   const std::size_t count = snap.size();
   if (count == 0) return std::nullopt;
 
@@ -7550,10 +7579,11 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   if (form.key < 0) {
     direction = forced_dir.value_or("ASC");
     if (nothing_to_sort) return Value::list({});
-    const Snapshot snap = take_snapshot(val, false, ctx.write_free);
+    // No key: nothing runs per element, so the walk always reads in place.
+    const Snapshot snap = take_snapshot(val, false, walks_in_place(ctx, nullptr));
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.item(i);
-      Value detached = hold_or_keep(val, i, item, 0, ctx.write_free);
+      Value detached = hold_or_keep(val, i, item, walk_handles(snap, 0), ctx.write_free);
       // The comparator only reads the key. Keep one detached tree and give the
       // output item and comparison key handles to that same immutable snapshot;
       // the old code recursively cloned the item twice.
@@ -7569,7 +7599,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     if (nothing_to_sort) return Value::list({});
 
     const bool needs_k = node_contains_var(*body, "_K");
-    const Snapshot snap = take_snapshot(val, needs_k, ctx.write_free);
+    const Snapshot snap = take_snapshot(val, needs_k, walks_in_place(ctx, body));
     std::vector<std::pair<std::string, Value>> frame;
     frame.reserve(needs_k ? 2 : 1);
     frame.emplace_back(binder, Value::none());
@@ -7584,7 +7614,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
           ctx.frames.back()[1].second = make_text(snap.key(i));
         }
         Value eval_key = a.eval(*body);
-        indexed.push_back({hold_or_keep(val, i, item, 1, ctx.write_free), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
+        indexed.push_back({hold_or_keep(val, i, item, walk_handles(snap, 1), ctx.write_free), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
       }
     }
     scope.pop();
@@ -7683,7 +7713,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   if (sort_all) heap.reserve(source_size);
 
   std::size_t index = 0;
-  const Snapshot snap = take_snapshot(value, needs_k, ctx.write_free);
+  const Snapshot snap = take_snapshot(value, needs_k, walks_in_place(ctx, body));
   {
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.item(i);
@@ -7705,7 +7735,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       // The candidate holds the item and, bodyless, the key; with a body the
       // binder's frame does: two handles either way beside the snapshot's.
       auto detach = [&body, &value, &snap, &ctx](TopEntry& c) {
-        c.item = hold_or_keep(value, c.idx, snap.item(c.idx), 2, ctx.write_free);
+        c.item = hold_or_keep(value, c.idx, snap.item(c.idx), walk_handles(snap, 2), ctx.write_free);
         if (!body) c.key = c.item;
       };
       if (sort_all) {
@@ -7786,10 +7816,13 @@ Value do_bucket(Args& a, Context& ctx) {
   const bool alias_rows = !ctx.write_free && agg_node && agg_node->t == NT::Call && !may_have_effects(agg_node->spec) &&
                           (agg_node->spec->name == "RECORD" || agg_node->spec->name == "LIST") &&
                           writes_nothing(*key_node) && writes_nothing(*agg_node);
+  // Only the key runs while the rows are walked; the projection runs per group,
+  // afterwards.
+  const Snapshot snap = take_snapshot(val, needs_k_key, walks_in_place(ctx, key_node));
   const auto keep = [&](std::size_t i, const Value& item) {
-    return alias_rows ? keep_or_alias(val, i, item, 1) : hold_or_keep(val, i, item, 1, ctx.write_free);
+    return alias_rows ? keep_or_alias(val, i, item, walk_handles(snap, 1))
+                      : hold_or_keep(val, i, item, walk_handles(snap, 1), ctx.write_free);
   };
-  const Snapshot snap = take_snapshot(val, needs_k_key, ctx.write_free);
   {
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.item(i);
@@ -8021,6 +8054,10 @@ void register_aggregates() {
                 std::vector<Value> kept;
                 std::vector<std::size_t> at;
                 bool sequential = packed_source;
+                // The binder's frame holds each element, and walk()'s snapshot too
+                // unless it read the source in place: when the body writes nothing.
+                const std::uint32_t handles =
+                    walks_in_place(ctx, override_body ? override_body.get() : &written) ? 1 : 2;
                 walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
                                  const Node& body) -> std::optional<Value> {
                   if (!r.as_bool(body.pos)) return std::nullopt;
@@ -8029,8 +8066,8 @@ void register_aggregates() {
                   // program does not take; there the two keep the element alike
                   // (the depth check made or proved), so the plain one is asked.
                   kept.push_back(written.borrow_rows && !ctx.write_free
-                                     ? keep_or_alias(coll, idx, item, 1)
-                                     : hold_or_keep(coll, idx, item, 1, ctx.write_free));  // collected: copied (§3.4), unless nothing could tell
+                                     ? keep_or_alias(coll, idx, item, handles)
+                                     : hold_or_keep(coll, idx, item, handles, ctx.write_free));  // collected: copied (§3.4), unless nothing could tell
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());

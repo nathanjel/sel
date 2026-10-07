@@ -69,6 +69,10 @@ int main() {
   // once-only build of the physical tree is raced as well.
   const sel::Program mandel2 = sel::compile(mandel.source());
   const sel::Program rows2 = sel::compile(rows.source());
+  // The same rows in a program that assigns, so is not write-free: each walk
+  // decides whether it may read in place from a fact kept on its body's node,
+  // which the threads work out on first use, all at once.
+  const sel::Program rows3 = sel::compile("Z = 0; " + rows.source());
 
   std::atomic<int> bad{0};
   std::vector<std::thread> threads;
@@ -83,6 +87,8 @@ int main() {
           if (rows2.run(d).dump() != want_rows) ++bad;
           sel::Value e = make_context(t);
           if (rows.run(e).dump() != want_rows) ++bad;
+          sel::Value f = make_context(0);
+          if (rows3.run(f).dump() != want_rows) ++bad;
         } catch (...) {
           ++bad;
         }

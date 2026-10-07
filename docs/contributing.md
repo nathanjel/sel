@@ -595,11 +595,18 @@ function, which is not write-free, this is what keeps the other steps'
 copies out. Made everywhere, those copies were
 a fifth to a third of the PHP scale scenarios' time, over a quarter of C++
 scenario 2's and a tenth of Python scenario 1's. The snapshot an aggregate
-visits (§7.3) is left out the same way: C++ walks a write-free program's
-collections in place (`Snapshot::live`), since nothing can change them, where
-taking it touched every element twice (scenario 6's 90,000 joined rows; the
-snapshot's handle is also why `Internals::exclusively_held` is asked only outside
-such programs). A write-free program's result may hold the context's own values,
+visits (§7.3) is left out the same way, and C++ decides it per walk: an
+aggregate, or a side of a join, reads its collection in place
+(`Snapshot::live`) when nothing it evaluates per element can write
+(`walks_in_place`, over `writes_nothing_cached`, a fact kept on each node) --
+always in a write-free program, and in one that calls an application's
+function wherever that call is not in the walk's own body. Taking the snapshot
+touched every element twice (scenario 6's 90,000 joined rows), and a single
+application call anywhere made every walk in the program take it (scenarios 2
+and 3). `Internals::exclusively_held` counts the snapshot's handle, so a walk
+that read in place says it holds none (`walk_handles`): counting one that
+is not there makes an element a `TAKE` shares with its variable look like the
+walk's own, and it would be kept uncopied. A write-free program's result may hold the context's own values,
 as a bare variable's and `TAKE`'s always could; a host that changes a result
 through its API clones it first.
 

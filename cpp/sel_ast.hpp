@@ -24,6 +24,7 @@
 #include "sel.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <iterator>
 #include <memory>
@@ -77,6 +78,28 @@ inline bool may_have_effects(const Spec* spec) { return spec == nullptr || !spec
 
 enum class NT { Num, Text, Bool, Null, Var, Index, Seq, List, Un, Bin, Assign, Call };
 
+// A yes/no fact about a node's subtree, worked out on first use and kept. Relaxed
+// atomic, because a physical tree is shared by every thread running its Program
+// (and a tree past the depth cap, which the optimiser returns as it is, by the
+// AST it came from), and any thread may be the first to ask -- they all compute
+// the same answer. A copy starts unknown: copy_node is the start of a rewrite
+// that gives the copy children of its own.
+class CachedFact {
+ public:
+  CachedFact() = default;
+  CachedFact(const CachedFact&) noexcept {}
+  CachedFact& operator=(const CachedFact&) noexcept {
+    v_.store(-1, std::memory_order_relaxed);
+    return *this;
+  }
+  // -1 not yet known, else the fact.
+  signed char get() const noexcept { return v_.load(std::memory_order_relaxed); }
+  void set(bool fact) const noexcept { v_.store(fact ? 1 : 0, std::memory_order_relaxed); }
+
+ private:
+  mutable std::atomic<signed char> v_{-1};
+};
+
 struct Node {
   NT t = NT::Num;
   Pos pos;
@@ -105,6 +128,12 @@ struct Node {
   // resolved; eval_binary then derives it from `s`). Set only where `s` is, and
   // `s` of a Bin node never changes afterwards.
   unsigned char opc = 0;
+  // Whether evaluating this subtree writes nothing (writes_nothing_cached): an
+  // aggregate asks it of the body it walks, on every call, and the answer never
+  // changes -- the subtree is immutable, and so is the Spec each of its calls was
+  // compiled against. One byte, in the padding beside `opc`: every
+  // evaluation reads nodes, and a bigger Node costs every program.
+  CachedFact writes_nothing_fact;
 
   std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments
