@@ -1239,6 +1239,35 @@ a*a*$
   ]) {
     expectOk(`LINK_LEFT right-null rejection is not taken: ${src}`, () => assert.ok(!skips(src)));
   }
+  // A join's key that may write runs after the right rows were tested early:
+  // it may change a right row the FILTER then reads -- the item under `_2` is
+  // the element itself -- so nothing is tested early under it (spec §7.4,
+  // §8.1). Compared with the same predicate behind a leading TRUE, which no
+  // join tests early.
+  {
+    const { registerFunction } = await import('../js/src/sel.mjs');
+    for (const [pipeline, value] of [
+      ['LINK_LEFT(P, I, _1, _2, T14_MUT(_1["id"]) == _2["product_id"]) .> FILTER(IS_NULL(_["_2"]["id"]))', null],
+      ['LINK(P, I, _1, _2, T14_MUT(_1["id"]) == _2["product_id"]) .> FILTER(_["_2"]["id"] < 8)', '5'],
+    ]) {
+      expectOk(`a join whose key may write tests nothing early: ${pipeline}`, () => {
+        const run = (src) => {
+          const root = Value.fromNative({ P: [{ id: 1 }, { id: 2 }],
+            I: [{ id: 10, product_id: 1 }, { id: 11, product_id: 2 }] });
+          const item = root.get('I').get('2');
+          registerFunction('T14_MUT', 1, 1, (args) => {
+            item.set('id', value === null ? Value.null() : Value.text(value));
+            return args.val(0);
+          });
+          return compile(src).run(root).dump();
+        };
+        const asWritten = run(`${pipeline} .> MAP(_["_1"]["id"])`);
+        const [head, tail] = pipeline.split(' .> FILTER(');
+        assert.equal(asWritten, run(`${head} .> FILTER(TRUE AND ${tail} .> MAP(_["_1"]["id"])`));
+        assert.equal(asWritten, '-{"1"=t"2"}');
+      });
+    }
+  }
   // A FILTER whose own body reads `_K` observes the keys its join gives the
   // rows: nothing below it may renumber them, whatever step follows it -- an
   // inner join's left-row drop and a drop for a FILTER further up included.

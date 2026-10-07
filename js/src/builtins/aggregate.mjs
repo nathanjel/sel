@@ -246,7 +246,13 @@ define({
     const handed = ctx.joinPrefilter;
     ctx.joinPrefilter = null;
     let own = null;
-    if (src && src.t === 'call' && (src.name === 'LINK' || src.name === 'LINK_LEFT')) {
+    // An early test holds only while nothing can change what it read before
+    // this FILTER reads it (spec §7.4): a predicate that may write -- an
+    // assignment, or a call SEL does not ship (ast.mayWrite, answered once per
+    // node) -- is offered to no join, and the conjuncts handed from above stop
+    // here too.
+    if (src && src.t === 'call' && (src.name === 'LINK' || src.name === 'LINK_LEFT')
+        && !mayWrite(shape(args).body)) {
       const { binder, body } = shape(args);
       own = leadingFieldConjuncts(body, binder);
       // A first conjunct that is neither a field test nor total ends every

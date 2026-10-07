@@ -1277,9 +1277,9 @@ function doLink(args, ctx, leftJoin) {
   // Taken before anything else is evaluated, so a LINK nested in this one's
   // sources cannot pick it up by accident; it is handed down on purpose in
   // evaluateSources.
-  const prefilter = ctx.joinPrefilter;
+  let prefilter = ctx.joinPrefilter;
   ctx.joinPrefilter = null;
-  const rightNull = ctx.joinRightNull;
+  let rightNull = ctx.joinRightNull;
   ctx.joinRightNull = null;
   const count = args.count();             // 3 or 5: the manifest's arity rule, at compile time
   const leftNode = args.node(0);
@@ -1290,6 +1290,13 @@ function doLink(args, ctx, leftJoin) {
   const b1 = count === 5 ? args.symbol(2) : (singleRelationName(leftNode) || '_1');
   const b2 = count === 5 ? args.symbol(3) : (singleRelationName(rightNode) || '_2');
   const predicate = args.node(count === 5 ? 4 : 2);
+  // A predicate that may write can change a row between an early test and
+  // the FILTER's read of it (spec §7.4): then nothing is tested early here,
+  // and nothing is handed down.
+  if ((prefilter !== null || rightNull !== null) && mayWrite(predicate)) {
+    prefilter = null;
+    rightNull = null;
+  }
   const equi = tryExtractEquiKeys(predicate, b1, b2);
   const call = new LinkCall(args, ctx, leftJoin, prefilter, b1, b2, equi);
   evaluateSources(call, leftNode, rightNode);
