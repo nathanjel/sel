@@ -180,7 +180,8 @@ stops the walk and becomes the result."
 ;;; that handed the rest down -- then the handed ones. Deep drops, below the
 ;;; join directly under this FILTER, change its keys, so they are allowed only
 ;;; where nothing observes them (KEYS-UNOBSERVED, stamped by the physical
-;;; optimiser). A stage is (binder jconjs above): ABOVE counts the joins
+;;; optimiser, and no `_K` in the FILTER's own body). A stage is (binder
+;;; jconjs above): ABOVE counts the joins
 ;;; between its FILTER and the join testing it. The helpers run once per
 ;;; FILTER call, and only over a join.
 
@@ -216,7 +217,12 @@ right member's field instead (RIGHT-NULL-TEST)."
          (stages (unless blocked
                    (cons (list binder own 0)
                          (and handed (join-prefilter-stages handed)))))
-         (deep (if handed t (and (node-keys-unobserved written) t))))
+         ;; A body that reads `_K` observes the joined rows' keys itself,
+         ;; whatever the step after it does: rows dropped below must keep
+         ;; their positions then.
+         (deep (and (if handed t (node-keys-unobserved written))
+                    (not (node-contains-var-p written "_K"))
+                    t)))
     (cond (stages
            (setf (context-join-prefilter ctx)
                  (make-join-prefilter :stages stages
@@ -231,13 +237,7 @@ right member's field instead (RIGHT-NULL-TEST)."
            ;; predicate still runs over every row the join builds.
            (let ((test (right-null-test (jconj-node (first own)) binder)))
              (when test
-               ;; The rows the join leaves out shift the keys of the rows after
-               ;; them unless it numbers the rows as written: it need not only
-               ;; where no later step sees the keys (DEEP) and the predicate
-               ;; does not read them either -- its `_K` is the joined row's key.
-               (setf (context-join-right-null ctx)
-                     (list (car test) (cdr test)
-                           (and deep (not (node-contains-var-p written "_K")))))))))
+               (setf (context-join-right-null ctx) (list (car test) (cdr test) deep))))))
     own))
 
 (defun filter-unapplied-body (own report)
