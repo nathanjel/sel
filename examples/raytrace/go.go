@@ -61,6 +61,9 @@ func powersOfTen(count int) []*big.Int {
 }
 
 func pow10(k int64) *big.Int {
+	if k < 0 {
+		panic("negative exponent in pow10")
+	}
 	if k < int64(len(pow10s)) {
 		return pow10s[k]
 	}

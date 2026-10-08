@@ -2575,15 +2575,17 @@ void test_left_join_right_null() {
   // not spelled alike; a row with a non-NULL field is rejected, one without
   // the field or with a NULL there is the FILTER's to decide.
   {
-    std::map<int, std::vector<Value>> buckets;
+    std::map<int, std::vector<JoinBucketRow>> buckets;
     buckets[1] = {evaluate("RECORD(\"id\", 10)"), evaluate("RECORD(\"id\", NULL)"), evaluate("RECORD(\"sku\", 1)")};
     buckets[2] = {evaluate("RECORD(\"id\", LIST())"), evaluate("RECORD(\"id\", RECORD())")};
     const auto rejects = [&](const std::string& member, const std::string& b1, const std::string& b2) {
-      std::unordered_set<const void*> rejected;
-      if (!join_right_null_rejects(JoinRightNull{member, "id", false}, b1, b2, buckets, rejected)) return std::string("-");
+      for (auto& [key, bucket] : buckets) {
+        for (auto& row : bucket) row.rejected = false;
+      }
+      if (!join_right_null_rejects(JoinRightNull{member, "id", false}, b1, b2, buckets)) return std::string("-");
       std::string out;
       for (const auto& [key, bucket] : buckets) {
-        for (const Value& row : bucket) out += rejected.count(Internals::identity(row)) ? "R" : "k";
+        for (const auto& row : bucket) out += row.rejected ? "R" : "k";
       }
       return out;
     };

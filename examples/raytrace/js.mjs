@@ -29,10 +29,17 @@ import { compile, registerFunction, SelError, Value } from '../../js/src/sel.mjs
 const MAX_SCALE = 1000000;   // the cap ROUND's scale has (spec/limits.json)
 
 // EXAMPLE-BEGIN sqrt
-// Newton's method from above, on BigInt: 2^(4 * hex digits) >= sqrt(v).
+// Newton's method on BigInt: 2^ceil(bits/2) >= sqrt(v).
 function isqrt(v) {
   if (v < 2n) return v;
-  let x = 1n << BigInt(2 * v.toString(16).length);
+  let bits = 0;
+  let temp = v;
+  while (temp >= 0x100000000n) {
+    temp >>= 32n;
+    bits += 32;
+  }
+  bits += (temp === 0n ? 0 : 32 - Math.clz32(Number(temp)));
+  let x = 1n << BigInt((bits + 1) >> 1);
   for (;;) {
     const y = (x + v / x) >> 1n;
     if (y >= x) return x;

@@ -6697,9 +6697,24 @@ bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSi
   return true;
 }
 
-// Equi-LINK_LEFT: the right rows a FILTER that opens with
-// IS_NULL(_["member"]["field"]) drops wherever they are joined, into
-// REJECTED; false when the join cannot tell. MEMBER must be one of this
+// A rejected right row stays in its bucket: it still counts towards numbering,
+// and a left row kept on an error must join it. Keep the flag beside the row
+// instead of allocating a separate hash-set entry and looking up its address.
+struct JoinBucketRow {
+  Value value;
+  bool rejected = false;
+
+  JoinBucketRow(const Value& row) : value(row) {}
+  JoinBucketRow(Value&& row) noexcept : value(std::move(row)) {}
+  JoinBucketRow(JoinBucketRow&&) noexcept = default;
+  JoinBucketRow& operator=(JoinBucketRow&&) noexcept = default;
+  JoinBucketRow(const JoinBucketRow&) = default;
+  JoinBucketRow& operator=(const JoinBucketRow&) = default;
+};
+
+// Equi-LINK_LEFT: mark the right rows a FILTER that opens with
+// IS_NULL(_["member"]["field"]) drops wherever they are joined;
+// false when the join cannot tell. MEMBER must be one of this
 // join's right binder keys -- the binder, its lower case or `_2`, each bound
 // in every joined row to the right row as bucketed (spec §7.4) -- and the two
 // binders must not be spelled alike. A row is rejected only when the read
@@ -6709,13 +6724,13 @@ bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSi
 // null-extended row in their place.
 template <typename Buckets>
 bool join_right_null_rejects(const JoinRightNull& hint, const std::string& b1, const std::string& b2,
-                             const Buckets& buckets, std::unordered_set<const void*>& rejected) {
+                             Buckets& buckets) {
   if (ascii_upper(b1) == ascii_upper(b2)) return false;
   if (hint.member != b2 && hint.member != ascii_lower(b2) && hint.member != "_2") return false;
-  for (const auto& [key, bucket] : buckets) {
-    for (const Value& right : bucket) {
-      const Value* value = right.get(hint.field);
-      if (value && !value->is_null()) rejected.insert(Internals::identity(right));
+  for (auto& [key, bucket] : buckets) {
+    for (auto& right : bucket) {
+      const Value* value = right.value.get(hint.field);
+      if (value && !value->is_null()) right.rejected = true;
     }
   }
   return true;
@@ -6894,7 +6909,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   };
 
   if (equi && have_right) {
-    std::unordered_map<FastJoinKey, std::vector<Value>, FastJoinKeyHash> buckets;
+    std::unordered_map<FastJoinKey, std::vector<JoinBucketRow>, FastJoinKeyHash> buckets;
     buckets.reserve(collection_size(right_value));
     JoinRightFacts right_facts;
     std::vector<std::pair<std::string, Value>> frame;
@@ -6908,14 +6923,16 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     {
       RowAliaser alias_right(b2);
       for_each_snapshot_value(take_snapshot(right_value, false, walks_in_place(ctx, equi->right.get())), [&](const Value& item) {
-        const Value row = alias_right(item);
+        Value row = alias_right(item);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
         const Value key_value = a.eval(*equi->right);
         const auto join_key = make_fast_join_key(key_value, equi->numeric);
         note_right_join_key(right_facts, join_key, key_value);
-        if (join_key && join_key->type != FastJoinKey::Type::Bad) buckets[*join_key].push_back(row);
         if (right_flat && !flat_test(row)) right_flat = false;
+        if (join_key && join_key->type != FastJoinKey::Type::Bad) {
+          buckets[*join_key].emplace_back(std::move(row));
+        }
       });
     }
     key_scope.pop();
@@ -7015,14 +7032,13 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     // The right rows the right conjuncts reject, once each, after every right
     // key was computed. They stay in their buckets: a left row still counts
     // them towards the numbering, and one kept on an error joins them.
-    std::unordered_set<const void*> rejected;
     // A LINK_LEFT rejects right rows only for a FILTER that opens with
     // IS_NULL (join_right_null_rejects), and then drops no left row: the
     // position counts every joined row as written, built or not, and the
     // collection limit is held to that count, where the join as written would
     // have raised (spec §6.4).
     const bool logical = right_null && left_join && !prefilter &&
-                         join_right_null_rejects(*right_null, b1, b2, buckets, rejected);
+                         join_right_null_rejects(*right_null, b1, b2, buckets);
     const bool rejecting = !right_prefix.empty() || logical;
     if (!right_prefix.empty()) {
       std::vector<std::pair<std::string, Value>> right_frame;
@@ -7030,9 +7046,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
       const bool before = report.errored;
       report.errored = false;
       FrameScope right_scope(ctx, std::move(right_frame));
-      for (const auto& [key, bucket] : buckets) {
-        for (const Value& right : bucket) {
-          if (verdict(right_prefix, right) == 1) rejected.insert(Internals::identity(right));
+      for (auto& [key, bucket] : buckets) {
+        for (auto& right : bucket) {
+          if (verdict(right_prefix, right.value) == 1) right.rejected = true;
         }
       }
       right_scope.pop();
@@ -7121,13 +7137,13 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           // rows raise in the FILTER, in order, where they would have.
           const bool skip = rejecting && asked == 0;
           if (logical) cap_collection(static_cast<u128>(position - 1 + it->second.size()), a.pos());
-          for (const Value& right : it->second) {
-            if (skip && rejected.count(Internals::identity(right))) {
+          for (const auto& right : it->second) {
+            if (skip && right.rejected) {
               dropped = true;
               ++position;
               continue;
             }
-            emit(projector(row, &right));
+            emit(projector(row, &right.value));
           }
         } else if (left_join) {
           if (logical) cap_collection(static_cast<u128>(position), a.pos());
