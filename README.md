@@ -194,21 +194,21 @@ The package is `sel-lang` everywhere:
 pip install sel-lang
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.10.3
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.10.4
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 cargo add sel-lang                # the crate is sel_lang
-go get github.com/nathanjel/sel/go@v0.10.3   # import .../go/sel and .../go/sel/sql
+go get github.com/nathanjel/sel/go@v0.10.4   # import .../go/sel and .../go/sel/sql
 ```
 
 The command-line REPL (`sel -e 'expr'`, `sel --deps -e 'expr'`) installs with
-`cargo install sel-lang` or `go install github.com/nathanjel/sel/go/bin/sel@v0.10.3`.
+`cargo install sel-lang` or `go install github.com/nathanjel/sel/go/bin/sel@v0.10.4`.
 
 In a browser, with nothing to install, from the jsDelivr (or unpkg) copy of the
 npm package — a standalone module, without the SQL layer:
 
 ```html
 <script type="module">
-  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.3/dist/sel.min.mjs';
+  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.4/dist/sel.min.mjs';
 </script>
 ```
 

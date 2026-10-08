@@ -11,6 +11,32 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.10.4 — 2026-10-08
+
+Review follow-ups: C++ equi-left anti-join allocation reduction and move
+semantics, negative exponent safety in Go raytracer, allocation-free integer
+square root in JS raytracer, and strict boolean checks in PHP.
+
+**Language and evaluator fixes:**
+
+  - **C++**: `JoinBucketRow` inline rejected flag replaces the separate
+    `std::unordered_set<const void*> rejected` hash set, eliminating hash set
+    allocations in equi-`LINK_LEFT` anti-joins (scenario 6: ~19-25% faster);
+    `JoinBucketRow` gained `noexcept` move semantics and proper move sequencing
+    after `flat_test`.
+  - **Go**: `pow10` guards negative exponents before indexing the `pow10s`
+    lookup table to avoid out-of-bounds slice panics.
+  - **JavaScript**: `isqrt` in the raytracer estimates upper-bound bit length
+    using `Math.clz32` instead of allocating hexadecimal strings on each call.
+  - **PHP**: strict boolean comparison for the physical optimizer's `borrowRows`
+    annotation in `Core.php`.
+  - **Documentation**: internal reports for C++ scale scenario performance
+    investigations and rework follow-ups.
+
+Lanes: 2317 conformance cases in every host; 1392 SQL translation cases in every
+host; 222 SQL mutations caught, none surviving; 98 decimal mutations caught, none
+surviving.
+
 ## 0.10.3 — 2026-10-07
 
 A Rust performance fix, found by a new benchmark: a ray tracer written in SEL.

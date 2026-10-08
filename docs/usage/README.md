@@ -59,7 +59,7 @@ import { Sql, Binding } from 'sel-lang/sql';                     // the SQL laye
 ```html
 <!-- In a browser, nothing to install: the standalone bundle from a CDN (no SQL layer) -->
 <script type="module">
-  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.3/dist/sel.min.mjs';
+  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.4/dist/sel.min.mjs';
 </script>
 ```
 
@@ -82,7 +82,7 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 <summary>C++</summary>
 
 ```sh
-vcpkg install sel-lang               # or: conan install --requires sel-lang/0.10.3
+vcpkg install sel-lang               # or: conan install --requires sel-lang/0.10.4
                                      # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
                                      # sel_math_ops.hpp, sel_lexicon.hpp, sel_builtin_manifest.hpp, sel.cpp
                                      # and third_party/srell/, and compile sel.cpp
@@ -110,8 +110,8 @@ use sel_lang::sql::serde_json::json;                       // for sql::define, r
 <summary>Go</summary>
 
 ```sh
-go get github.com/nathanjel/sel/go@v0.10.3
-go install github.com/nathanjel/sel/go/bin/sel@v0.10.3    # the `sel` CLI
+go get github.com/nathanjel/sel/go@v0.10.4
+go install github.com/nathanjel/sel/go/bin/sel@v0.10.4    # the `sel` CLI
 ```
 ```go
 import (

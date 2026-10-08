@@ -27,7 +27,7 @@
   :description "A small expression language for business rules: one rule gives the same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go, or in your database as SQL. Exact decimal arithmetic, no floating point, no truthiness."
   :author "Marcin Gałczyński"
   :license "MIT"
-  :version "0.10.3"
+  :version "0.10.4"
   :homepage "https://github.com/nathanjel/sel"
   :source-control (:git "https://github.com/nathanjel/sel.git")
   :depends-on ("cl-ppcre")
