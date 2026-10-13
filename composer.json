@@ -32,8 +32,15 @@
   },
   "autoload": {
     "files": [
-      "php/src/bootstrap.php",
+      "php/src/SelError.php",
       "php/src/Sql/autoload.php"
+    ],
+    "classmap": [
+      "php/src/"
+    ],
+    "exclude-from-classmap": [
+      "php/src/Sql/",
+      "php/src/bootstrap.php"
     ]
   },
   "bin": [

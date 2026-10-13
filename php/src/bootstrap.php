@@ -35,11 +35,4 @@ require_once __DIR__ . '/Builtins/RegexAmbiguity.php';
 require_once __DIR__ . '/Builtins/Regex.php';
 require_once __DIR__ . '/Builtins/NullOps.php';
 
-\Sel\Builtins\Core::register();
-\Sel\Builtins\Structure::register();
-\Sel\Builtins\Text::register();
-\Sel\Builtins\Number::register();
-\Sel\Builtins\Binary::register();
-\Sel\Builtins\Regex::register();
-\Sel\Builtins\NullOps::register();
-\Sel\Registry::assertManifestCovered();
+\Sel\Registry::boot();

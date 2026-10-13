@@ -11,6 +11,31 @@ final class Registry
     /** @var array<string, array<string,mixed>> */
     private static array $table = [];
 
+    /** @var bool whether the shipped modules have registered */
+    private static bool $booted = false;
+
+    /**
+     * Register the shipped modules - once, the first time the table is read. The table is fixed
+     * at startup either way; under Composer "startup" is the first compile or evaluation, so an
+     * application that loads the package and never evaluates pays nothing for it. The
+     * bootstrap calls this itself for a host that requires php/src/bootstrap.php directly.
+     */
+    public static function boot(): void
+    {
+        if (self::$booted) {
+            return;
+        }
+        self::$booted = true;
+        Builtins\Core::register();
+        Builtins\Structure::register();
+        Builtins\Text::register();
+        Builtins\Number::register();
+        Builtins\Binary::register();
+        Builtins\Regex::register();
+        Builtins\NullOps::register();
+        self::assertManifestCovered();
+    }
+
     /**
      * The shipped table is authored once, in spec/builtins.json, and rendered
      * into BuiltinManifest.php. A name the manifest knows is held to it:
@@ -98,6 +123,7 @@ final class Registry
      */
     public static function bindingForm(string $name, array $args): ?array
     {
+        self::boot();
         $upper = Utf8::upper($name);
         $forms = BuiltinManifest::FORMS[$upper] ?? null;
         if ($forms === null) {
@@ -141,6 +167,7 @@ final class Registry
      */
     public static function sortForm(string $name, array $args): ?array
     {
+        self::boot();
         $form = self::bindingForm($name, $args);
         if ($form === null) return null;
         $last = str_starts_with(Utf8::upper($name), 'TOP') ? count($args) - 1 : count($args);
@@ -184,6 +211,7 @@ final class Registry
      */
     public static function registerFunction(string $name, int $min, int $max, callable $fn): void
     {
+        self::boot();
         if (preg_match('/\A[A-Za-z][A-Za-z0-9_]*\z/', $name) !== 1) {
             throw new \InvalidArgumentException(
                 "SEL function name must be ASCII letters, digits and _, starting with a letter: {$name}");
@@ -234,6 +262,7 @@ final class Registry
      */
     public static function mayHaveEffects(string $name): bool
     {
+        self::boot();
         $key = Utf8::upper($name);
         return isset(self::$host[$key]) || !isset(BuiltinManifest::BUILTINS[$key]);
     }
@@ -247,6 +276,7 @@ final class Registry
      */
     public static function hostArity(string $name): ?array
     {
+        self::boot();
         $key = Utf8::upper($name);
         if (!isset(self::$host[$key])) {
             return null;
@@ -257,12 +287,14 @@ final class Registry
     /** @return array<string,mixed>|null */
     public static function lookup(string $name): ?array
     {
+        self::boot();
         return self::$table[Utf8::upper($name)] ?? null;
     }
 
     /** @return list<string> */
     public static function names(): array
     {
+        self::boot();
         $names = array_keys(self::$table);
         sort($names);
         return $names;
