@@ -45,10 +45,17 @@ final class Registry
      * host's own function (examples/fn-*) and passes, and is the
      * application's to every analysis (mayHaveEffects).
      *
+     * The shipped modules register first (boot(), which reaches this again for each of
+     * them and returns at once): under Composer an application can call this before
+     * anything has read the table, and a shipped name it defines must be refused here,
+     * as it is when bootstrap.php has run -- not accepted, and then fail the boot at
+     * the first evaluation with the modules after it never registered.
+     *
      * @param array<string,mixed> $spec
      */
     public static function define(array $spec): void
     {
+        self::boot();
         $name = Utf8::upper($spec['name']);
         if (isset(self::$table[$name])) {
             throw new \LogicException("SEL function {$name} defined twice");

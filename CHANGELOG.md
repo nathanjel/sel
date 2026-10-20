@@ -11,6 +11,50 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## Unreleased
+
+PHP under Composer loads lazily — tagged `v0.10.5` for PHP alone, on a tree
+whose manifests and this file still said 0.10.4 — and the follow-ups that
+change needed: a registry gap it opened, and a gate lane that installs the
+package with Composer instead of imitating it.
+
+**Host API:**
+
+  - PHP: `composer require` loads three small files (`SelError.php`, the
+    `Limits.php` it requires, and the SQL layer's loader); the rest of the
+    language is a classmap, and the shipped functions register the first time
+    the table is read (`Registry::boot()`). An application that never evaluates
+    no longer pays for ~30 files and seven registrations per request. Requiring
+    `php/src/bootstrap.php` directly works as before.
+  - PHP: `Registry::define()` registers the shipped functions first. Under
+    Composer an application could define a shipped name, with its arity, before
+    anything had evaluated: the define was accepted, the first evaluation failed
+    with "defined twice", and the modules after the clash never registered,
+    leaving the application's function in the builtin's place and classified as
+    shipped. It is refused at `define()` again, as after `bootstrap.php`.
+
+**Gate:**
+
+  - `tools/check-php-package.sh` ("PHP package, as Composer installs it")
+    stages what Packagist's dist carries for PHP, installs it into an empty
+    project with Composer itself, offline, and checks from there: requiring
+    `vendor/autoload.php` loads only those three files and defines every
+    function and constant the bootstrap does; evaluating leaves the SQL layer
+    unloaded and naming a `Sel\Sql` class loads it; the same under
+    `--classmap-authoritative`; `define()` before the first evaluation; the
+    conformance suite through the autoloader; `vendor/bin/sel`. It needs
+    `composer`; `SEL_SKIP_PHP_PACKAGE=1` opts out, and the gate's last line
+    names it.
+  - The PHP optimizer lane's Composer probe is gone. It required
+    `autoload.files` alone, which stopped imitating Composer when the autoload
+    became a classmap, and failed with `Class "Sel\Sel" not found` against a
+    package that worked.
+
+**Documentation:** `PACKAGING.md` §Packagist describes the classmap and what it
+rules out (a namespace function outside `SelError.php`, a SQL class in the
+classmap); `docs/contributing.md` and `examples/fn-simple` say a new PHP
+built-in module also goes in `Registry::boot()`.
+
 ## 0.10.4 — 2026-10-08
 
 Review follow-ups: C++ equi-left anti-join allocation reduction and move

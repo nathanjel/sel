@@ -45,7 +45,8 @@ The Args API is what makes a builtin four lines instead of twenty; see
 ## Registering the file
 
 None of the four has an autoloader: a new file must be added to `:components`
-in `lisp/sel-lang.asd`, to `php/src/bootstrap.php`, to the imports in
+in `lisp/sel-lang.asd`, to `php/src/bootstrap.php` (and its `register()` to
+`Registry::boot()` in `php/src/Registry.php`), to the imports in
 `python/sel/builtins/__init__.py`, and as a `pub mod` in
 `rust/src/builtins/mod.rs`. Go needs nothing: every file of package `sel` is
 compiled, and its `init()` runs before the first program is parsed.
