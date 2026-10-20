@@ -1,0 +1,68 @@
+# The repository's gate on every pull request and on main: tools/check.sh, "ALL GREEN" or it isn't done.
+# check.sh starts its own pinned database servers (tools/oracle-db.sh) on the runner's Docker, so nothing here
+# provides one. Every host is built first, because check.sh refuses a partial roster.
+# Only GitHub's own actions; the rest comes from Ubuntu's packages, rustup (preinstalled) and Quicklisp.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - name: Rust, PHP, SBCL and the C++ toolchain
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ make pkg-config libsqlite3-dev sbcl \
+            php8.3-cli php8.3-mysql php8.3-pgsql php8.3-sqlite3 php8.3-mbstring
+          pip install pytest
+
+      - name: Quicklisp (lisp/bin/boot.lisp loads it from ~/quicklisp)
+        run: |
+          curl -fsSLO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --noinform --non-interactive --load quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install)' \
+            --eval '(ql:quickload (list :cl-ppcre :fiveam))'
+          rm quicklisp.lisp
+
+      # ThreadSanitizer needs fewer random mmap bits than Ubuntu 24.04's default (it aborts with "unexpected memory
+      # mapping" otherwise).
+      - name: Sanitizer-friendly ASLR
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build every host
+        run: |
+          (cd cpp && make -j"$(nproc)")
+          make -C go
+          bash rust/build.sh
+          npm install --no-package-lock --no-audit --no-fund
+          npm run build
+
+      - name: tools/check.sh
+        run: tools/check.sh
