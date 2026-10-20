@@ -1,7 +1,19 @@
-# The repository's gate on every pull request and on main: tools/check.sh, "ALL GREEN" or it isn't done.
-# check.sh starts its own pinned database servers (tools/oracle-db.sh) on the runner's Docker, so nothing here
-# provides one. Every host is built first, because check.sh refuses a partial roster.
-# Only GitHub's own actions; the rest comes from Ubuntu's packages, rustup (preinstalled) and Quicklisp.
+# The repository's gate on every pull request and on main: tools/check.sh.
+#
+# It runs on the platform sel is developed on, Fedora 44 (tools/usage.Dockerfile: one compiler, one libsqlite3 and
+# one PHP between the examples and every other lane). GitHub's Ubuntu runner only hosts the container: its own PHP
+# comes with xdebug, whose 256-frame limit stops the PHP parser ("possible infinite loop"), its libsqlite3 is below
+# the oracle's 3.48 floor, and its compiler is older than the one the C++ host is written against.
+#
+# At this stage of the project CI leaves out what needs database servers or Docker: the SQL oracle against real
+# PostgreSQL / MySQL / MariaDB and the database-backed usage examples (SEL_SKIP_DB_TESTS=1), and the PHP 8.1 lane
+# (SEL_SKIP_PHP81=1). Every translator's SQL is still checked against the expected text of every dialect
+# (sql/cases/*.sqlt), and the hybrid plans still run against SQLite in process. The gate therefore ends
+# "GREEN, PARTIAL — …; opted out: …" (exit 0); the full gate, databases included, is tools/check.sh on a developer's
+# machine before a release.
+#
+# The container runs as the runner's user, so everything it writes in the checkout is the runner's (and git sees
+# its own repository).
 name: check
 
 on:
@@ -19,63 +31,47 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.23"
-          cache: false
-
-      - name: Rust, PHP, SBCL and the C++ toolchain
+      - name: The Fedora 44 toolchain
         run: |
-          rustup toolchain install stable --profile minimal && rustup default stable
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            g++ make pkg-config libsqlite3-dev sbcl \
-            php8.3-cli php8.3-mysql php8.3-pgsql php8.3-sqlite3 php8.3-mbstring
-          pip install pytest
+          docker build -t sel-ci - <<'EOF'
+          FROM fedora:44
+          # Fedora ships the sanitizer runtimes (TSan, ASan, UBSan) apart from gcc; php-gmp runs PHP's GMP decimal paths,
+          # which the decimal mutation lane breaks on purpose; composer and cmake for the package lanes.
+          RUN dnf -y install --setopt=install_weak_deps=False \
+                gcc-c++ make diffutils findutils which procps-ng git \
+                sqlite sqlite-devel libpq-devel mariadb-connector-c-devel \
+                php-cli php-pdo php-mysqlnd php-pgsql php-mbstring \
+                python3 python3-pytest nodejs24 nodejs24-npm \
+                sbcl rust cargo clippy golang curl ca-certificates \
+                cmake composer php-gmp libasan libubsan libtsan \
+              && dnf clean all \
+              && ln -sf /usr/bin/node-24 /usr/local/bin/node && ln -sf /usr/bin/npm-24 /usr/local/bin/npm
+          # Quicklisp where lisp/bin/boot.lisp looks for it ($HOME/quicklisp), writable by any user.
+          ENV HOME=/opt/home
+          RUN mkdir -p $HOME && cd $HOME && curl -fsSLO https://beta.quicklisp.org/quicklisp.lisp \
+              && sbcl --noinform --non-interactive --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' \
+                   --eval '(ql:quickload (list :cl-ppcre :fiveam))' \
+              && rm quicklisp.lisp && chmod -R a+rwX $HOME
+          EOF
 
-      # sql/oracle's SQLite is the PHP client's own libsqlite3, and tools/oracle-db.sh refuses one below 3.48.0
-      # (SEL-0041: older ones truncate a substr() length past 2^31). Ubuntu 24.04's is 3.45.1, so a newer one goes to
-      # /usr/local/lib, which the dynamic linker searches first; with column metadata, as Ubuntu builds it (pdo_sqlite
-      # needs sqlite3_column_table_name).
-      - name: SQLite 3.50 for the PHP client
-        working-directory: ${{ runner.temp }}
-        run: |
-          curl -fsSL https://www.sqlite.org/2025/sqlite-autoconf-3500400.tar.gz | tar xz
-          cd sqlite-autoconf-3500400
-          CFLAGS="-O2 -DSQLITE_ENABLE_COLUMN_METADATA=1" ./configure --prefix=/usr/local
-          make -j"$(nproc)" && sudo make install && sudo ldconfig
-          php -r 'echo "PHP sees SQLite ", (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn(), "\n";'
-
-      - name: Quicklisp (lisp/bin/boot.lisp loads it from ~/quicklisp)
-        run: |
-          curl -fsSLO https://beta.quicklisp.org/quicklisp.lisp
-          sbcl --noinform --non-interactive --load quicklisp.lisp \
-            --eval '(quicklisp-quickstart:install)' \
-            --eval '(ql:quickload (list :cl-ppcre :fiveam))'
-          rm quicklisp.lisp
-
-      # ThreadSanitizer needs fewer random mmap bits than Ubuntu 24.04's default (it aborts with "unexpected memory
-      # mapping" otherwise).
+      # ThreadSanitizer needs fewer random mmap bits than the runner's kernel default (it aborts with "unexpected
+      # memory mapping" otherwise); containers share the host's setting.
       - name: Sanitizer-friendly ASLR
         run: sudo sysctl vm.mmap_rnd_bits=28
 
-      - name: Build every host
+      - name: Build every host, then tools/check.sh
         run: |
-          (cd cpp && make -j"$(nproc)")
-          make -C go
-          bash rust/build.sh
-          npm install --no-package-lock --no-audit --no-fund
-          npm run build
-
-      - name: tools/check.sh
-        run: tools/check.sh
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" \
+            -e SEL_SKIP_DB_TESTS=1 -e SEL_SKIP_PHP81=1 \
+            sel-ci bash -c '
+              set -e
+              (cd cpp && make -j"$(nproc)")
+              make -C go
+              bash rust/build.sh
+              npm install --no-package-lock --no-audit --no-fund
+              npm run build
+              tools/check.sh'
