@@ -38,6 +38,7 @@ tools/check-package-docs.sh                       # user docs only, in every pac
 tools/check-cpp-package.sh                        # the C++ package builds as a consumer gets it
 tools/check-rust-package.sh --publish-dry-run     # the crate as crates.io gets it, and cargo's dry run
 tools/check-go-module.sh                          # the Go module as the proxy zips it
+tools/check-php-package.sh                        # the PHP package as Composer installs it
 tools/check-usage.sh                              # the SQL examples, every host, real servers
 ```
 
@@ -256,16 +257,32 @@ you with a language that has no functions in it.
 Submit the GitHub URL once at <https://packagist.org/packages/submit>, then add
 the GitHub webhook so subsequent tags publish themselves.
 
-Autoloading is a single `files` entry pointing at `php/src/bootstrap.php`, not
-PSR-4. That is deliberate: the function table must be complete before any source
-is parsed, because an unknown function name is a *compile-time* error, and PSR-4
-would only load a class at the moment it is first mentioned. `bootstrap.php` uses
-`require_once` throughout, so loading it twice is harmless.
+Autoloading is lazy, so an application that requires the package and never
+evaluates pays for three small files, not for the language. `composer.json`'s
+`autoload` is a `classmap` of `php/src/` with `php/src/Sql/` and `bootstrap.php`
+left out of it, and two `files`: `php/src/SelError.php`, whose namespace
+functions (`fail()` & co.) and `MAX_DEPTH` constant no classmap can load (it
+requires `Limits.php`, the third), and `php/src/Sql/autoload.php`, which
+requires the SQL layer whole (`Sql/bootstrap.php`) the first time a `Sel\Sql`
+class is named. The function table must still be complete before any source is
+parsed, because an unknown function name is a *compile-time* error:
+`Registry::boot()` registers the shipped modules the first time anything reads
+the table or defines into it, which every compile does, and `bootstrap.php`
+calls it itself for a host that requires it directly. `bootstrap.php` and
+`Sql/bootstrap.php` use `require_once` throughout, so requiring them under
+Composer as well is harmless.
+
+What that rules out: a namespace function or constant in a language file other
+than `SelError.php` (it would be undefined until something loaded its file), and
+a SQL-layer class in the classmap (it would load without `Sql/SqlError.php`'s
+`refuse()`). A new builtin module needs its `register()` in `Registry::boot()`
+as well as its `require_once` in `bootstrap.php`.
 
 Verify before publishing:
 
 ```
 composer validate
+tools/check-php-package.sh      # installed by Composer from what the dist carries, used through vendor/autoload.php
 ```
 
 ### Branch alias (`dev-main`)

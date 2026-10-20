@@ -88,12 +88,17 @@ numbers, and its aggregates are in `structure.rs`. Go and Rust keep join
 planning top-level, beside the evaluator, where the other hosts keep it with the
 structure built-ins.
 
-PHP has no autoloader for the language; add any new file to
-`php/src/bootstrap.php`. JS built-ins are imported from
-`js/src/builtins/index.mjs`, Python's from `python/sel/builtins/__init__.py`, and
-Rust's are registered in `registry()` in `rust/src/builtins/mod.rs`; a Go file in
-package `sel` registers itself from its `init()`. All of this must happen before
-parsing, because unknown function names are a **compile-time** error.
+PHP's `php/src/bootstrap.php` is no autoloader; add any new file to it, and a
+new built-in module's `register()` to `Registry::boot()`, which registers the
+shipped modules the first time the table is read. Composer's classmap finds a
+new file by itself, but only its classes: a namespace function or constant
+belongs in `SelError.php`, which `composer.json` loads up front
+(`tools/check-php-package.sh` checks both from a Composer install). JS built-ins
+are imported from `js/src/builtins/index.mjs`, Python's from
+`python/sel/builtins/__init__.py`, and Rust's are registered in `registry()` in
+`rust/src/builtins/mod.rs`; a Go file in package `sel` registers itself from its
+`init()`. All of this must happen before parsing, because unknown function names
+are a **compile-time** error.
 
 **Every parser is precedence climbing** over the same productions:
 `parse_program` → `parse_sequence` → `parse_list` → `parse_term` →

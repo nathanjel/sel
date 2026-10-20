@@ -95,10 +95,12 @@ SKIPPED=""
 [ "${SEL_SKIP_SANITIZERS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SANITIZERS"
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SQL_BUDGETS"
 [ "${SEL_SKIP_DECIMAL_MUTATIONS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DECIMAL_MUTATIONS"
-# The database layers and the Python unit lane pass with a printed skip when
-# opted out, so they are named here too: an opted-out run is not the gate.
+# The database layers, the Python unit lane and the PHP package lane pass with a
+# printed skip when opted out, so they are named here too: an opted-out run is
+# not the gate.
 [ "${SEL_SKIP_DB_TESTS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DB_TESTS"
 [ "${SEL_SKIP_PYTHON_UNIT:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PYTHON_UNIT"
+[ "${SEL_SKIP_PHP_PACKAGE:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PHP_PACKAGE"
 SKIPPED="${SKIPPED# }"
 
 echo "implementations: $IMPLS"
@@ -283,6 +285,10 @@ step "C++ package, as installed" sel_slot ./tools/check-cpp-package.sh
 # only their own directory, built and used from outside the repository.
 case " $IMPLS " in *" rust "*) step "Rust package, as published" sel_slot ./tools/check-rust-package.sh ;; esac
 case " $IMPLS " in *" go "*) step "Go module, as published" sel_slot ./tools/check-go-module.sh ;; esac
+# The PHP package as `composer require` installs it: what Packagist's dist carries,
+# installed by Composer itself and used through vendor/autoload.php alone (the
+# classmap, the Registry booted on first use, the SQL layer loaded on first use).
+case " $IMPLS " in *" php "*) step "PHP package, as Composer installs it" sel_slot sel_hold php -- ./tools/check-php-package.sh ;; esac
 step "host API parity" ./tools/check-api.sh
 step "host registry complete" ./tools/check-registry.sh
 # What an operation may BUILD (SPEC §6.4) is refused cheaply, in a child process
