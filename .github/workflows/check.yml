@@ -21,15 +21,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.23"
           cache: false
@@ -42,6 +42,19 @@ jobs:
             g++ make pkg-config libsqlite3-dev sbcl \
             php8.3-cli php8.3-mysql php8.3-pgsql php8.3-sqlite3 php8.3-mbstring
           pip install pytest
+
+      # sql/oracle's SQLite is the PHP client's own libsqlite3, and tools/oracle-db.sh refuses one below 3.48.0
+      # (SEL-0041: older ones truncate a substr() length past 2^31). Ubuntu 24.04's is 3.45.1, so a newer one goes to
+      # /usr/local/lib, which the dynamic linker searches first; with column metadata, as Ubuntu builds it (pdo_sqlite
+      # needs sqlite3_column_table_name).
+      - name: SQLite 3.50 for the PHP client
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL https://www.sqlite.org/2025/sqlite-autoconf-3500400.tar.gz | tar xz
+          cd sqlite-autoconf-3500400
+          CFLAGS="-O2 -DSQLITE_ENABLE_COLUMN_METADATA=1" ./configure --prefix=/usr/local
+          make -j"$(nproc)" && sudo make install && sudo ldconfig
+          php -r 'echo "PHP sees SQLite ", (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn(), "\n";'
 
       - name: Quicklisp (lisp/bin/boot.lisp loads it from ~/quicklisp)
         run: |
