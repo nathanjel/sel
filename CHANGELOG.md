@@ -49,6 +49,11 @@ package with Composer instead of imitating it.
     `autoload.files` alone, which stopped imitating Composer when the autoload
     became a classmap, and failed with `Class "Sel\Sel" not found` against a
     package that worked.
+  - `tools/check.sh` names `SEL_SKIP_PHP81`, `SEL_SKIP_CPP_PACKAGE`,
+    `SEL_SKIP_GO_MODULE` and `SEL_SKIP_RUST_PACKAGE` in its `opted out:` line
+    and in its last line when they are set, as it already named the other
+    opt-outs: a run that skipped those lanes ended as if it had only skipped
+    the databases.
 
 **Documentation:** `PACKAGING.md` §Packagist describes the classmap and what it
 rules out (a namespace function outside `SelError.php`, a SQL class in the

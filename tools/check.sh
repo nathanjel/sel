@@ -95,12 +95,19 @@ SKIPPED=""
 [ "${SEL_SKIP_SANITIZERS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SANITIZERS"
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SQL_BUDGETS"
 [ "${SEL_SKIP_DECIMAL_MUTATIONS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DECIMAL_MUTATIONS"
-# The database layers, the Python unit lane and the PHP package lane pass with a
-# printed skip when opted out, so they are named here too: an opted-out run is
-# not the gate.
+# The database layers, the Python unit lane, the PHP package lane, the PHP 8.1
+# lane (tools/check-php-version.sh), the C++ package lane
+# (tools/check-cpp-package.sh), the Go module lane (tools/check-go-module.sh)
+# and the Rust package lane (tools/check-rust-package.sh) pass with a printed
+# skip when opted out, so they are named here too: an opted-out run is not the
+# gate.
 [ "${SEL_SKIP_DB_TESTS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DB_TESTS"
 [ "${SEL_SKIP_PYTHON_UNIT:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PYTHON_UNIT"
 [ "${SEL_SKIP_PHP_PACKAGE:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PHP_PACKAGE"
+[ "${SEL_SKIP_PHP81:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PHP81"
+[ "${SEL_SKIP_CPP_PACKAGE:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_CPP_PACKAGE"
+[ "${SEL_SKIP_GO_MODULE:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_GO_MODULE"
+[ "${SEL_SKIP_RUST_PACKAGE:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_RUST_PACKAGE"
 SKIPPED="${SKIPPED# }"
 
 echo "implementations: $IMPLS"
