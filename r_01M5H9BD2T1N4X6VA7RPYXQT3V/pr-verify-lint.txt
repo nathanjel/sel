@@ -1,0 +1,37 @@
+$ tools/check-generated.sh --check
+generated: sql dialect map — 14 artifact(s) current
+generated: builtin manifest — 8 artifact(s) current
+generated: math-operation manifest — 8 artifact(s) current
+generated: lexicon — 8 artifact(s) current
+generated: limits and error catalogue — 8 artifact(s) current
+generated: sql case data — 7 artifact(s) current
+generated: usage example seed — 1 artifact(s) current
+generated: decimal conformance cases — 2 artifact(s) current
+generated: regex ambiguity cases — 1 artifact(s) current
+generated: sql scope cases — 1 artifact(s) current
+exit 0
+$ python3 tools/check-roster.py
+roster: 995 files name every host or none
+exit 0
+$ tools/check-version.sh
+  package.json                     0.10.4
+  pyproject.toml                   0.10.4
+  cpp/conanfile.py                 0.10.4
+  cpp/vcpkg.json                   0.10.4
+  cpp/CMakeLists.txt               0.10.4
+  lisp/sel-lang.asd                0.10.4
+  rust/Cargo.toml                  0.10.4
+  python/sel/__init__.py           0.10.4
+  php/src/Sel.php                  0.10.4
+  go/internal/version/version.go   0.10.4
+  CHANGELOG.md                     0.10.4
+  composer.json dev-main           0.10.x-dev
+  descriptions             7 manifests, one text
+versions agree: 0.10.4
+exit 0
+$ tools/check-package-docs.sh
+  npm        23 user documents
+  sdist      23 user documents
+  archive    23 user documents
+packages ship the user documents only
+exit 0
