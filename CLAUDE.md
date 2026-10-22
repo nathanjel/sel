@@ -64,6 +64,7 @@ rust/build/sqlt                        go/build/sqlt
 Unit tests (layers under the suite — decimal, utf8, value; JS and PHP have `tools/check-js-optimizer.mjs` / `tools/check-php-optimizer.php` instead, which also execute hybrid plans):
 
 ```
+tools/check-php-package.sh           the PHP package as `composer require nathanjel/sel-lang` installs it (needs composer)
 cd cpp && make test                  unit then conformance;  make asan  runs unit, conformance, the SQL suite
                                      and the SQL unit under the address, leak and UB sanitizers;
                                      make tsan  runs every thread-sanitizer race probe
@@ -132,7 +133,7 @@ Every parser is precedence climbing over the same productions (`parse_program �
 - **Values alias; assignment copies.** `Value` is a handle everywhere (in C++ an intrusive, non-atomic reference-counted handle — copying it is *not* a deep copy, use `clone()`, and it is not thread-safe even for reading). Deep copies happen at `,` (child and value) and the assignment store in every host; C++ also clones what `MAP` and `FILTER` collect (PHP what `FILTER` collects), which no program can observe because a binder cannot be assigned. There are no lazy values (`LAZY_RECORD` was removed for making that copy observable). Adding a copy elsewhere, or a builtin that stores a value inside another without cloning, is a divergence (and in C++ a leak — `make asan` checks).
 - **Assignment targets resolve to a path**, and the store lands at that path in the tree *as it exists after the RHS ran* (spec §5.7). Index expressions still evaluate once, in order, before the RHS.
 - **Strict left-to-right evaluation** — in C++ bind coerced operands to named locals first; argument evaluation order is unspecified there.
-- **Unknown function names are a compile-time error**, so builtins must be registered before parsing: PHP has no autoloader (`php/src/bootstrap.php`), JS imports from `js/src/builtins/index.mjs`, Python from `python/sel/builtins/__init__.py`.
+- **Unknown function names are a compile-time error**, so builtins must be registered before parsing: PHP's `Registry` registers the shipped builtins the first time the table is read (`Registry::boot()`), so a Composer install needs nothing more than its autoload (`composer.json`: a classmap of `php/src` without the SQL layer and `bootstrap.php`, plus `SelError.php` and `Sql/autoload.php` loaded on every request), and `php/src/bootstrap.php` still loads the whole language up front for hosts that require it directly; JS imports from `js/src/builtins/index.mjs`, Python from `python/sel/builtins/__init__.py`.
 - **Errors carry a stable code and the innermost failing node's position.** Tests assert codes and positions, never message text.
 - **Externally facing vocabulary must not look like SQL.** The grouping verb is `BUCKET` (never `GROUP_BY`); SQL-clause names (`groupBy`, `having`, `orderBy`) belong only to the translator's internal plan structs.
 
