@@ -1,0 +1,8 @@
+$ grep -n 'Registry::boot()' CLAUDE.md
+136:- **Unknown function names are a compile-time error**, so builtins must be registered before parsing: PHP's `Registry` registers the shipped builtins the first time the table is read (`Registry::boot()`), so a Composer install needs nothing more than its autoload (`composer.json`: a classmap of `php/src` without the SQL layer and `bootstrap.php`, plus `SelError.php` and `Sql/autoload.php` loaded on every request), and `php/src/bootstrap.php` still loads the whole language up front for hosts that require it directly; JS imports from `js/src/builtins/index.mjs`, Python from `python/sel/builtins/__init__.py`.
+exit 0
+$ grep -n 'php/src/bootstrap.php' CLAUDE.md
+136:- **Unknown function names are a compile-time error**, so builtins must be registered before parsing: PHP's `Registry` registers the shipped builtins the first time the table is read (`Registry::boot()`), so a Composer install needs nothing more than its autoload (`composer.json`: a classmap of `php/src` without the SQL layer and `bootstrap.php`, plus `SelError.php` and `Sql/autoload.php` loaded on every request), and `php/src/bootstrap.php` still loads the whole language up front for hosts that require it directly; JS imports from `js/src/builtins/index.mjs`, Python from `python/sel/builtins/__init__.py`.
+exit 0
+$ ! grep -n 'no autoloader' CLAUDE.md
+exit 0
