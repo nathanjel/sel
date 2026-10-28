@@ -1,3 +1,0 @@
-PASS: Removing only the four new opt-out assignment lines and ignoring comments makes tools/check.sh identical to the baseline. All summary prints, trim, and final conditional are unchanged.
-PASS: Only CHANGELOG.md, python/tests/test_check_sh_opt_outs.py and tools/check.sh changed; 113 insertions and 3 deletions; no forbidden paths.
-PASS: The test module skips at module level when tools/check.sh or bash is absent.
