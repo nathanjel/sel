@@ -1,2 +1,0 @@
-$ bash -n tools/check.sh && python3 -m py_compile python/tests/test_check_sh_opt_outs.py
-exit 0
