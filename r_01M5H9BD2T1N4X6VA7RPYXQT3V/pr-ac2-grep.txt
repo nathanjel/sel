@@ -1,3 +1,0 @@
-$ grep -n 'tools/check-php-package.sh' CLAUDE.md
-67:tools/check-php-package.sh           the PHP package as `composer require nathanjel/sel-lang` installs it (needs composer)
-exit 0
